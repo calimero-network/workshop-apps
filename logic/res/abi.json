@@ -1,0 +1,294 @@
+{
+  "schema_version": "wasm-abi/1",
+  "types": {
+    "AppState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "invitations",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "kind": "record",
+              "fields": [],
+              "crdt_type": "lww_register",
+              "inner_type": {
+                "kind": "string"
+              }
+            },
+            "crdt_type": "unordered_map"
+          }
+        },
+        {
+          "name": "messages",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "kind": "record",
+              "fields": [],
+              "crdt_type": "lww_register",
+              "inner_type": {
+                "kind": "string"
+              }
+            },
+            "crdt_type": "unordered_map"
+          }
+        }
+      ]
+    },
+    "Event_InvitationAccepted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "acceptor_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_InvitationCreated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "code",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_MessageSent": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "chat_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Invitation": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "code",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "creator_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "accepted",
+          "type": {
+            "kind": "bool"
+          }
+        },
+        {
+          "name": "acceptor_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Message": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "chat_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "sender_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "text",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "timestamp",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    }
+  },
+  "methods": [
+    {
+      "name": "init",
+      "params": [],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "create_invitation",
+      "params": [
+        {
+          "name": "creator_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "accept_invitation",
+      "params": [
+        {
+          "name": "code",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "acceptor_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "send_message",
+      "params": [
+        {
+          "name": "chat_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "sender_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "text",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_messages",
+      "params": [
+        {
+          "name": "chat_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Message"
+        }
+      }
+    },
+    {
+      "name": "get_invitation",
+      "params": [
+        {
+          "name": "code",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "$ref": "Invitation"
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "InvitationCreated",
+      "payload": {
+        "$ref": "Event_InvitationCreated"
+      }
+    },
+    {
+      "name": "InvitationAccepted",
+      "payload": {
+        "$ref": "Event_InvitationAccepted"
+      }
+    },
+    {
+      "name": "MessageSent",
+      "payload": {
+        "$ref": "Event_MessageSent"
+      }
+    }
+  ],
+  "state_root": "AppState"
+}

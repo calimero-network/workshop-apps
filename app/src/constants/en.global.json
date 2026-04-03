@@ -1,0 +1,46 @@
+{
+  "home": {
+    "welcome": "Simple Chat",
+    "demoDescription": "Private 1-on-1 chat via invitation codes, powered by the Calimero decentralized network.",
+    "documentation": "Documentation",
+    "github": "GitHub",
+    "website": "Website",
+    "logout": "Logout",
+    "createChat": "Start a New Chat",
+    "createDescription": "Generate an invitation code and share it with someone to start a private chat.",
+    "generateCode": "Generate Invitation Code",
+    "generatedCodeLabel": "Share this code with your friend",
+    "enterChat": "Open Chat",
+    "joinChat": "Join a Chat",
+    "joinDescription": "Enter an invitation code you received to join a private chat.",
+    "inviteCodePlaceholder": "Paste invitation code here",
+    "joinButton": "Join Chat",
+    "errors": {
+      "createInvitationFailed": "Failed to create invitation",
+      "acceptInvitationFailed": "Failed to join chat",
+      "sendFailed": "Failed to send message",
+      "loadFailed": "Failed to load messages",
+      "getInvitationFailed": "Failed to look up invitation"
+    }
+  },
+  "auth": {
+    "title": "Simple Chat",
+    "back": "Back",
+    "goToContext": "Go to context actions",
+    "description": {
+      "title": "Welcome to Simple Chat",
+      "subtitle": "Private 1-on-1 Chat on Calimero",
+      "features": [
+        "Create private chats via invitation codes",
+        "Share your code with a friend to start chatting",
+        "Real-time decentralized messaging on Calimero",
+        "No central server — your conversations stay private"
+      ],
+      "getStarted": "Connect your node to get started"
+    }
+  },
+  "context": {
+    "backToLogin": "Back to Login",
+    "goToHome": "Go to Home"
+  }
+}
