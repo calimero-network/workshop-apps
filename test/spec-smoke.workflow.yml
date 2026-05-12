@@ -1,0 +1,113 @@
+name: trip-splitter smoke (generated)
+description: Spec-derived two-node smoke for trip-splitter
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 12428
+  base_rpc_port: 12528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  - type: install_application
+    name: Install trip-splitter on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/trip-splitter-0.1.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install trip-splitter on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/trip-splitter-0.1.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: create_context
+    name: Create trip context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: trip
+    outputs:
+      trip_ctx: contextId
+
+  - type: join_context
+    name: app-node-2 joins trip context
+    node: app-node-2
+    context_id: '{{trip_ctx}}'
+
+  - type: wait_for_sync
+    name: Wait for trip sync across both nodes
+    context_id: '{{trip_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: View list_expenses from app-node-1
+    node: app-node-1
+    context_id: '{{trip_ctx}}'
+    method: list_expenses
+    args: {}
+    outputs:
+      list_expenses_n1: result
+
+  - type: call
+    name: View list_expenses from app-node-2
+    node: app-node-2
+    context_id: '{{trip_ctx}}'
+    method: list_expenses
+    args: {}
+    outputs:
+      list_expenses_n2: result
+
+  - type: json_assert
+    name: list_expenses agrees across nodes
+    statements:
+      - 'equal({{list_expenses_n1}}, {{list_expenses_n2}})'
+
+  - type: call
+    name: View get_balances from app-node-1
+    node: app-node-1
+    context_id: '{{trip_ctx}}'
+    method: get_balances
+    args: {}
+    outputs:
+      get_balances_n1: result
+
+  - type: call
+    name: View get_balances from app-node-2
+    node: app-node-2
+    context_id: '{{trip_ctx}}'
+    method: get_balances
+    args: {}
+    outputs:
+      get_balances_n2: result
+
+  - type: json_assert
+    name: get_balances agrees across nodes
+    statements:
+      - 'equal({{get_balances_n1}}, {{get_balances_n2}})'

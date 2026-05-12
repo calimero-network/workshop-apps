@@ -1,0 +1,22 @@
+{
+  "appName": "trip-splitter",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.chat",
+  "metadata": {
+    "name": "trip-splitter",
+    "description": "Track shared expenses during a trip and settle up fairly with your group",
+    "author": "Calimero",
+    "route": "/trip-splitter"
+  },
+  "theme": {
+    "primaryColor": "#0066CC",
+    "accentColor": "#FF6B35",
+    "style": "modern-travel"
+  },
+  "services": [
+    {
+      "name": "trip",
+      "crate": "trip-splitter-trip"
+    }
+  ]
+}

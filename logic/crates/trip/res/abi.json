@@ -1,0 +1,414 @@
+{
+  "schema_version": "wasm-abi/1",
+  "types": {
+    "Event_ExpenseAdded": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "payer",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ExpenseDeleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ExpenseEdited": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_PaymentRecorded": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "from",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "to",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TripCreated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Expense": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "payer",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "amount",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "split_among",
+          "type": {
+            "kind": "list",
+            "items": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Payment": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "from",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "to",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "amount",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "TripMetadata": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "currency",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "TripState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "metadata",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "lww_register",
+            "inner_type": {
+              "$ref": "TripMetadata"
+            }
+          }
+        },
+        {
+          "name": "expenses",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Expense"
+            },
+            "crdt_type": "authored_map"
+          }
+        },
+        {
+          "name": "payments",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Payment"
+            },
+            "crdt_type": "unordered_map"
+          }
+        }
+      ]
+    }
+  },
+  "methods": [
+    {
+      "name": "init",
+      "params": [],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "create_trip",
+      "params": [
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "currency",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "add_expense",
+      "params": [
+        {
+          "name": "amount",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "split_among",
+          "type": {
+            "kind": "list",
+            "items": {
+              "kind": "string"
+            }
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "list_expenses",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Expense"
+        }
+      }
+    },
+    {
+      "name": "edit_expense",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_amount",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "new_description",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "delete_expense",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_balances",
+      "params": [],
+      "returns": {
+        "kind": "map",
+        "key": {
+          "kind": "string"
+        },
+        "value": {
+          "kind": "f64"
+        }
+      }
+    },
+    {
+      "name": "record_payment",
+      "params": [
+        {
+          "name": "from",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "to",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "amount",
+          "type": {
+            "kind": "f64"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "TripCreated",
+      "payload": {
+        "$ref": "Event_TripCreated"
+      }
+    },
+    {
+      "name": "ExpenseAdded",
+      "payload": {
+        "$ref": "Event_ExpenseAdded"
+      }
+    },
+    {
+      "name": "ExpenseEdited",
+      "payload": {
+        "$ref": "Event_ExpenseEdited"
+      }
+    },
+    {
+      "name": "ExpenseDeleted",
+      "payload": {
+        "$ref": "Event_ExpenseDeleted"
+      }
+    },
+    {
+      "name": "PaymentRecorded",
+      "payload": {
+        "$ref": "Event_PaymentRecorded"
+      }
+    }
+  ],
+  "state_root": "TripState"
+}
