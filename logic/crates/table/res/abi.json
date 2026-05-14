@@ -1,0 +1,677 @@
+{
+  "schema_version": "wasm-abi/1",
+  "types": {
+    "Character": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "class",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "strength",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "dexterity",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "constitution",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "intelligence",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "wisdom",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "charisma",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "hp_current",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "hp_max",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "updated_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Event_CharacterCreated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_DifficultySet": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "dc",
+          "type": {
+            "kind": "u32"
+          }
+        }
+      ]
+    },
+    "Event_GameCreated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_GameStateChanged": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "state",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_HPAdjusted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "character_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "hp",
+          "type": {
+            "kind": "u32"
+          }
+        }
+      ]
+    },
+    "Event_RollMade": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "total",
+          "type": {
+            "kind": "u32"
+          }
+        }
+      ]
+    },
+    "Event_TurnAdvanced": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "player",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "GameSession": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "dm_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "game_state",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "current_dc",
+          "type": {
+            "kind": "u32"
+          },
+          "nullable": true
+        },
+        {
+          "name": "current_turn_player",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true
+        },
+        {
+          "name": "turn_order",
+          "type": {
+            "kind": "list",
+            "items": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "turn_index",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "TableEvent": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "event_type",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "timestamp",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "content",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "ability",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true
+        },
+        {
+          "name": "d20_roll",
+          "type": {
+            "kind": "u32"
+          },
+          "nullable": true
+        },
+        {
+          "name": "modifier",
+          "type": {
+            "kind": "i32"
+          },
+          "nullable": true
+        },
+        {
+          "name": "total",
+          "type": {
+            "kind": "u32"
+          },
+          "nullable": true
+        }
+      ]
+    },
+    "TableState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "session",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "lww_register",
+            "inner_type": {
+              "$ref": "GameSession"
+            }
+          }
+        },
+        {
+          "name": "characters",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Character"
+            },
+            "crdt_type": "unordered_map"
+          }
+        },
+        {
+          "name": "log",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "TableEvent"
+            },
+            "crdt_type": "authored_map"
+          }
+        }
+      ]
+    }
+  },
+  "methods": [
+    {
+      "name": "init",
+      "params": [],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "create_character",
+      "params": [
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "class",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "str",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "dex",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "con",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "int",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "wis",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "cha",
+          "type": {
+            "kind": "u32"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "get_my_character",
+      "params": [],
+      "returns": {
+        "$ref": "Character"
+      }
+    },
+    {
+      "name": "get_all_characters",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Character"
+        }
+      }
+    },
+    {
+      "name": "create_game",
+      "params": [
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "invite_player",
+      "params": [
+        {
+          "name": "player_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_game_info",
+      "params": [],
+      "returns": {
+        "$ref": "GameSession"
+      }
+    },
+    {
+      "name": "set_game_state",
+      "params": [
+        {
+          "name": "state",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "set_difficulty",
+      "params": [
+        {
+          "name": "dc",
+          "type": {
+            "kind": "u32"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "set_turn_order",
+      "params": [
+        {
+          "name": "players",
+          "type": {
+            "kind": "list",
+            "items": {
+              "kind": "string"
+            }
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "advance_turn",
+      "params": [],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "post_message",
+      "params": [
+        {
+          "name": "text",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "roll_for_player",
+      "params": [
+        {
+          "name": "player_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "ability",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "reason",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "roll_npc",
+      "params": [
+        {
+          "name": "npc_name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "modifier",
+          "type": {
+            "kind": "i32"
+          }
+        },
+        {
+          "name": "reason",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "adjust_hp",
+      "params": [
+        {
+          "name": "character_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "delta",
+          "type": {
+            "kind": "i32"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_game_log",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "TableEvent"
+        }
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "GameCreated",
+      "payload": {
+        "$ref": "Event_GameCreated"
+      }
+    },
+    {
+      "name": "CharacterCreated",
+      "payload": {
+        "$ref": "Event_CharacterCreated"
+      }
+    },
+    {
+      "name": "MessagePosted"
+    },
+    {
+      "name": "RollMade",
+      "payload": {
+        "$ref": "Event_RollMade"
+      }
+    },
+    {
+      "name": "HPAdjusted",
+      "payload": {
+        "$ref": "Event_HPAdjusted"
+      }
+    },
+    {
+      "name": "GameStateChanged",
+      "payload": {
+        "$ref": "Event_GameStateChanged"
+      }
+    },
+    {
+      "name": "TurnAdvanced",
+      "payload": {
+        "$ref": "Event_TurnAdvanced"
+      }
+    },
+    {
+      "name": "DifficultySet",
+      "payload": {
+        "$ref": "Event_DifficultySet"
+      }
+    }
+  ],
+  "state_root": "TableState"
+}

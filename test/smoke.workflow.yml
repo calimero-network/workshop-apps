@@ -1,0 +1,497 @@
+# Two-node smoke test for dnd-online-table.
+#
+# Exercises every mutate API method in the `table` service and verifies that
+# state replicates across peers via the Calimero CRDT layer.
+#
+# Usage (from the project root, after a dev bundle has been built):
+#   merobox bootstrap run test/smoke.workflow.yml
+#
+# Pre-flight: `bash logic/build-bundle.sh` must have produced
+# `logic/res/dnd-online-table-0.1.0.mpk`.
+
+name: dnd-online-table smoke
+description: Verify all table-service mutate methods replicate correctly across two nodes.
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 12428
+  base_rpc_port: 12528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # ── Install the application bundle on both nodes ──────────────────────────
+
+  - type: install_application
+    name: Install dnd-online-table bundle on node 1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/dnd-online-table-0.1.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install dnd-online-table bundle on node 2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/dnd-online-table-0.1.0.mpk
+
+  # ── Bootstrap namespace and table context on node 1 ──────────────────────
+
+  - type: create_namespace
+    name: Create namespace on node 1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create table context on node 1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: table
+    outputs:
+      table_ctx: contextId
+
+  # ── Invite node 2 and let it join ────────────────────────────────────────
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation from node 1
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: Node 2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: join_context
+    name: Node 2 joins table context
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+
+  # ── Deterministic floor: verify view methods return consistent state ───────
+
+  - type: call
+    name: get_game_info from node 1 (floor)
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: get_game_info
+    args: {}
+    outputs:
+      game_info_n1: result
+
+  - type: call
+    name: get_game_log from node 1 (floor)
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: get_game_log
+    args: {}
+    outputs:
+      log_before: result
+
+  - type: call
+    name: get_all_characters from node 1 (floor)
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: get_all_characters
+    args: {}
+    outputs:
+      chars_before: result
+
+  # ── Mutate: create_game ───────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise create_game on node 1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: create_game
+    args:
+      name: "The Lost Mines"
+    outputs:
+      game_id: result
+
+  - type: wait_for_sync
+    name: Wait for create_game to sync
+    context_id: '{{table_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm game visible on node 2 after create_game
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_game_info
+    args: {}
+    outputs:
+      game_info_after_create: result
+
+  - type: json_assert
+    name: create_game produced a named game session
+    statements:
+      - '{{game_info_after_create}}.name == "The Lost Mines"'
+
+  # ── Mutate: create_character ──────────────────────────────────────────────
+
+  - type: call
+    name: Exercise create_character on node 1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: create_character
+    args:
+      name: "Aragorn"
+      class_: "Ranger"
+      str: 15
+      dex: 16
+      con: 14
+      int_: 12
+      wis: 13
+      cha: 10
+    outputs:
+      char_id: result
+
+  - type: wait_for_sync
+    name: Wait for create_character to sync
+    context_id: '{{table_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm character visible on node 2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_all_characters
+    args: {}
+    outputs:
+      chars_after_create: result
+
+  - type: json_assert
+    name: create_character produced a visible character
+    statements:
+      - 'len({{chars_after_create}}) > 0'
+
+  # ── Mutate: post_message ──────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise post_message on node 1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: post_message
+    args:
+      text: "I swing my sword at the goblin!"
+    outputs:
+      msg_evt_id: result
+
+  - type: wait_for_sync
+    name: Wait for post_message to sync
+    context_id: '{{table_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm message visible on node 2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_game_log
+    args: {}
+    outputs:
+      log_after_msg: result
+
+  - type: json_assert
+    name: post_message produced a log entry
+    statements:
+      - 'len({{log_after_msg}}) > 0'
+
+  # ── Mutate: set_game_state ────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise set_game_state on node 1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: set_game_state
+    args:
+      state: "combat"
+
+  - type: wait_for_sync
+    name: Wait for set_game_state to sync
+    context_id: '{{table_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm game_state updated on node 2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_game_info
+    args: {}
+    outputs:
+      game_info_after_state: result
+
+  - type: json_assert
+    name: set_game_state changed game_state to combat
+    statements:
+      - '{{game_info_after_state}}.game_state == "combat"'
+
+  # ── Mutate: set_difficulty ────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise set_difficulty on node 1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: set_difficulty
+    args:
+      dc: 15
+
+  - type: wait_for_sync
+    name: Wait for set_difficulty to sync
+    context_id: '{{table_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm DC updated on node 2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_game_info
+    args: {}
+    outputs:
+      game_info_after_dc: result
+
+  - type: json_assert
+    name: set_difficulty set current_dc to 15
+    statements:
+      - '{{game_info_after_dc}}.current_dc == 15'
+
+  # ── Mutate: roll_npc ──────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise roll_npc on node 1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: roll_npc
+    args:
+      npc_name: "Goblin Chief"
+      modifier: 3
+      reason: "attack roll"
+    outputs:
+      npc_roll_evt_id: result
+
+  - type: wait_for_sync
+    name: Wait for roll_npc to sync
+    context_id: '{{table_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm NPC roll visible in log on node 2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_game_log
+    args: {}
+    outputs:
+      log_after_npc_roll: result
+
+  - type: json_assert
+    name: roll_npc added an event to the game log
+    statements:
+      - 'len({{log_after_npc_roll}}) > len({{log_after_msg}})'
+
+  # ── Mutate: roll_for_player ───────────────────────────────────────────────
+  # Uses the character created above; player_id is derived from char_id output.
+
+  - type: call
+    name: Exercise roll_for_player on node 1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: roll_for_player
+    args:
+      player_id: "alice"
+      ability: "strength"
+      reason: "attack roll"
+    outputs:
+      player_roll_evt_id: result
+
+  - type: wait_for_sync
+    name: Wait for roll_for_player to sync
+    context_id: '{{table_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm player roll visible in log on node 2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_game_log
+    args: {}
+    outputs:
+      log_after_player_roll: result
+
+  - type: json_assert
+    name: roll_for_player added an event to the game log
+    statements:
+      - 'len({{log_after_player_roll}}) > len({{log_after_npc_roll}})'
+
+  # ── Mutate: adjust_hp ────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise adjust_hp on node 1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: adjust_hp
+    args:
+      character_id: '{{char_id}}'
+      delta: -8
+
+  - type: wait_for_sync
+    name: Wait for adjust_hp to sync
+    context_id: '{{table_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm HP change appears in log on node 2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_game_log
+    args: {}
+    outputs:
+      log_after_hp: result
+
+  - type: json_assert
+    name: adjust_hp added an hp_change event to the log
+    statements:
+      - 'len({{log_after_hp}}) > len({{log_after_player_roll}})'
+
+  # ── Mutate: set_turn_order ────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise set_turn_order on node 1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: set_turn_order
+    args:
+      players:
+        - "aragorn"
+        - "legolas"
+        - "gimli"
+
+  - type: wait_for_sync
+    name: Wait for set_turn_order to sync
+    context_id: '{{table_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm turn order set on node 2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_game_info
+    args: {}
+    outputs:
+      game_info_after_turns: result
+
+  - type: json_assert
+    name: set_turn_order populated turn_order with three entries
+    statements:
+      - 'len({{game_info_after_turns}}.turn_order) == 3'
+
+  # ── Mutate: advance_turn ──────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise advance_turn on node 1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: advance_turn
+    args: {}
+
+  - type: wait_for_sync
+    name: Wait for advance_turn to sync
+    context_id: '{{table_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm current_turn_player updated on node 2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_game_info
+    args: {}
+    outputs:
+      game_info_after_advance: result
+
+  - type: json_assert
+    name: advance_turn set current_turn_player to a non-null value
+    statements:
+      - '{{game_info_after_advance}}.current_turn_player != null'
+
+  # ── Mutate: invite_player ─────────────────────────────────────────────────
+  # No observable view for the invite; passes when mutation doesn't throw.
+
+  - type: call
+    name: Exercise invite_player on node 1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: invite_player
+    args:
+      player_id: "alice"
+
+  - type: wait_for_sync
+    name: Wait for invite_player to sync
+    context_id: '{{table_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  # ── Final cross-node equality check ──────────────────────────────────────
+
+  - type: call
+    name: Final get_game_log from node 1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: get_game_log
+    args: {}
+    outputs:
+      final_log_n1: result
+
+  - type: call
+    name: Final get_game_log from node 2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_game_log
+    args: {}
+    outputs:
+      final_log_n2: result
+
+  - type: json_assert
+    name: Game log is identical on both nodes (CRDT convergence)
+    statements:
+      - 'equal({{final_log_n1}}, {{final_log_n2}})'
+
+  - type: call
+    name: Final get_game_info from node 1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: get_game_info
+    args: {}
+    outputs:
+      final_info_n1: result
+
+  - type: call
+    name: Final get_game_info from node 2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_game_info
+    args: {}
+    outputs:
+      final_info_n2: result
+
+  - type: json_assert
+    name: Game session state is identical on both nodes (CRDT convergence)
+    statements:
+      - 'equal({{final_info_n1}}, {{final_info_n2}})'

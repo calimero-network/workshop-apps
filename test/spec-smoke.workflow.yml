@@ -1,0 +1,159 @@
+name: dnd-online-table smoke (generated)
+description: Spec-derived two-node smoke for dnd-online-table
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 12428
+  base_rpc_port: 12528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  - type: install_application
+    name: Install dnd-online-table on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/dnd-online-table-0.1.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install dnd-online-table on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/dnd-online-table-0.1.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: create_context
+    name: Create table context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: table
+    outputs:
+      table_ctx: contextId
+
+  - type: join_context
+    name: app-node-2 joins table context
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+
+  - type: wait_for_sync
+    name: Wait for table sync across both nodes
+    context_id: '{{table_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: View get_my_character from app-node-1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: get_my_character
+    args: {}
+    outputs:
+      get_my_character_n1: result
+
+  - type: call
+    name: View get_my_character from app-node-2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_my_character
+    args: {}
+    outputs:
+      get_my_character_n2: result
+
+  - type: json_assert
+    name: get_my_character agrees across nodes
+    statements:
+      - 'equal({{get_my_character_n1}}, {{get_my_character_n2}})'
+
+  - type: call
+    name: View get_game_log from app-node-1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: get_game_log
+    args: {}
+    outputs:
+      get_game_log_n1: result
+
+  - type: call
+    name: View get_game_log from app-node-2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_game_log
+    args: {}
+    outputs:
+      get_game_log_n2: result
+
+  - type: json_assert
+    name: get_game_log agrees across nodes
+    statements:
+      - 'equal({{get_game_log_n1}}, {{get_game_log_n2}})'
+
+  - type: call
+    name: View get_game_info from app-node-1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: get_game_info
+    args: {}
+    outputs:
+      get_game_info_n1: result
+
+  - type: call
+    name: View get_game_info from app-node-2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_game_info
+    args: {}
+    outputs:
+      get_game_info_n2: result
+
+  - type: json_assert
+    name: get_game_info agrees across nodes
+    statements:
+      - 'equal({{get_game_info_n1}}, {{get_game_info_n2}})'
+
+  - type: call
+    name: View get_all_characters from app-node-1
+    node: app-node-1
+    context_id: '{{table_ctx}}'
+    method: get_all_characters
+    args: {}
+    outputs:
+      get_all_characters_n1: result
+
+  - type: call
+    name: View get_all_characters from app-node-2
+    node: app-node-2
+    context_id: '{{table_ctx}}'
+    method: get_all_characters
+    args: {}
+    outputs:
+      get_all_characters_n2: result
+
+  - type: json_assert
+    name: get_all_characters agrees across nodes
+    statements:
+      - 'equal({{get_all_characters_n1}}, {{get_all_characters_n2}})'

@@ -1,0 +1,22 @@
+{
+  "appName": "dnd-online-table",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.chat",
+  "metadata": {
+    "name": "dnd-online-table",
+    "description": "Real-time collaborative D&D table: shared chat, DM-managed dice rolls, turn tracking, and live game log",
+    "author": "Calimero",
+    "route": "/dnd-online-table"
+  },
+  "theme": {
+    "primaryColor": "#1a1a2e",
+    "accentColor": "#d4af37",
+    "style": "dark-fantasy"
+  },
+  "services": [
+    {
+      "name": "table",
+      "crate": "dnd-online-table-table"
+    }
+  ]
+}
