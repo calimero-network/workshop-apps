@@ -8,9 +8,8 @@ interface MessageBubbleProps {
   onDelete: () => Promise<void>;
 }
 
-function formatTime(timestampNs: number): string {
-  // Calimero timestamps are nanoseconds; Date expects milliseconds
-  const d = new Date(timestampNs / 1_000_000);
+function formatTime(timestampMs: number): string {
+  const d = new Date(timestampMs);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
