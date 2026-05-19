@@ -1,0 +1,278 @@
+{
+  "schema_version": "wasm-abi/1",
+  "types": {
+    "Event_TaskCompleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TaskCreated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TaskDeleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TaskEdited": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TaskUncompleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Task": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "completed",
+          "type": {
+            "kind": "bool"
+          }
+        },
+        {
+          "name": "created_by",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "completed_at",
+          "type": {
+            "kind": "u64"
+          },
+          "nullable": true
+        }
+      ]
+    },
+    "TodoState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "tasks",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Task"
+            },
+            "crdt_type": "authored_map"
+          }
+        }
+      ]
+    }
+  },
+  "methods": [
+    {
+      "name": "init",
+      "params": [],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "create_task",
+      "params": [
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "complete_task",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "uncomplete_task",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "edit_task",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_description",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "delete_task",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "list_tasks",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Task"
+        }
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "TaskCreated",
+      "payload": {
+        "$ref": "Event_TaskCreated"
+      }
+    },
+    {
+      "name": "TaskCompleted",
+      "payload": {
+        "$ref": "Event_TaskCompleted"
+      }
+    },
+    {
+      "name": "TaskUncompleted",
+      "payload": {
+        "$ref": "Event_TaskUncompleted"
+      }
+    },
+    {
+      "name": "TaskEdited",
+      "payload": {
+        "$ref": "Event_TaskEdited"
+      }
+    },
+    {
+      "name": "TaskDeleted",
+      "payload": {
+        "$ref": "Event_TaskDeleted"
+      }
+    }
+  ],
+  "state_root": "TodoState"
+}
