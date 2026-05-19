@@ -1,0 +1,217 @@
+# Two-node smoke test for the chat foundation app.
+#
+# Exercises the parts the v2 generator most often breaks:
+#   - lobby + room as separate services in one bundle
+#   - per-author state (display names, presence) replicating across peers
+#   - atomic create_context + register_room (no propagation race)
+#   - cross-context xcall (room → lobby on_room_message)
+#
+# Usage (run from the chat project root, after a dev bundle has been built):
+#   merobox bootstrap run test/smoke.workflow.yml
+#
+# Pre-flight: `bash logic/build-bundle.sh` must have produced
+# `logic/res/chat-0.1.0.mpk`.
+
+name: Chat foundation smoke
+description: Verify lobby + room services replicate per-author state across two nodes.
+log_level: info
+nodes:
+  count: 2
+  prefix: chat-node
+  image: ghcr.io/calimero-network/merod:edge
+  # High base ports to avoid colliding with a host-native merod on the
+  # defaults (2428 P2P / 2528 RPC). Each node gets base + i.
+  base_port: 12428      # P2P / swarm
+  base_rpc_port: 12528  # JSON-RPC / admin API
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # --- Bootstrap application + namespace ---
+
+  - type: install_application
+    name: Install chat bundle on node 1
+    node: chat-node-1
+    dev: true
+    path: ./logic/res/chat-0.1.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install chat bundle on node 2
+    node: chat-node-2
+    dev: true
+    path: ./logic/res/chat-0.1.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on node 1
+    node: chat-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create lobby context on node 1
+    node: chat-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: lobby
+    outputs:
+      lobby_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: chat-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: Node 2 joins namespace
+    node: chat-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  # --- Per-author state: presence + names (the AuthoredMap fix) ---
+
+  - type: call
+    name: Heartbeat from node 1
+    node: chat-node-1
+    context_id: '{{lobby_ctx}}'
+    method: heartbeat
+    args: {}
+
+  - type: call
+    name: Heartbeat from node 2
+    node: chat-node-2
+    context_id: '{{lobby_ctx}}'
+    method: heartbeat
+    args: {}
+
+  - type: call
+    name: Set name on node 1
+    node: chat-node-1
+    context_id: '{{lobby_ctx}}'
+    method: set_name
+    args:
+      name: Alice
+
+  - type: call
+    name: Set name on node 2
+    node: chat-node-2
+    context_id: '{{lobby_ctx}}'
+    method: set_name
+    args:
+      name: Bob
+
+  - type: wait_for_sync
+    name: Wait for lobby sync across both nodes
+    context_id: '{{lobby_ctx}}'
+    nodes: [chat-node-1, chat-node-2]
+    timeout: 30
+
+  # Each list_* call returns a non-empty Vec<NameEntry> / Vec<PresenceEntry>.
+  # The test passes if every call returns successfully — set_name / heartbeat
+  # would have thrown on the AuthoredMap layer if the per-author wiring was
+  # broken. We surface the values to the run log via `outputs`.
+
+  - type: call
+    name: List names from node 1
+    node: chat-node-1
+    context_id: '{{lobby_ctx}}'
+    method: list_names
+    args: {}
+    outputs:
+      names_n1: result
+
+  - type: call
+    name: List names from node 2
+    node: chat-node-2
+    context_id: '{{lobby_ctx}}'
+    method: list_names
+    args: {}
+    outputs:
+      names_n2: result
+
+  - type: json_assert
+    name: Both nodes see the same name list
+    statements:
+      - 'equal({{names_n1}}, {{names_n2}})'
+
+  - type: call
+    name: List presence from node 2
+    node: chat-node-2
+    context_id: '{{lobby_ctx}}'
+    method: list_presence
+    args: {}
+    outputs:
+      presence_n2: result
+
+  # --- Atomic create_context + register_room (room service) ---
+
+  - type: create_context
+    name: Create room context on node 1
+    node: chat-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: room
+    params: '{"room_id":"room-1700000000000-deadbeef","name":"general","lobby_context_id":"{{lobby_ctx}}"}'
+    outputs:
+      room_ctx: contextId
+
+  - type: call
+    name: Register room in lobby
+    node: chat-node-1
+    context_id: '{{lobby_ctx}}'
+    method: register_room
+    args:
+      room_id: room-1700000000000-deadbeef
+      name: general
+      context_id: '{{room_ctx}}'
+
+  - type: join_context
+    name: Node 2 joins room context
+    node: chat-node-2
+    context_id: '{{room_ctx}}'
+
+  - type: call
+    name: Send message from node 1
+    node: chat-node-1
+    context_id: '{{room_ctx}}'
+    method: send_message
+    args:
+      body: hello world
+
+  - type: wait_for_sync
+    name: Wait for room sync across both nodes
+    context_id: '{{room_ctx}}'
+    nodes: [chat-node-1, chat-node-2]
+    timeout: 30
+
+  - type: call
+    name: List messages from node 2
+    node: chat-node-2
+    context_id: '{{room_ctx}}'
+    method: get_messages
+    args:
+      offset: 0
+      limit: 100
+    outputs:
+      messages_n2: result
+
+  - type: call
+    name: List messages from node 1
+    node: chat-node-1
+    context_id: '{{room_ctx}}'
+    method: get_messages
+    args:
+      offset: 0
+      limit: 100
+    outputs:
+      messages_n1: result
+
+  - type: json_assert
+    name: Message replicated to both nodes (cross-node equality)
+    statements:
+      - 'equal({{messages_n1}}, {{messages_n2}})'
