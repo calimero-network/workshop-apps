@@ -90,6 +90,7 @@ for i in $(seq 0 $((SERVICE_COUNT - 1))); do
 done
 
 # Compose bundle manifest.json.
+FRONTEND_URL="${STUDIO_FRONTEND_URL:-http://localhost:5173/}"
 jq -n \
   --arg version "1.0" \
   --arg pkg "$APP_PACKAGE" \
@@ -97,11 +98,12 @@ jq -n \
   --arg minRuntime "0.1.0" \
   --arg name "$APP_DISPLAY" \
   --arg desc "$APP_DESC" \
+  --arg frontend "$FRONTEND_URL" \
   --argjson services "[$SERVICE_ENTRIES]" \
   '{version:$version, package:$pkg, appVersion:$appVersion, minRuntimeVersion:$minRuntime,
     metadata:{name:$name, description:$desc},
     services:$services, migrations:[],
-    links:{frontend:"http://localhost:5173/"}}' \
+    links:{frontend:$frontend}}' \
   > res/bundle-temp/manifest.json
 
 # Sign per mode.

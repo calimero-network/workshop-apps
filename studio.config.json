@@ -1,7 +1,7 @@
 {
   "appName": "team-todo",
   "appVersion": "0.1.0",
-  "package": "com.calimero-studio.test.team-todo4",
+  "package": "com.calimero-studio.test.team-todo5",
   "metadata": {
     "name": "team-todo",
     "description": "Shared team task list where everyone adds, completes, and tracks work together",
