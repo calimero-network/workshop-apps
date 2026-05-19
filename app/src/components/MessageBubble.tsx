@@ -11,11 +11,11 @@ interface MessageBubbleProps {
 }
 
 /**
- * Format a Unix-second timestamp as a local time string.
- * `created_at` from the chat service is in seconds (u64).
+ * Format a Unix-millisecond timestamp as a local time string.
+ * `created_at` from the chat service is in milliseconds (u64).
  */
-function formatTime(createdAtSec: number): string {
-  const d = new Date(createdAtSec * 1_000);
+function formatTime(createdAtMs: number): string {
+  const d = new Date(createdAtMs);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 

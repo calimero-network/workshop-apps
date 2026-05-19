@@ -319,6 +319,8 @@ export function useChatLobby(): UseChatLobbyReturn {
       const result = await joinNamespace(nsId, { invitation, groupAlias });
 
       if (result) {
+        setSelectedNsId(nsId);
+        persistSelectedNamespaceId(nsId);
         await refetchNamespaces();
         return true;
       }
