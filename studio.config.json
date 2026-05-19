@@ -1,0 +1,22 @@
+{
+  "appName": "one-on-one-chat",
+  "appVersion": "0.1.0",
+  "package": "com.calimero-studio.test.one-on-one-chat1",
+  "metadata": {
+    "name": "one-on-one-chat",
+    "description": "Real-time messaging between two friends with full history",
+    "author": "Calimero",
+    "route": "/one-on-one-chat"
+  },
+  "theme": {
+    "primaryColor": "#3B82F6",
+    "accentColor": "#10B981",
+    "style": "clean-modern"
+  },
+  "services": [
+    {
+      "name": "chat",
+      "crate": "one-on-one-chat-chat"
+    }
+  ]
+}

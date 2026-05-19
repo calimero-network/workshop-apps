@@ -1,0 +1,186 @@
+{
+  "schema_version": "wasm-abi/1",
+  "types": {
+    "ChatState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "messages",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Message"
+            },
+            "crdt_type": "authored_map"
+          }
+        }
+      ]
+    },
+    "Event_MessageDeleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_MessageEdited": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_MessageSent": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Message": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "edited_at",
+          "type": {
+            "kind": "u64"
+          },
+          "nullable": true
+        }
+      ]
+    }
+  },
+  "methods": [
+    {
+      "name": "init",
+      "params": [],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "send_message",
+      "params": [
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "edit_message",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_body",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "delete_message",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "list_messages",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Message"
+        }
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "MessageSent",
+      "payload": {
+        "$ref": "Event_MessageSent"
+      }
+    },
+    {
+      "name": "MessageEdited",
+      "payload": {
+        "$ref": "Event_MessageEdited"
+      }
+    },
+    {
+      "name": "MessageDeleted",
+      "payload": {
+        "$ref": "Event_MessageDeleted"
+      }
+    }
+  ],
+  "state_root": "ChatState"
+}
