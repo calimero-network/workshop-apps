@@ -1,0 +1,328 @@
+{
+  "schema_version": "wasm-abi/1",
+  "types": {
+    "Event_RankingSubmitted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "vote_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_RankingUpdated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_VoteClosed": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_VoteCreated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Ranking": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "voter",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "vote_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "ranked_options",
+          "type": {
+            "kind": "list",
+            "items": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "submitted_at_ms",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Vote": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "options",
+          "type": {
+            "kind": "list",
+            "items": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_by",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at_ms",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "VotingState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "votes",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Vote"
+            },
+            "crdt_type": "unordered_map"
+          }
+        },
+        {
+          "name": "rankings",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Ranking"
+            },
+            "crdt_type": "authored_map"
+          }
+        }
+      ]
+    }
+  },
+  "methods": [
+    {
+      "name": "init",
+      "params": [],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "create_vote",
+      "params": [
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "options",
+          "type": {
+            "kind": "list",
+            "items": {
+              "kind": "string"
+            }
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "close_vote",
+      "params": [
+        {
+          "name": "vote_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "submit_ranking",
+      "params": [
+        {
+          "name": "vote_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "ranked_options",
+          "type": {
+            "kind": "list",
+            "items": {
+              "kind": "string"
+            }
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "update_ranking",
+      "params": [
+        {
+          "name": "ranking_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_order",
+          "type": {
+            "kind": "list",
+            "items": {
+              "kind": "string"
+            }
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_vote",
+      "params": [
+        {
+          "name": "vote_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "$ref": "Vote"
+      }
+    },
+    {
+      "name": "list_votes",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Vote"
+        }
+      }
+    },
+    {
+      "name": "get_rankings_for_vote",
+      "params": [
+        {
+          "name": "vote_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Ranking"
+        }
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "VoteCreated",
+      "payload": {
+        "$ref": "Event_VoteCreated"
+      }
+    },
+    {
+      "name": "RankingSubmitted",
+      "payload": {
+        "$ref": "Event_RankingSubmitted"
+      }
+    },
+    {
+      "name": "RankingUpdated",
+      "payload": {
+        "$ref": "Event_RankingUpdated"
+      }
+    },
+    {
+      "name": "VoteClosed",
+      "payload": {
+        "$ref": "Event_VoteClosed"
+      }
+    }
+  ],
+  "state_root": "VotingState"
+}

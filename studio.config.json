@@ -1,0 +1,22 @@
+{
+  "appName": "group-vote",
+  "appVersion": "0.1.0",
+  "package": "com.calimero-studio.test.group-vote",
+  "metadata": {
+    "name": "group-vote",
+    "description": "Collaborative ranked voting where participants vote and see live results together",
+    "author": "Calimero",
+    "route": "/group-vote"
+  },
+  "theme": {
+    "primaryColor": "#2563EB",
+    "accentColor": "#059669",
+    "style": "modern-civic"
+  },
+  "services": [
+    {
+      "name": "voting",
+      "crate": "group-vote-voting"
+    }
+  ]
+}

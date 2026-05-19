@@ -1,0 +1,224 @@
+name: group-vote spec smoke
+description: >
+  Verify the voting service's CRDT state replicates correctly across two nodes.
+  Exercises every mutate method (create_vote, submit_ranking, update_ranking,
+  close_vote) with cross-node json_assert checks derived from spec examples.
+log_level: info
+
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 12428
+  base_rpc_port: 12528
+
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+
+  # ── Bootstrap: install bundle + create shared namespace + context ─────────
+
+  - type: install_application
+    name: Install group-vote bundle on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/group-vote-0.1.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install group-vote bundle on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/group-vote-0.1.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create voting context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: voting
+    outputs:
+      voting_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue recursive namespace invitation (grants context access)
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: join_context
+    name: app-node-2 joins voting context
+    node: app-node-2
+    context_id: '{{voting_ctx}}'
+
+  # ── Floor: parameterless view asserts initial state ───────────────────────
+
+  - type: call
+    name: list_votes — baseline empty on app-node-1
+    node: app-node-1
+    context_id: '{{voting_ctx}}'
+    method: list_votes
+    args: {}
+    outputs:
+      votes_floor: result.output
+
+  - type: json_assert
+    name: list_votes returns empty list on a fresh context
+    statements:
+      - 'json_equal({{votes_floor}}, [])'
+
+  # ── Mutate: create_vote ───────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise create_vote on app-node-1
+    node: app-node-1
+    context_id: '{{voting_ctx}}'
+    method: create_vote
+    args:
+      title: "Lunch spot"
+      options:
+        - "Thai"
+        - "Sushi"
+        - "Pizza"
+    outputs:
+      created_vote_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for voting sync after create_vote
+    context_id: '{{voting_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm vote visible via list_votes on app-node-2
+    node: app-node-2
+    context_id: '{{voting_ctx}}'
+    method: list_votes
+    args: {}
+    outputs:
+      first_vote: result.output.0
+
+  - type: json_assert
+    name: create_vote produced a Vote with the correct title on app-node-2
+    statements:
+      - 'json_subset({{first_vote}}, {"title": "Lunch spot"})'
+
+  # ── Mutate: submit_ranking ────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise submit_ranking on app-node-1
+    node: app-node-1
+    context_id: '{{voting_ctx}}'
+    method: submit_ranking
+    args:
+      vote_id: '{{created_vote_id}}'
+      ranked_options:
+        - "Sushi"
+        - "Thai"
+        - "Pizza"
+    outputs:
+      created_ranking_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for voting sync after submit_ranking
+    context_id: '{{voting_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm ranking visible via get_rankings_for_vote on app-node-2
+    node: app-node-2
+    context_id: '{{voting_ctx}}'
+    method: get_rankings_for_vote
+    args:
+      vote_id: '{{created_vote_id}}'
+    outputs:
+      top_choice: result.output.0.ranked_options.0
+
+  - type: json_assert
+    name: submit_ranking stored Sushi as top-ranked option on app-node-2
+    statements:
+      - 'json_equal({{top_choice}}, "Sushi")'
+
+  # ── Mutate: update_ranking ────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise update_ranking on app-node-1
+    node: app-node-1
+    context_id: '{{voting_ctx}}'
+    method: update_ranking
+    args:
+      ranking_id: '{{created_ranking_id}}'
+      new_order:
+        - "Thai"
+        - "Sushi"
+        - "Pizza"
+
+  - type: wait_for_sync
+    name: Wait for voting sync after update_ranking
+    context_id: '{{voting_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm updated ranking order on app-node-2
+    node: app-node-2
+    context_id: '{{voting_ctx}}'
+    method: get_rankings_for_vote
+    args:
+      vote_id: '{{created_vote_id}}'
+    outputs:
+      updated_top_choice: result.output.0.ranked_options.0
+
+  - type: json_assert
+    name: update_ranking changed top choice to Thai on app-node-2
+    statements:
+      - 'json_equal({{updated_top_choice}}, "Thai")'
+
+  # ── Mutate: close_vote ────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise close_vote on app-node-1
+    node: app-node-1
+    context_id: '{{voting_ctx}}'
+    method: close_vote
+    args:
+      vote_id: '{{created_vote_id}}'
+
+  - type: wait_for_sync
+    name: Wait for voting sync after close_vote
+    context_id: '{{voting_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm vote status via get_vote on app-node-2
+    node: app-node-2
+    context_id: '{{voting_ctx}}'
+    method: get_vote
+    args:
+      vote_id: '{{created_vote_id}}'
+    outputs:
+      closed_vote_status: result.output.status
+
+  - type: json_assert
+    name: close_vote set vote status to closed on app-node-2
+    statements:
+      - 'json_equal({{closed_vote_status}}, "closed")'
