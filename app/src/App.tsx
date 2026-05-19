@@ -9,8 +9,12 @@ import { APP_PACKAGE, APP_ROUTE } from './config';
 
 export default function App() {
   const registryUrl = import.meta.env.VITE_REGISTRY_URL?.trim() || undefined;
+  // studio.config.json (APP_PACKAGE) is the source of truth for the
+  // published package. VITE_PACKAGE_NAME is only a fallback — the
+  // foundation template ships a stale `com.calimero.chat` default that
+  // must NOT shadow the real published package.
   const packageName =
-    import.meta.env.VITE_PACKAGE_NAME?.trim() || APP_PACKAGE;
+    APP_PACKAGE || import.meta.env.VITE_PACKAGE_NAME?.trim() || undefined;
 
   return (
     <MeroProvider
