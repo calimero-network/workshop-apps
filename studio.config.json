@@ -1,0 +1,22 @@
+{
+  "appName": "team-todo",
+  "appVersion": "0.1.0",
+  "package": "com.calimero-studio.test.team-todo4",
+  "metadata": {
+    "name": "team-todo",
+    "description": "Shared team task list where everyone adds, completes, and tracks work together",
+    "author": "Calimero",
+    "route": "/team-todo"
+  },
+  "theme": {
+    "primaryColor": "#3B82F6",
+    "accentColor": "#10B981",
+    "style": "clean-productive"
+  },
+  "services": [
+    {
+      "name": "todo",
+      "crate": "team-todo-todo"
+    }
+  ]
+}

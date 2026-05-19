@@ -1,0 +1,313 @@
+# Spec-derived two-node smoke test for team-todo.
+#
+# Exercises every API method in the spec:
+#   service: todo
+#   mutates: create_task, complete_task, uncomplete_task, edit_task, delete_task
+#   views:   list_tasks
+#
+# Usage (from the project root after building the bundle):
+#   merobox bootstrap run test/spec-smoke.workflow.yml
+#
+# Pre-flight: logic/res/team-todo-0.1.0.mpk must exist.
+
+name: team-todo smoke (generated)
+description: Spec-derived two-node smoke for team-todo — todo service
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 12428
+  base_rpc_port: 12528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # ── Deterministic floor: install, namespace, context, views ────────────────
+
+  - type: install_application
+    name: Install team-todo on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/team-todo-0.1.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install team-todo on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/team-todo-0.1.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: create_context
+    name: Create todo context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: todo
+    outputs:
+      todo_ctx: contextId
+
+  - type: join_context
+    name: app-node-2 joins todo context
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+
+  - type: wait_for_sync
+    name: Wait for todo sync across both nodes
+    context_id: '{{todo_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  # Baseline: list_tasks returns an empty array on both nodes.
+  - type: call
+    name: View list_tasks from app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      list_tasks_n1: result
+
+  - type: call
+    name: View list_tasks from app-node-2
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      list_tasks_n2: result
+
+  - type: json_assert
+    name: list_tasks agrees across nodes (baseline)
+    statements:
+      - 'equal({{list_tasks_n1}}, {{list_tasks_n2}})'
+
+  # ── Mutate: create_task ────────────────────────────────────────────────────
+  # Example: create_task("Review Q2 budget", "Check all line items") → Ok("task-7a2c")
+
+  - type: call
+    name: Exercise create_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: create_task
+    args:
+      title: "Review Q2 budget"
+      description: "Check all line items"
+    outputs:
+      created_task_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for todo sync after create_task
+    context_id: '{{todo_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm task visible on app-node-1 after create_task
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_after_create_n1: result
+
+  - type: call
+    name: Confirm task visible on app-node-2 after create_task
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_after_create_n2: result
+
+  - type: json_assert
+    name: create_task produced a visible Task on both nodes
+    statements:
+      - 'equal({{tasks_after_create_n1}}, {{tasks_after_create_n2}})'
+
+  # ── Mutate: complete_task ──────────────────────────────────────────────────
+  # Example: complete_task("task-7a2c") → Ok(())
+
+  - type: call
+    name: Exercise complete_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: complete_task
+    args:
+      task_id: '{{created_task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for todo sync after complete_task
+    context_id: '{{todo_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm task completed on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_after_complete_n1: result
+
+  - type: call
+    name: Confirm task completed on app-node-2
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_after_complete_n2: result
+
+  - type: json_assert
+    name: complete_task marked the task as completed
+    statements:
+      - 'equal({{tasks_after_complete_n1}}, {{tasks_after_complete_n2}})'
+
+  # ── Mutate: uncomplete_task ────────────────────────────────────────────────
+  # Example: uncomplete_task("task-7a2c") → Ok(())
+
+  - type: call
+    name: Exercise uncomplete_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: uncomplete_task
+    args:
+      task_id: '{{created_task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for todo sync after uncomplete_task
+    context_id: '{{todo_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm task uncompleted on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_after_uncomplete_n1: result
+
+  - type: call
+    name: Confirm task uncompleted on app-node-2
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_after_uncomplete_n2: result
+
+  - type: json_assert
+    name: uncomplete_task restored the task (still present)
+    statements:
+      - 'equal({{tasks_after_uncomplete_n1}}, {{tasks_after_uncomplete_n2}})'
+
+  # ── Mutate: edit_task ──────────────────────────────────────────────────────
+  # Example: edit_task("task-7a2c", "Review Q2 budget (updated)", "Check all vendors") → Ok(())
+
+  - type: call
+    name: Exercise edit_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: edit_task
+    args:
+      task_id: '{{created_task_id}}'
+      new_title: "Review Q2 budget (updated)"
+      new_description: "Check all vendors"
+
+  - type: wait_for_sync
+    name: Wait for todo sync after edit_task
+    context_id: '{{todo_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm edited task visible on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_after_edit_n1: result
+
+  - type: call
+    name: Confirm edited task visible on app-node-2
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_after_edit_n2: result
+
+  - type: json_assert
+    name: edit_task updated the task (still present on both nodes)
+    statements:
+      - 'equal({{tasks_after_edit_n1}}, {{tasks_after_edit_n2}})'
+
+  # ── Mutate: delete_task ────────────────────────────────────────────────────
+  # Example: delete_task("task-7a2c") → Ok(())
+
+  - type: call
+    name: Exercise delete_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: delete_task
+    args:
+      task_id: '{{created_task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for todo sync after delete_task
+    context_id: '{{todo_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm task removed on app-node-1 after delete_task
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_after_delete_n1: result
+
+  - type: call
+    name: Confirm task removed on app-node-2 after delete_task
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_after_delete_n2: result
+
+  - type: json_assert
+    name: delete_task removed the task from both nodes
+    statements:
+      # Both nodes agree post-delete
+      - 'equal({{tasks_after_delete_n1}}, {{tasks_after_delete_n2}})'
+      # Post-delete list equals the original empty baseline (proves the task is gone)
+      - 'equal({{tasks_after_delete_n2}}, {{list_tasks_n2}})'
