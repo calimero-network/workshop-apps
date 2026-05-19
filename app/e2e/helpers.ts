@@ -6,17 +6,25 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = path.resolve(__dirname, '..', '.playwright-data', 'pw-state.json');
 
-// App-agnostic post-auth route — read from studio.config.json so this
+// App-agnostic config — read from studio.config.json so this
 // infra file is identical across the foundation and every generated app
-// (no per-app patching). Foundation chat → "/chat".
-function appRoute(): string {
+// (no per-app patching).
+function loadStudioConfig(): { appName?: string; metadata?: { route?: string } } {
   try {
     const cfgPath = path.resolve(__dirname, '..', '..', 'studio.config.json');
-    const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'));
-    return cfg?.metadata?.route || '/';
+    return JSON.parse(readFileSync(cfgPath, 'utf-8'));
   } catch {
-    return '/';
+    return {};
   }
+}
+
+function appRoute(): string {
+  return loadStudioConfig()?.metadata?.route || '/';
+}
+
+function selectedNamespaceKey(): string {
+  const appName = loadStudioConfig()?.appName || 'chat';
+  return `${appName}:selectedNamespaceId`;
 }
 
 interface NodeState {
@@ -70,12 +78,13 @@ export async function clearAuth(page: Page) {
   try {
     const url = page.url();
     if (url === 'about:blank' || !url.startsWith('http')) return;
-    await page.evaluate(() => {
+    const nsKey = selectedNamespaceKey();
+    await page.evaluate((namespaceKey) => {
       [
         'mero:access_token', 'mero:refresh_token', 'mero:expires_at',
         'mero:node_url', 'mero:application_id', 'mero:context_id',
-        'mero:context_identity', 'chat:selectedNamespaceId',
+        'mero:context_identity', namespaceKey,
       ].forEach((k) => localStorage.removeItem(k));
-    });
+    }, nsKey);
   } catch { /* page may be closed */ }
 }
