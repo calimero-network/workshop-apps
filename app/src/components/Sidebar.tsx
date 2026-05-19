@@ -3,8 +3,6 @@ import type { GroupMember } from '@calimero-network/mero-react';
 import { Vote } from '../api/voting/VotingClient';
 import type { WorkspaceRecord } from '../hooks/useVotingWorkspace';
 
-const MAX_NAME_LEN = 20;
-
 interface SidebarProps {
   // Workspace selector
   workspaces: WorkspaceRecord[];

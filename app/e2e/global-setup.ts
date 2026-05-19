@@ -76,14 +76,14 @@ async function authenticate(adminUrl: string): Promise<{
   refreshToken: string;
 }> {
   const keypair = nacl.sign.keyPair();
-  const publicKeyBase58 = Buffer.from(keypair.publicKey).toString('base64');
+  const publicKeyBase64 = Buffer.from(keypair.publicKey).toString('base64');
 
   const resp = await fetch(`${adminUrl}/auth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       auth_method: 'user_password',
-      public_key: publicKeyBase58,
+      public_key: publicKeyBase64,
       client_name: 'playwright-e2e',
       timestamp: Date.now(),
       permissions: ['context:create', 'context:list', 'context:execute', 'admin:*'],
