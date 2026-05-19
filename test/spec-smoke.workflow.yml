@@ -1,0 +1,204 @@
+name: one-on-one-chat spec-smoke
+description: Verify chat service mutate methods replicate across two nodes.
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 13428
+  base_rpc_port: 13528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+
+  # ======================================================================
+  # Bootstrap: install bundle and create context on both nodes
+  # ======================================================================
+
+  - type: install_application
+    name: Install one-on-one-chat bundle on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/one-on-one-chat-0.1.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install one-on-one-chat bundle on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/one-on-one-chat-0.1.0.mpk
+
+  - type: create_namespace
+    name: Create namespace for chat
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      chat_ns: namespaceId
+
+  - type: create_context
+    name: Create chat context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{chat_ns}}'
+    service_name: chat
+    outputs:
+      chat_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation for app-node-2
+    node: app-node-1
+    namespace_id: '{{chat_ns}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{chat_ns}}'
+    invitation: '{{invitation}}'
+
+  - type: join_context
+    name: app-node-2 joins chat context
+    node: app-node-2
+    context_id: '{{chat_ctx}}'
+
+  # ======================================================================
+  # Floor: parameterless view — list_messages is empty at start.
+  # merobox json_assert ONLY supports json_equal(A,B) / json_subset(A,B);
+  # capture the UNWRAPPED value (result.output) so {{var}} is the bare
+  # list/dict, never the {output:...} envelope.
+  # ======================================================================
+
+  - type: call
+    name: Verify list_messages returns empty list initially
+    node: app-node-1
+    context_id: '{{chat_ctx}}'
+    method: list_messages
+    args: {}
+    outputs:
+      initial_list: result.output
+
+  - type: json_assert
+    name: list_messages is initially empty
+    statements:
+      - 'json_equal({{initial_list}}, [])'
+
+  # ======================================================================
+  # Mutate: send_message  (send_message(body) -> String id)
+  # ======================================================================
+
+  - type: call
+    name: Exercise send_message on app-node-1
+    node: app-node-1
+    context_id: '{{chat_ctx}}'
+    method: send_message
+    args:
+      body: "Hello from node one"
+    outputs:
+      sent_msg_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for chat sync after send_message
+    context_id: '{{chat_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm message visible on app-node-2 after send_message
+    node: app-node-2
+    context_id: '{{chat_ctx}}'
+    method: list_messages
+    args: {}
+    outputs:
+      sent_msg0: result.output.0
+
+  - type: json_assert
+    name: send_message produced a visible Message on app-node-2
+    statements:
+      - 'json_subset({{sent_msg0}}, {"body": "Hello from node one"})'
+
+  # ======================================================================
+  # Mutate: edit_message (reuses the id from send_message above)
+  # ======================================================================
+
+  - type: call
+    name: Exercise edit_message on app-node-1
+    node: app-node-1
+    context_id: '{{chat_ctx}}'
+    method: edit_message
+    args:
+      id: '{{sent_msg_id}}'
+      new_body: "Edited hello from node one"
+
+  - type: wait_for_sync
+    name: Wait for chat sync after edit_message
+    context_id: '{{chat_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm edited message visible on app-node-2
+    node: app-node-2
+    context_id: '{{chat_ctx}}'
+    method: list_messages
+    args: {}
+    outputs:
+      edited_msg0: result.output.0
+      edited_msg0_id: result.output.0.id
+
+  - type: json_assert
+    name: edit_message updated the body and kept the same id
+    statements:
+      - 'json_subset({{edited_msg0}}, {"body": "Edited hello from node one"})'
+      - 'json_equal({{edited_msg0_id}}, {{sent_msg_id}})'
+
+  # ======================================================================
+  # Mutate: delete_message (send a fresh message then delete it)
+  # ======================================================================
+
+  - type: call
+    name: Send a second message to use as delete target
+    node: app-node-1
+    context_id: '{{chat_ctx}}'
+    method: send_message
+    args:
+      body: "Second message to delete"
+    outputs:
+      delete_target_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after second send_message
+    context_id: '{{chat_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Exercise delete_message on app-node-1
+    node: app-node-1
+    context_id: '{{chat_ctx}}'
+    method: delete_message
+    args:
+      id: '{{delete_target_id}}'
+
+  - type: wait_for_sync
+    name: Wait for chat sync after delete_message
+    context_id: '{{chat_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm only the edited message remains on app-node-2
+    node: app-node-2
+    context_id: '{{chat_ctx}}'
+    method: list_messages
+    args: {}
+    outputs:
+      after_delete0: result.output.0
+
+  - type: json_assert
+    name: delete_message removed the target; survivor is the edited message
+    statements:
+      - 'json_subset({{after_delete0}}, {"body": "Edited hello from node one"})'
