@@ -1,0 +1,22 @@
+{
+  "appName": "shared-counter",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.shared-counter",
+  "metadata": {
+    "name": "shared-counter",
+    "description": "A live-updating counter that any participant can increment; everyone sees the total in real time.",
+    "author": "Calimero",
+    "route": "/shared-counter"
+  },
+  "theme": {
+    "primaryColor": "#3B82F6",
+    "accentColor": "#10B981",
+    "style": "minimal-bold"
+  },
+  "services": [
+    {
+      "name": "counter",
+      "crate": "shared-counter-counter"
+    }
+  ]
+}
