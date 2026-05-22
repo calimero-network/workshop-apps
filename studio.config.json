@@ -1,0 +1,22 @@
+{
+  "appName": "team-todos",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.team-todos",
+  "metadata": {
+    "name": "team-todos",
+    "description": "Shared task list where the team tracks who's doing what and celebrates completions together",
+    "author": "Calimero",
+    "route": "/team-todos"
+  },
+  "theme": {
+    "primaryColor": "#3B82F6",
+    "accentColor": "#10B981",
+    "style": "clean-professional"
+  },
+  "services": [
+    {
+      "name": "todos",
+      "crate": "team-todos-todos"
+    }
+  ]
+}
