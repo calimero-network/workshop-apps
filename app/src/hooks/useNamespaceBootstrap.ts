@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useMero } from '@calimero-network/mero-react';
-import { SERVICE_NAME } from '../config';
+import { COUNTER_SERVICE_NAME } from '../config';
 
 /**
  * Capability bits for the namespace.
@@ -54,11 +54,11 @@ export function useNamespaceBootstrap(
           defaultCapabilities: DEFAULT_CAPABILITIES,
         });
 
-        // 3. Create the lobby (workspace directory) context inside the namespace root group
+        // 3. Create the counter context inside the namespace root group
         const ctx = await mero.admin.createContext({
           applicationId,
           groupId: namespaceId,
-          serviceName: SERVICE_NAME.directory,
+          serviceName: COUNTER_SERVICE_NAME,
           initializationParams: [],
         });
 

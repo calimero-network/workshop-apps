@@ -10,8 +10,8 @@ Summary: A live-updating counter that any participant can increment; everyone se
 - [x] Implement view: [counter] get_counter() → app::Result<Counter>
 
 ## Frontend (app/)
-- [ ] Screen: CounterPage — Live counter display + increment button + reset button (creator only) + last activity info
-- [ ] Apply designTheme tokens
+- [x] Screen: CounterPage — Live counter display + increment button + reset button (creator only) + last activity info
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

@@ -73,9 +73,9 @@ export class CounterClient {
   /**
    * get_counter
    */
-  public async getCounter(): Promise<{  }> {
+  public async getCounter(): Promise<Counter> {
     const response = await this._mero.rpc.execute({ contextId: this._contextId, method: 'get_counter', argsJson: {}, executorPublicKey: this._executorPublicKey });
-    return response as {  };
+    return response as Counter;
   }
 
 }

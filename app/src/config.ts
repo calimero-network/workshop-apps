@@ -69,6 +69,10 @@ export const SERVICE_NAME = {
   },
 };
 
+/** Wire name of the primary (first) service. Used for apps with a single
+ *  service that does not carry a role `id` in studio.config.json. */
+export const COUNTER_SERVICE_NAME: string = config.services[0]?.name ?? 'counter';
+
 /** localStorage key for persisting the selected namespace, scoped per-app. */
 export const SELECTED_NAMESPACE_KEY = `${APP_NAME}:selectedNamespaceId`;
 
