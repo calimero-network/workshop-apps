@@ -60,9 +60,17 @@ function requireService(id: string): string {
 }
 
 export const SERVICE_NAME = {
-  /** Workspace-level service (lobby in chat): names, presence, directory listing. */
-  get directory(): string { return requireService('directory'); },
-  /** Per-context service (room in chat): the actual per-instance state. */
+  /** Workspace-level service (lobby in chat): names, presence, directory listing.
+   *  Falls back to the first declared service when no entry has id="directory",
+   *  which covers single-service apps (e.g. team-todos) where every service
+   *  doubles as the workspace-level context. */
+  get directory(): string {
+    const svc = byId('directory') ?? config.services[0];
+    if (!svc) throw new Error('studio.config.json: no services declared');
+    return svc.name;
+  },
+  /** Per-context service (room in chat): the actual per-instance state.
+   *  Returns null for single-service apps. */
   get instance(): string | null {
     const svc = byId('instance');
     return svc ? svc.name : null;

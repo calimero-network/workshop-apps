@@ -13,8 +13,8 @@ Summary: Shared task list where the team tracks who's doing what and celebrates 
 - [x] Implement view: [todos] list_tasks() → app::Result<Vec<Task>>
 
 ## Frontend (app/)
-- [ ] Screen: TodoListPage — Pending tasks grouped by assignee + completed section + create-task form
-- [ ] Apply designTheme tokens
+- [x] Screen: TodoListPage — Pending tasks grouped by assignee + completed section + create-task form
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds
