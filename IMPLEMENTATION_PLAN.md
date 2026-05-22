@@ -16,8 +16,8 @@ Summary: A live-updating counter that any participant can increment; everyone se
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds
 - [ ] tsc --noEmit passes
-- [ ] Test story (participant): increment the shared counter by 1 with a single tap
-- [ ] Test story (anyone watching): see the current total update live on my screen
-- [ ] Test story (participant): see who made the last increment and when
-- [ ] Test story (counter creator): reset the counter back to zero
-- [ ] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps
+- [x] Test story (participant): increment the shared counter by 1 with a single tap
+- [x] Test story (anyone watching): see the current total update live on my screen
+- [x] Test story (participant): see who made the last increment and when
+- [x] Test story (counter creator): reset the counter back to zero
+- [x] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps

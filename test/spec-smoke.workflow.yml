@@ -1,0 +1,170 @@
+# Spec-smoke workflow for shared-counter.
+#
+# Exercises both mutate methods (increment, reset) from the spec across two
+# nodes and verifies cross-node replication via get_counter.
+#
+# Usage (from the project root after a dev bundle has been built):
+#   merobox bootstrap run test/spec-smoke.workflow.yml
+#
+# Pre-flight: logic/build-bundle.sh must have produced
+#   logic/res/shared-counter-0.1.0.mpk
+
+name: shared-counter spec smoke
+description: >
+  Verify the counter service replicates increment and reset mutations across
+  two nodes using the Calimero merobox test harness.
+log_level: info
+
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 12428
+  base_rpc_port: 12528
+
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # ---------------------------------------------------------------------------
+  # Bootstrap: install bundle, create namespace + counter context, node 2 joins
+  # ---------------------------------------------------------------------------
+
+  - type: install_application
+    name: Install shared-counter bundle on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/shared-counter-0.1.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install shared-counter bundle on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/shared-counter-0.1.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create counter context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: counter
+    outputs:
+      counter_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation from app-node-1
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: join_context
+    name: app-node-2 joins counter context
+    node: app-node-2
+    context_id: '{{counter_ctx}}'
+
+  # ---------------------------------------------------------------------------
+  # Baseline view: initial counter state (floor assertion)
+  # ---------------------------------------------------------------------------
+
+  - type: call
+    name: Verify initial counter state on app-node-1
+    node: app-node-1
+    context_id: '{{counter_ctx}}'
+    method: get_counter
+    args: {}
+    outputs:
+      initial_counter: result.output
+
+  - type: json_assert
+    name: Initial counter total is 0
+    statements:
+      - 'json_subset({{initial_counter}}, {"total": 0})'
+
+  # ---------------------------------------------------------------------------
+  # Mutate: increment
+  # Spec: increment() → app::Result<u64>
+  # Example call: increment()  returns: Ok(42)
+  # ---------------------------------------------------------------------------
+
+  - type: call
+    name: Exercise increment on app-node-1
+    node: app-node-1
+    context_id: '{{counter_ctx}}'
+    method: increment
+    args: {}
+    outputs:
+      incr_result: result.output
+
+  - type: wait_for_sync
+    name: Wait for counter sync after increment
+    context_id: '{{counter_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm increment visible on app-node-2
+    node: app-node-2
+    context_id: '{{counter_ctx}}'
+    method: get_counter
+    args: {}
+    outputs:
+      counter_after_increment: result.output
+
+  - type: json_assert
+    name: increment returned new total and node-2 reflects it
+    statements:
+      - 'json_equal({{incr_result}}, 1)'
+      - 'json_subset({{counter_after_increment}}, {"total": 1})'
+
+  # ---------------------------------------------------------------------------
+  # Mutate: reset
+  # Spec: reset() → app::Result<()>
+  # Example call: reset()  returns: Ok(())
+  # ---------------------------------------------------------------------------
+
+  - type: call
+    name: Exercise reset on app-node-1
+    node: app-node-1
+    context_id: '{{counter_ctx}}'
+    method: reset
+    args: {}
+    outputs:
+      reset_result: result.output
+
+  - type: wait_for_sync
+    name: Wait for counter sync after reset
+    context_id: '{{counter_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm reset visible on app-node-2
+    node: app-node-2
+    context_id: '{{counter_ctx}}'
+    method: get_counter
+    args: {}
+    outputs:
+      counter_after_reset: result.output
+
+  - type: json_assert
+    name: reset returned null and counter total is 0 on node-2
+    statements:
+      - 'json_equal({{reset_result}}, null)'
+      - 'json_subset({{counter_after_reset}}, {"total": 0})'
