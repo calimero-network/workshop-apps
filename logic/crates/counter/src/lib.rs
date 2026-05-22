@@ -1,6 +1,5 @@
 //! Counter service — shared live counter with creator-gated reset.
 
-use chat_types::ChatError;
 use calimero_sdk::app;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::serde::{Deserialize, Serialize};
@@ -116,9 +115,7 @@ impl CounterState {
 
         let mut entry = self.load_counter()?;
         if caller != entry.creator {
-            app::bail!(ChatError::Forbidden(
-                "only the creator can reset the counter".into()
-            ));
+            app::bail!("forbidden: only the creator can reset the counter");
         }
 
         entry.total = 0;

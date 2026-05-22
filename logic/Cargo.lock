@@ -851,7 +851,6 @@ dependencies = [
  "calimero-storage",
  "calimero-storage-macros",
  "calimero-wasm-abi",
- "chat-types",
  "serde_json",
 ]
 
