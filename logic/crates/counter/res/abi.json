@@ -1,18 +1,7 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "Event_RoomCreated": {
+    "Counter": {
       "kind": "record",
       "fields": [
         {
@@ -22,193 +11,75 @@
           }
         },
         {
-          "name": "name",
+          "name": "total",
           "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "Event_RoomDeleted": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "LobbyState": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "created_ms",
-          "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
-            }
+            "kind": "u64"
           }
         },
         {
-          "name": "rooms",
+          "name": "last_incremented_by",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "last_increment_at",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "creator",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "CounterState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "counter",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "$ref": "RoomSummary"
+              "kind": "record",
+              "fields": [],
+              "crdt_type": "counter"
             },
             "crdt_type": "unordered_map"
           }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "u64"
-            },
-            "crdt_type": "authored_map"
-          }
-        },
-        {
-          "name": "names",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "string"
-            },
-            "crdt_type": "authored_map"
-          }
         }
       ]
     },
-    "NameEntry": {
+    "Event_CounterIncremented": {
       "kind": "record",
       "fields": [
         {
-          "name": "member",
+          "name": "by",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "PresenceEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_seen_ms",
+          "name": "total",
           "type": {
             "kind": "u64"
           }
         }
       ]
     },
-    "RoomActivity": {
+    "Event_CounterReset": {
       "kind": "record",
       "fields": [
         {
-          "name": "room_id",
+          "name": "by",
           "type": {
             "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomSummary": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "created_by",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          },
-          "nullable": true
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "created_ms",
-          "type": {
-            "kind": "u64"
           }
         }
       ]
@@ -223,175 +94,42 @@
       }
     },
     {
-      "name": "register_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "get_rooms",
+      "name": "increment",
       "params": [],
       "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomSummary"
-        }
+        "kind": "u64"
       }
     },
     {
-      "name": "get_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "heartbeat",
+      "name": "reset",
       "params": [],
       "returns": {
         "kind": "unit"
       }
     },
     {
-      "name": "list_presence",
+      "name": "get_counter",
       "params": [],
       "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
-      "params": [
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_names",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "NameEntry"
-        }
+        "kind": "record",
+        "fields": [],
+        "crdt_type": "counter"
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "CounterIncremented",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_CounterIncremented"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "CounterReset",
       "payload": {
-        "$ref": "Event_RoomDeleted"
-      }
-    },
-    {
-      "name": "RoomListUpdated"
-    },
-    {
-      "name": "NameChanged",
-      "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_CounterReset"
       }
     }
   ],
-  "state_root": "LobbyState"
+  "state_root": "CounterState"
 }
