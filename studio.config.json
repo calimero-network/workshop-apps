@@ -1,0 +1,22 @@
+{
+  "appName": "trip-tracker",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.trip-tracker",
+  "metadata": {
+    "name": "trip-tracker",
+    "description": "Live group expense ledger, location sharing, and shared photo feed for group travel",
+    "author": "Calimero",
+    "route": "/trip-tracker"
+  },
+  "theme": {
+    "primaryColor": "#FF6B6B",
+    "accentColor": "#4ECDC4",
+    "style": "travel-vibrant"
+  },
+  "services": [
+    {
+      "name": "trip",
+      "crate": "trip-tracker-trip"
+    }
+  ]
+}
