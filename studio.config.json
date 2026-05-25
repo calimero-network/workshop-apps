@@ -1,0 +1,22 @@
+{
+  "appName": "hackathon-hub",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.hackathon-hub",
+  "metadata": {
+    "name": "hackathon-hub",
+    "description": "Shared team workspace for coordinating docs, tasks, and demo plan over a hackathon weekend",
+    "author": "Calimero",
+    "route": "/hackathon-hub"
+  },
+  "theme": {
+    "primaryColor": "#7C3AED",
+    "accentColor": "#EC4899",
+    "style": "energetic-focus"
+  },
+  "services": [
+    {
+      "name": "hackathon-hub",
+      "crate": "hackathon-hub-hackathon-hub"
+    }
+  ]
+}
