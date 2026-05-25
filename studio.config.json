@@ -1,0 +1,22 @@
+{
+  "appName": "portfolio-sync",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.portfolio-sync",
+  "metadata": {
+    "name": "portfolio-sync",
+    "description": "Shared live feed where founders post updates and fund managers + investors watch and collaborate in real-time",
+    "author": "Calimero",
+    "route": "/portfolio-sync"
+  },
+  "theme": {
+    "primaryColor": "#1F2937",
+    "accentColor": "#3B82F6",
+    "style": "professional-clean"
+  },
+  "services": [
+    {
+      "name": "portfolio",
+      "crate": "portfolio-sync-portfolio"
+    }
+  ]
+}
