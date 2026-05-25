@@ -1,11 +1,13 @@
 #[calimero_sdk::app::event]
 pub enum Event<'a> {
-    /// A new room was created in the lobby.
-    RoomCreated { id: &'a str, name: &'a str },
-    /// A room was deleted from the lobby.
-    RoomDeleted { id: &'a str },
-    /// The room list changed (created, deleted, or updated).
-    RoomListUpdated {},
-    /// A member set or changed their display name.
-    NameChanged { id: &'a str },
+    /// A trip was created and activated.
+    TripCreated { id: &'a str, name: &'a str },
+    /// A traveler posted their current location/activity.
+    LocationPosted { id: &'a str, author: &'a str },
+    /// An expense was logged by a payer.
+    ExpenseLogged { id: &'a str, payer: &'a str },
+    /// A photo was uploaded to the trip feed.
+    PhotoUploaded { id: &'a str, author: &'a str },
+    /// The trip organizer finished/locked the trip.
+    TripFinished {},
 }

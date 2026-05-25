@@ -1,7 +1,30 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
+    "Balance": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "debtor",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "creditor",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "amount_cents",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Event_ExpenseLogged": {
       "kind": "record",
       "fields": [
         {
@@ -9,10 +32,50 @@
           "type": {
             "kind": "string"
           }
+        },
+        {
+          "name": "payer",
+          "type": {
+            "kind": "string"
+          }
         }
       ]
     },
-    "Event_RoomCreated": {
+    "Event_LocationPosted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_PhotoUploaded": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TripCreated": {
       "kind": "record",
       "fields": [
         {
@@ -29,7 +92,7 @@
         }
       ]
     },
-    "Event_RoomDeleted": {
+    "Expense": {
       "kind": "record",
       "fields": [
         {
@@ -37,178 +100,229 @@
           "type": {
             "kind": "string"
           }
+        },
+        {
+          "name": "payer",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "amount_cents",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "participants",
+          "type": {
+            "kind": "list",
+            "items": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "logged_at",
+          "type": {
+            "kind": "u64"
+          }
         }
       ]
     },
-    "LobbyState": {
+    "Location": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "posted_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "PersonAmount": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "member",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "amount_cents",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Photo": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "url",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "uploaded_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "SettlementSummary": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "spent",
+          "type": {
+            "kind": "list",
+            "items": {
+              "$ref": "PersonAmount"
+            }
+          }
+        },
+        {
+          "name": "owed",
+          "type": {
+            "kind": "list",
+            "items": {
+              "$ref": "PersonAmount"
+            }
+          }
+        },
+        {
+          "name": "balances",
+          "type": {
+            "kind": "list",
+            "items": {
+              "$ref": "Balance"
+            }
+          }
+        }
+      ]
+    },
+    "TripMeta": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "TripState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "metadata",
           "type": {
             "kind": "record",
             "fields": [],
             "crdt_type": "lww_register",
             "inner_type": {
-              "kind": "u64"
+              "$ref": "TripMeta"
             }
           }
         },
         {
-          "name": "rooms",
+          "name": "locations",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "u64"
+              "$ref": "Location"
             },
             "crdt_type": "authored_map"
           }
         },
         {
-          "name": "names",
+          "name": "expenses",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "kind": "string"
+              "$ref": "Expense"
             },
             "crdt_type": "authored_map"
           }
-        }
-      ]
-    },
-    "NameEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
         },
         {
-          "name": "name",
+          "name": "photos",
           "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "PresenceEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_seen_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomActivity": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomSummary": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "created_by",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          },
-          "nullable": true
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "created_ms",
-          "type": {
-            "kind": "u64"
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Photo"
+            },
+            "crdt_type": "authored_map"
           }
         }
       ]
@@ -223,130 +337,7 @@
       }
     },
     {
-      "name": "register_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "get_rooms",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomSummary"
-        }
-      }
-    },
-    {
-      "name": "get_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
+      "name": "create_trip",
       "params": [
         {
           "name": "name",
@@ -356,42 +347,139 @@
         }
       ],
       "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "finish_trip",
+      "params": [],
+      "returns": {
         "kind": "unit"
       }
     },
     {
-      "name": "list_names",
+      "name": "post_location",
+      "params": [
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "get_locations",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "Location"
         }
+      }
+    },
+    {
+      "name": "log_expense",
+      "params": [
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "amount_cents",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "participants",
+          "type": {
+            "kind": "list",
+            "items": {
+              "kind": "string"
+            }
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "get_expenses",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Expense"
+        }
+      }
+    },
+    {
+      "name": "upload_photo",
+      "params": [
+        {
+          "name": "url",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "get_photos",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Photo"
+        }
+      }
+    },
+    {
+      "name": "get_settlement",
+      "params": [],
+      "returns": {
+        "$ref": "SettlementSummary"
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "TripCreated",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_TripCreated"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "LocationPosted",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_LocationPosted"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "ExpenseLogged",
+      "payload": {
+        "$ref": "Event_ExpenseLogged"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "PhotoUploaded",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_PhotoUploaded"
       }
+    },
+    {
+      "name": "TripFinished"
     }
   ],
-  "state_root": "LobbyState"
+  "state_root": "TripState"
 }
