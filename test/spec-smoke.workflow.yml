@@ -1,0 +1,267 @@
+# Spec smoke test for portfolio-sync.
+#
+# Exercises every service API method (views AND mutates) declared in the spec
+# across two nodes, verifying CRDT replication end-to-end.
+#
+# Usage (from the project root after building the bundle):
+#   merobox bootstrap run test/spec-smoke.workflow.yml
+#
+# Pre-flight: logic/build-bundle.sh must have produced
+# logic/res/portfolio-sync-0.1.0.mpk
+
+name: portfolio-sync spec smoke
+description: >
+  Verify the portfolio service replicates updates, metrics, comments, and
+  subscriptions across two nodes within the expected sync window.
+log_level: info
+
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 13428
+  base_rpc_port: 13528
+
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # -------------------------------------------------------------------------
+  # Bootstrap: install bundle, create namespace + context, peer node-2 in
+  # -------------------------------------------------------------------------
+
+  - type: install_application
+    name: Install portfolio-sync bundle on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/portfolio-sync-0.1.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install portfolio-sync bundle on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/portfolio-sync-0.1.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create portfolio context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: portfolio
+    outputs:
+      portfolio_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation from app-node-1
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: join_context
+    name: app-node-2 joins portfolio context
+    node: app-node-2
+    context_id: '{{portfolio_ctx}}'
+
+  # -------------------------------------------------------------------------
+  # Deterministic floor: parameterless views return empty lists on a fresh node
+  # -------------------------------------------------------------------------
+
+  - type: call
+    name: get_updates on app-node-1 (initial — expect empty)
+    node: app-node-1
+    context_id: '{{portfolio_ctx}}'
+    method: get_updates
+    args: {}
+    outputs:
+      initial_updates: result.output
+
+  - type: json_assert
+    name: get_updates is empty on a fresh context
+    statements:
+      - 'json_equal({{initial_updates}}, [])'
+
+  - type: call
+    name: get_latest_metrics on app-node-1 (initial — expect empty)
+    node: app-node-1
+    context_id: '{{portfolio_ctx}}'
+    method: get_latest_metrics
+    args: {}
+    outputs:
+      initial_metrics: result.output
+
+  - type: json_assert
+    name: get_latest_metrics is empty on a fresh context
+    statements:
+      - 'json_equal({{initial_metrics}}, [])'
+
+  - type: call
+    name: get_subscriptions on app-node-1 (initial — expect empty)
+    node: app-node-1
+    context_id: '{{portfolio_ctx}}'
+    method: get_subscriptions
+    args: {}
+    outputs:
+      initial_subs: result.output
+
+  - type: json_assert
+    name: get_subscriptions is empty on a fresh context
+    statements:
+      - 'json_equal({{initial_subs}}, [])'
+
+  # -------------------------------------------------------------------------
+  # Mutate: post_update — founder posts; fund manager on node-2 sees it
+  # -------------------------------------------------------------------------
+
+  - type: call
+    name: Exercise post_update on app-node-1
+    node: app-node-1
+    context_id: '{{portfolio_ctx}}'
+    method: post_update
+    args:
+      company_name: "TechCo Inc"
+      body: "Strong month. MRR up 15%, runway at 18 months."
+    outputs:
+      created_update_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for portfolio sync after post_update
+    context_id: '{{portfolio_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm update visible on app-node-2 via get_updates
+    node: app-node-2
+    context_id: '{{portfolio_ctx}}'
+    method: get_updates
+    args: {}
+    outputs:
+      first_update: result.output.0
+
+  - type: json_assert
+    name: post_update produced a visible Update on app-node-2
+    statements:
+      - 'json_subset({{first_update}}, {"company_name": "TechCo Inc", "body": "Strong month. MRR up 15%, runway at 18 months."})'
+
+  # -------------------------------------------------------------------------
+  # Mutate: log_metric — founder logs numbers; fund manager on node-2 sees them
+  # -------------------------------------------------------------------------
+
+  - type: call
+    name: Exercise log_metric on app-node-1
+    node: app-node-1
+    context_id: '{{portfolio_ctx}}'
+    method: log_metric
+    args:
+      company_name: "TechCo Inc"
+      metric_name: "MRR"
+      value: "$45000"
+    outputs:
+      created_metric_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for portfolio sync after log_metric
+    context_id: '{{portfolio_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm metric visible on app-node-2 via get_latest_metrics
+    node: app-node-2
+    context_id: '{{portfolio_ctx}}'
+    method: get_latest_metrics
+    args: {}
+    outputs:
+      first_metric: result.output.0
+
+  - type: json_assert
+    name: log_metric produced a visible Metric on app-node-2
+    statements:
+      - 'json_subset({{first_metric}}, {"company_name": "TechCo Inc", "metric_name": "MRR", "value": "$45000"})'
+
+  # -------------------------------------------------------------------------
+  # Mutate: post_comment — fund manager comments; founder on node-2 sees it
+  # -------------------------------------------------------------------------
+
+  - type: call
+    name: Exercise post_comment on app-node-1
+    node: app-node-1
+    context_id: '{{portfolio_ctx}}'
+    method: post_comment
+    args:
+      update_id: '{{created_update_id}}'
+      body: "Great momentum. Discuss hiring plan next week."
+    outputs:
+      created_comment_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for portfolio sync after post_comment
+    context_id: '{{portfolio_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm comment visible on app-node-2 via get_comments
+    node: app-node-2
+    context_id: '{{portfolio_ctx}}'
+    method: get_comments
+    args:
+      update_id: '{{created_update_id}}'
+    outputs:
+      first_comment: result.output.0
+
+  - type: json_assert
+    name: post_comment produced a visible Comment on app-node-2
+    statements:
+      - 'json_subset({{first_comment}}, {"body": "Great momentum. Discuss hiring plan next week."})'
+
+  # -------------------------------------------------------------------------
+  # Mutate: follow_company — investor follows; subscription replicates to node-2
+  # -------------------------------------------------------------------------
+
+  - type: call
+    name: Exercise follow_company on app-node-1
+    node: app-node-1
+    context_id: '{{portfolio_ctx}}'
+    method: follow_company
+    args:
+      company_name: "TechCo Inc"
+    outputs:
+      created_sub_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for portfolio sync after follow_company
+    context_id: '{{portfolio_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm subscription visible on app-node-2 via get_subscriptions
+    node: app-node-2
+    context_id: '{{portfolio_ctx}}'
+    method: get_subscriptions
+    args: {}
+    outputs:
+      first_sub: result.output.0
+
+  - type: json_assert
+    name: follow_company produced a visible Subscription on app-node-2
+    statements:
+      - 'json_subset({{first_sub}}, {"company_name": "TechCo Inc"})'

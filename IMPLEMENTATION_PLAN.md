@@ -25,9 +25,9 @@ Summary: Shared live feed where founders post updates and fund managers + invest
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds
 - [ ] tsc --noEmit passes
-- [ ] Test story (founder): post a monthly progress update once and have it instantly visible to my fund manager and investors
-- [ ] Test story (fund manager): see all founder updates in one live feed as they come in
-- [ ] Test story (fund manager): see key metrics (burn rate, runway, MRR, user count) from all my portfolio companies on one dashboard
-- [ ] Test story (investor/LP): follow specific companies I care about and see their updates in real-time
-- [ ] Test story (fund manager): comment on a founder's update and have a conversation right there
-- [ ] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps
+- [x] Test story (founder): post a monthly progress update once and have it instantly visible to my fund manager and investors
+- [x] Test story (fund manager): see all founder updates in one live feed as they come in
+- [x] Test story (fund manager): see key metrics (burn rate, runway, MRR, user count) from all my portfolio companies on one dashboard
+- [x] Test story (investor/LP): follow specific companies I care about and see their updates in real-time
+- [x] Test story (fund manager): comment on a founder's update and have a conversation right there
+- [x] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps
