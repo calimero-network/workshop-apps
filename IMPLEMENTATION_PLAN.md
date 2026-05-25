@@ -4,18 +4,18 @@ App: portfolio-sync
 Summary: Shared live feed where founders post updates and fund managers + investors watch and collaborate in real-time
 
 ## Backend (logic/src/lib.rs)
-- [ ] Define entity: [portfolio] Update (id:LwwRegister<String>, company_name:LwwRegister<String>, author:LwwRegister<String>, body:LwwRegister<String>, created_at:LwwRegister<u64>)
-- [ ] Define entity: [portfolio] Metric (id:LwwRegister<String>, company_name:LwwRegister<String>, metric_name:LwwRegister<String>, value:LwwRegister<String>, author:LwwRegister<String>, timestamp_ms:LwwRegister<u64>)
-- [ ] Define entity: [portfolio] Comment (id:LwwRegister<String>, update_id:LwwRegister<String>, author:LwwRegister<String>, body:LwwRegister<String>, created_at:LwwRegister<u64>)
-- [ ] Define entity: [portfolio] Subscription (id:LwwRegister<String>, subscriber:LwwRegister<String>, company_name:LwwRegister<String>)
-- [ ] Implement mutate: [portfolio] post_update(company_name: String, body: String) → app::Result<String>
-- [ ] Implement mutate: [portfolio] log_metric(company_name: String, metric_name: String, value: String) → app::Result<String>
-- [ ] Implement view: [portfolio] get_updates() → app::Result<Vec<Update>>
-- [ ] Implement view: [portfolio] get_latest_metrics() → app::Result<Vec<Metric>>
-- [ ] Implement mutate: [portfolio] post_comment(update_id: String, body: String) → app::Result<String>
-- [ ] Implement view: [portfolio] get_comments(update_id: String) → app::Result<Vec<Comment>>
-- [ ] Implement mutate: [portfolio] follow_company(company_name: String) → app::Result<String>
-- [ ] Implement view: [portfolio] get_subscriptions() → app::Result<Vec<Subscription>>
+- [x] Define entity: [portfolio] Update (id:LwwRegister<String>, company_name:LwwRegister<String>, author:LwwRegister<String>, body:LwwRegister<String>, created_at:LwwRegister<u64>)
+- [x] Define entity: [portfolio] Metric (id:LwwRegister<String>, company_name:LwwRegister<String>, metric_name:LwwRegister<String>, value:LwwRegister<String>, author:LwwRegister<String>, timestamp_ms:LwwRegister<u64>)
+- [x] Define entity: [portfolio] Comment (id:LwwRegister<String>, update_id:LwwRegister<String>, author:LwwRegister<String>, body:LwwRegister<String>, created_at:LwwRegister<u64>)
+- [x] Define entity: [portfolio] Subscription (id:LwwRegister<String>, subscriber:LwwRegister<String>, company_name:LwwRegister<String>)
+- [x] Implement mutate: [portfolio] post_update(company_name: String, body: String) → app::Result<String>
+- [x] Implement mutate: [portfolio] log_metric(company_name: String, metric_name: String, value: String) → app::Result<String>
+- [x] Implement view: [portfolio] get_updates() → app::Result<Vec<Update>>
+- [x] Implement view: [portfolio] get_latest_metrics() → app::Result<Vec<Metric>>
+- [x] Implement mutate: [portfolio] post_comment(update_id: String, body: String) → app::Result<String>
+- [x] Implement view: [portfolio] get_comments(update_id: String) → app::Result<Vec<Comment>>
+- [x] Implement mutate: [portfolio] follow_company(company_name: String) → app::Result<String>
+- [x] Implement view: [portfolio] get_subscriptions() → app::Result<Vec<Subscription>>
 
 ## Frontend (app/)
 - [ ] Screen: UpdateFeed — Live chronological feed of founder updates with metrics, comment threads, and follow filters

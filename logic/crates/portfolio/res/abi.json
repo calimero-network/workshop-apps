@@ -1,7 +1,42 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
+    "Comment": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "update_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Event_CommentPosted": {
       "kind": "record",
       "fields": [
         {
@@ -12,24 +47,7 @@
         }
       ]
     },
-    "Event_RoomCreated": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "Event_RoomDeleted": {
+    "Event_CompanyFollowed": {
       "kind": "record",
       "fields": [
         {
@@ -40,173 +58,178 @@
         }
       ]
     },
-    "LobbyState": {
+    "Event_MetricLogged": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
+          "name": "id",
           "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
-            }
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_UpdatePosted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Metric": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
           }
         },
         {
-          "name": "rooms",
+          "name": "company_name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "metric_name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "timestamp_ms",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "PortfolioState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "updates",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "u64"
+              "$ref": "Update"
             },
             "crdt_type": "authored_map"
           }
         },
         {
-          "name": "names",
+          "name": "metrics",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
+              "$ref": "Metric"
+            },
+            "crdt_type": "authored_map"
+          }
+        },
+        {
+          "name": "comments",
+          "type": {
+            "kind": "map",
+            "key": {
               "kind": "string"
+            },
+            "value": {
+              "$ref": "Comment"
+            },
+            "crdt_type": "authored_map"
+          }
+        },
+        {
+          "name": "subscriptions",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Subscription"
             },
             "crdt_type": "authored_map"
           }
         }
       ]
     },
-    "NameEntry": {
+    "Subscription": {
       "kind": "record",
       "fields": [
         {
-          "name": "member",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "subscriber",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "company_name",
           "type": {
             "kind": "string"
           }
         }
       ]
     },
-    "PresenceEntry": {
+    "Update": {
       "kind": "record",
       "fields": [
         {
-          "name": "member",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "last_seen_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomActivity": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
+          "name": "company_name",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
+          "name": "author",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomSummary": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
+          "name": "body",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "created_by",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          },
-          "nullable": true
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "created_ms",
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
@@ -223,175 +246,158 @@
       }
     },
     {
-      "name": "register_room",
+      "name": "post_update",
       "params": [
         {
-          "name": "room_id",
+          "name": "company_name",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
+          "name": "body",
           "type": {
             "kind": "string"
           }
         }
       ],
       "returns": {
-        "$ref": "RoomSummary"
+        "kind": "string"
       }
     },
     {
-      "name": "get_rooms",
+      "name": "get_updates",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "RoomSummary"
+          "$ref": "Update"
         }
       }
     },
     {
-      "name": "get_room",
+      "name": "log_metric",
       "params": [
         {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
-      "params": [
-        {
-          "name": "room_id",
+          "name": "company_name",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
+          "name": "metric_name",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "message_count",
+          "name": "value",
           "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
+            "kind": "string"
           }
         }
       ],
       "returns": {
-        "kind": "unit"
+        "kind": "string"
       }
     },
     {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
+      "name": "get_latest_metrics",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "PresenceEntry"
+          "$ref": "Metric"
         }
       }
     },
     {
-      "name": "set_name",
+      "name": "post_comment",
       "params": [
         {
-          "name": "name",
+          "name": "update_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
           "type": {
             "kind": "string"
           }
         }
       ],
       "returns": {
-        "kind": "unit"
+        "kind": "string"
       }
     },
     {
-      "name": "list_names",
+      "name": "get_comments",
+      "params": [
+        {
+          "name": "update_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Comment"
+        }
+      }
+    },
+    {
+      "name": "follow_company",
+      "params": [
+        {
+          "name": "company_name",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "get_subscriptions",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "Subscription"
         }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "UpdatePosted",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_UpdatePosted"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "MetricLogged",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_MetricLogged"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "CommentPosted",
+      "payload": {
+        "$ref": "Event_CommentPosted"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "CompanyFollowed",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_CompanyFollowed"
       }
     }
   ],
-  "state_root": "LobbyState"
+  "state_root": "PortfolioState"
 }

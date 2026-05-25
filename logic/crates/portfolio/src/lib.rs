@@ -1,340 +1,234 @@
-//! Lobby service — room directory and membership tracking.
+//! Portfolio service — founder updates, metrics, comments, and subscriptions.
 
-use chat_types::{ChatError, PublicKey};
 use calimero_sdk::app;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
-use calimero_storage::collections::crdt_meta::MergeError;
-use calimero_storage::collections::{AuthoredMap, LwwRegister, Mergeable, UnorderedMap};
+use calimero_storage::collections::AuthoredMap;
 use calimero_storage::env as storage_env;
 
 pub mod events;
 use events::Event;
 
-const MAX_NAME_LEN: usize = 20;
-
 // ---------------------------------------------------------------------------
-// Data models
+// Entity structs
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct RoomSummary {
-    pub room_id: String,
-    pub name: String,
-    pub created_by: String,
-    pub context_id: Option<String>,
-    pub member_count: u64,
-    pub created_ms: u64,
-}
-
-impl Mergeable for RoomSummary {
-    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        if self.context_id.is_none() && other.context_id.is_some() {
-            self.context_id = other.context_id.clone();
-        }
-        if other.member_count > self.member_count {
-            self.member_count = other.member_count;
-        }
-        Ok(())
-    }
+pub struct Update {
+    pub id: String,
+    pub company_name: String,
+    pub author: String,
+    pub body: String,
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct RoomActivity {
-    pub room_id: String,
-    pub room_name: String,
-    pub last_message_ms: u64,
-    pub message_count: u64,
-}
-
-impl Mergeable for RoomActivity {
-    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        // Keep the most recent activity.
-        if other.last_message_ms > self.last_message_ms {
-            *self = other.clone();
-        }
-        Ok(())
-    }
+pub struct Metric {
+    pub id: String,
+    pub company_name: String,
+    pub metric_name: String,
+    pub value: String,
+    pub author: String,
+    pub timestamp_ms: u64,
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct PresenceEntry {
-    pub member: String,
-    pub last_seen_ms: u64,
+pub struct Comment {
+    pub id: String,
+    pub update_id: String,
+    pub author: String,
+    pub body: String,
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct NameEntry {
-    pub member: String,
-    pub name: String,
+pub struct Subscription {
+    pub id: String,
+    pub subscriber: String,
+    pub company_name: String,
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn from_executor_id() -> Result<PublicKey, ChatError> {
-    PublicKey::from_raw_bytes(&calimero_sdk::env::executor_id())
-}
-
-// ---------------------------------------------------------------------------
-// Lobby state
+// State
 // ---------------------------------------------------------------------------
 
 #[app::state(emits = for<'a> Event<'a>)]
 #[derive(BorshSerialize, BorshDeserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
-pub struct LobbyState {
-    created_ms: LwwRegister<u64>,
-    rooms: UnorderedMap<String, RoomSummary>,
-    activity: UnorderedMap<String, RoomActivity>,
-    /// Per-author presence: only the entry's own author can update or remove
-    /// their `last_seen_ms`. Spoofing is rejected at merge time by `AuthoredMap`.
-    presence: AuthoredMap<String, u64>,
-    /// Per-author display name: each member owns and edits only their own
-    /// entry. Truncated to `MAX_NAME_LEN` Unicode scalars at write time.
-    names: AuthoredMap<String, String>,
+pub struct PortfolioState {
+    updates: AuthoredMap<String, Update>,
+    metrics: AuthoredMap<String, Metric>,
+    comments: AuthoredMap<String, Comment>,
+    subscriptions: AuthoredMap<String, Subscription>,
 }
 
 #[app::logic]
-impl LobbyState {
+impl PortfolioState {
     #[app::init]
-    pub fn init() -> LobbyState {
-        LobbyState {
-            created_ms: LwwRegister::new(storage_env::time_now()),
-            rooms: UnorderedMap::new_with_field_name("lobby:rooms"),
-            activity: UnorderedMap::new_with_field_name("lobby:activity"),
-            presence: AuthoredMap::new_with_field_name("lobby:presence"),
-            names: AuthoredMap::new_with_field_name("lobby:names"),
+    pub fn init() -> PortfolioState {
+        PortfolioState {
+            updates: AuthoredMap::new_with_field_name("portfolio:updates"),
+            metrics: AuthoredMap::new_with_field_name("portfolio:metrics"),
+            comments: AuthoredMap::new_with_field_name("portfolio:comments"),
+            subscriptions: AuthoredMap::new_with_field_name("portfolio:subscriptions"),
         }
     }
 
-    // ---- Lobby API ----
+    // ---- Updates ----
 
-    /// Atomically register a new room. The client creates the room context
-    /// first (via admin createContext), then calls this with the resulting
-    /// context_id. This avoids the propagation race where a separate
-    /// `create_room` then `set_room_context_id` would expose a window with
-    /// `context_id == null` to remote peers.
-    ///
-    /// Idempotent on collision: if `room_id` already exists with the same
-    /// `name`, `created_by`, and `context_id`, returns the existing summary.
-    pub fn register_room(
+    /// Post a founder update. Returns the new update id.
+    pub fn post_update(
         &mut self,
-        room_id: String,
-        name: String,
-        context_id: String,
-    ) -> app::Result<RoomSummary> {
-        let caller = from_executor_id().map_err(|e| AppError::msg(e.to_string()))?;
-        let caller_b58 = caller.to_base58();
+        company_name: String,
+        body: String,
+    ) -> app::Result<String> {
+        let author = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+        let now_ns = storage_env::time_now();
+        let id = format!("upd-{:x}", now_ns);
+        let update = Update {
+            id: id.clone(),
+            company_name,
+            author,
+            body,
+            created_at: now_ns / 1_000_000,
+        };
+        self.updates
+            .insert(id.clone(), update)
+            .map_err(|e| AppError::msg(format!("updates.insert: {e}")))?;
+        app::emit!(Event::UpdatePosted { id: &id });
+        Ok(id)
+    }
 
-        if name.is_empty() || name.len() > 64 {
-            app::bail!(ChatError::Invalid(
-                "room name must be 1-64 characters".into()
-            ));
-        }
-        if !room_id.starts_with("room-") || room_id.len() < 16 || room_id.len() > 64 {
-            app::bail!(ChatError::Invalid(
-                "room_id must match room-{timestamp}-{nonce}".into()
-            ));
-        }
-        if context_id.is_empty() {
-            app::bail!(ChatError::Invalid("context_id must not be empty".into()));
-        }
+    /// Return all updates, newest first.
+    pub fn get_updates(&self) -> app::Result<Vec<Update>> {
+        let entries = self
+            .updates
+            .entries()
+            .map_err(|e| AppError::msg(format!("updates.entries: {e}")))?;
+        let mut updates: Vec<Update> = entries.map(|(_, v)| v).collect();
+        updates.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Ok(updates)
+    }
 
-        if let Some(existing) = self
-            .rooms
-            .get(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.get: {e}")))?
-        {
-            if existing.name == name
-                && existing.created_by == caller_b58
-                && existing.context_id.as_deref() == Some(context_id.as_str())
-            {
-                return Ok(existing);
+    // ---- Metrics ----
+
+    /// Log a metric value for a company. Returns the new metric id.
+    pub fn log_metric(
+        &mut self,
+        company_name: String,
+        metric_name: String,
+        value: String,
+    ) -> app::Result<String> {
+        let author = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+        let now_ns = storage_env::time_now();
+        let timestamp_ms = now_ns / 1_000_000;
+        let id = format!("met-{:x}", now_ns);
+        let metric = Metric {
+            id: id.clone(),
+            company_name,
+            metric_name,
+            value,
+            author,
+            timestamp_ms,
+        };
+        self.metrics
+            .insert(id.clone(), metric)
+            .map_err(|e| AppError::msg(format!("metrics.insert: {e}")))?;
+        app::emit!(Event::MetricLogged { id: &id });
+        Ok(id)
+    }
+
+    /// Return the latest metric entry per (company_name, metric_name) pair.
+    pub fn get_latest_metrics(&self) -> app::Result<Vec<Metric>> {
+        let entries = self
+            .metrics
+            .entries()
+            .map_err(|e| AppError::msg(format!("metrics.entries: {e}")))?;
+        let mut latest: std::collections::BTreeMap<String, Metric> =
+            std::collections::BTreeMap::new();
+        for (_, metric) in entries {
+            let key = format!("{}:{}", metric.company_name, metric.metric_name);
+            let entry = latest.entry(key).or_insert_with(|| metric.clone());
+            if metric.timestamp_ms > entry.timestamp_ms {
+                *entry = metric;
             }
-            app::bail!(ChatError::RoomAlreadyExists);
         }
-
-        let summary = RoomSummary {
-            room_id: room_id.clone(),
-            name: name.clone(),
-            created_by: caller_b58,
-            context_id: Some(context_id),
-            member_count: 0,
-            created_ms: storage_env::time_now(),
-        };
-
-        self.rooms
-            .insert(room_id.clone(), summary.clone())
-            .map_err(|e| AppError::msg(format!("rooms.insert: {e}")))?;
-
-        app::emit!(Event::RoomCreated {
-            id: &room_id,
-            name: &name,
-        });
-        app::emit!(Event::RoomListUpdated {});
-        Ok(summary)
+        Ok(latest.into_values().collect())
     }
 
-    pub fn get_rooms(&self) -> app::Result<Vec<RoomSummary>> {
-        let entries = self
-            .rooms
-            .entries()
-            .map_err(|e| AppError::msg(format!("rooms.entries: {e}")))?;
-        Ok(entries.map(|(_, v)| v).collect())
-    }
+    // ---- Comments ----
 
-    pub fn get_room(&self, room_id: String) -> app::Result<Option<RoomSummary>> {
-        self.rooms
-            .get(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.get: {e}")))
-    }
-
-    pub fn delete_room(&mut self, room_id: String) -> app::Result<()> {
-        let exists = self
-            .rooms
-            .contains(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.contains: {e}")))?;
-        if !exists {
-            app::bail!(ChatError::NotFound(room_id));
-        }
-
-        self.rooms
-            .remove(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.remove: {e}")))?;
-        let _ = self.activity.remove(&room_id);
-
-        app::emit!(Event::RoomDeleted { id: &room_id });
-        app::emit!(Event::RoomListUpdated {});
-        Ok(())
-    }
-
-    pub fn get_activity(&self) -> app::Result<Vec<RoomActivity>> {
-        let entries = self
-            .activity
-            .entries()
-            .map_err(|e| AppError::msg(format!("activity.entries: {e}")))?;
-        Ok(entries.map(|(_, v)| v).collect())
-    }
-
-    /// Called via xcall from the room service when a message is sent.
-    pub fn on_room_message(
+    /// Post a comment on an update. Returns the new comment id.
+    pub fn post_comment(
         &mut self,
-        room_id: String,
-        room_name: String,
-        message_count: u64,
-        timestamp_ms: u64,
-    ) -> app::Result<()> {
-        let activity = RoomActivity {
-            room_id: room_id.clone(),
-            room_name,
-            last_message_ms: timestamp_ms,
-            message_count,
+        update_id: String,
+        body: String,
+    ) -> app::Result<String> {
+        let author = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+        let now_ns = storage_env::time_now();
+        let id = format!("cmt-{:x}", now_ns);
+        let comment = Comment {
+            id: id.clone(),
+            update_id,
+            author,
+            body,
+            created_at: now_ns / 1_000_000,
         };
-        self.activity
-            .insert(room_id, activity)
-            .map_err(|e| AppError::msg(format!("activity.insert: {e}")))?;
-
-        app::emit!(Event::RoomListUpdated {});
-        Ok(())
+        self.comments
+            .insert(id.clone(), comment)
+            .map_err(|e| AppError::msg(format!("comments.insert: {e}")))?;
+        app::emit!(Event::CommentPosted { id: &id });
+        Ok(id)
     }
 
-    // ---- Presence ----
-
-    /// Record that the caller is currently online. First call inserts;
-    /// subsequent calls update the caller's own entry. AuthoredMap rejects
-    /// updates by anyone other than the original author at merge time, so a
-    /// peer cannot spoof anyone else's last_seen.
-    ///
-    /// `storage_env::time_now()` returns nanoseconds since epoch; we convert
-    /// to ms so the value lines up with `Date.now()` on the frontend.
-    /// Heartbeat emits no event — at 15s cadence it would spam the bus.
-    pub fn heartbeat(&mut self) -> app::Result<()> {
-        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
-        let now_ms = storage_env::time_now() / 1_000_000;
-        let exists = self
-            .presence
-            .contains(&caller)
-            .map_err(|e| AppError::msg(format!("presence.contains: {e}")))?;
-        if exists {
-            self.presence
-                .update(&caller, now_ms)
-                .map_err(|e| AppError::msg(format!("presence.update: {e}")))?;
-        } else {
-            self.presence
-                .insert(caller, now_ms)
-                .map_err(|e| AppError::msg(format!("presence.insert: {e}")))?;
-        }
-        Ok(())
-    }
-
-    /// Return one PresenceEntry per member who has ever heartbeated. Clients
-    /// filter by recency (typically `now - last_seen_ms <= 35_000`) to derive
-    /// the online set.
-    pub fn list_presence(&self) -> app::Result<Vec<PresenceEntry>> {
+    /// Return all comments for a given update, oldest first.
+    pub fn get_comments(&self, update_id: String) -> app::Result<Vec<Comment>> {
         let entries = self
-            .presence
+            .comments
             .entries()
-            .map_err(|e| AppError::msg(format!("presence.entries: {e}")))?;
-        Ok(entries
-            .map(|(member, last_seen_ms)| PresenceEntry { member, last_seen_ms })
-            .collect())
+            .map_err(|e| AppError::msg(format!("comments.entries: {e}")))?;
+        let mut comments: Vec<Comment> = entries
+            .map(|(_, v)| v)
+            .filter(|c| c.update_id == update_id)
+            .collect();
+        comments.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        Ok(comments)
     }
 
-    // ---- Display names ----
+    // ---- Subscriptions ----
 
-    /// Set the caller's display name. Truncated to `MAX_NAME_LEN` Unicode
-    /// scalar values (`chars().take(...)`) so multi-byte codepoints are not
-    /// split in the middle. AuthoredMap enforces author-only edits.
-    pub fn set_name(&mut self, name: String) -> app::Result<()> {
-        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
-        let truncated: String = name.chars().take(MAX_NAME_LEN).collect();
-        let exists = self
-            .names
-            .contains(&caller)
-            .map_err(|e| AppError::msg(format!("names.contains: {e}")))?;
-        if exists {
-            self.names
-                .update(&caller, truncated)
-                .map_err(|e| AppError::msg(format!("names.update: {e}")))?;
-        } else {
-            self.names
-                .insert(caller.clone(), truncated)
-                .map_err(|e| AppError::msg(format!("names.insert: {e}")))?;
-        }
-        app::emit!(Event::NameChanged { id: &caller });
-        Ok(())
+    /// Follow a company. Returns the new subscription id.
+    pub fn follow_company(&mut self, company_name: String) -> app::Result<String> {
+        let subscriber = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+        let now_ns = storage_env::time_now();
+        let id = format!("sub-{:x}", now_ns);
+        let subscription = Subscription {
+            id: id.clone(),
+            subscriber,
+            company_name,
+        };
+        self.subscriptions
+            .insert(id.clone(), subscription)
+            .map_err(|e| AppError::msg(format!("subscriptions.insert: {e}")))?;
+        app::emit!(Event::CompanyFollowed { id: &id });
+        Ok(id)
     }
 
-    /// Return one NameEntry per member who has set a display name.
-    pub fn list_names(&self) -> app::Result<Vec<NameEntry>> {
+    /// Return all subscriptions.
+    pub fn get_subscriptions(&self) -> app::Result<Vec<Subscription>> {
         let entries = self
-            .names
+            .subscriptions
             .entries()
-            .map_err(|e| AppError::msg(format!("names.entries: {e}")))?;
-        Ok(entries
-            .map(|(member, name)| NameEntry { member, name })
-            .collect())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn init_populates_created_ms() {
-        let state = LobbyState::init();
-        assert!(*state.created_ms.get() > 0);
+            .map_err(|e| AppError::msg(format!("subscriptions.entries: {e}")))?;
+        Ok(entries.map(|(_, v)| v).collect())
     }
 }
