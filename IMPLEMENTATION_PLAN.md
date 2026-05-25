@@ -18,9 +18,9 @@ Summary: Shared live feed where founders post updates and fund managers + invest
 - [x] Implement view: [portfolio] get_subscriptions() → app::Result<Vec<Subscription>>
 
 ## Frontend (app/)
-- [ ] Screen: UpdateFeed — Live chronological feed of founder updates with metrics, comment threads, and follow filters
-- [ ] Screen: MetricsDashboard — Grid or table view of latest metrics from all portfolio companies, sortable and filterable
-- [ ] Apply designTheme tokens
+- [x] Screen: UpdateFeed — Live chronological feed of founder updates with metrics, comment threads, and follow filters
+- [x] Screen: MetricsDashboard — Grid or table view of latest metrics from all portfolio companies, sortable and filterable
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

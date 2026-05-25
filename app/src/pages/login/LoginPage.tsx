@@ -17,10 +17,11 @@ export default function LoginPage() {
   return (
     <div className="app-bg">
       <div className="page-shell" style={{ justifyContent: 'center', alignItems: 'center', gap: '2rem' }}>
-        <h1 style={{ fontSize: '2.5rem', fontWeight: 700 }}>Calimero Chat</h1>
-        <p style={{ color: '#888', maxWidth: 400, textAlign: 'center' }}>
-          Decentralized multi-room chat powered by Calimero. Create rooms,
-          invite friends, and chat with end-to-end privacy.
+        <h1 style={{ fontSize: '2.5rem', fontWeight: 700 }}>Portfolio Sync</h1>
+        <p style={{ color: '#888', maxWidth: 420, textAlign: 'center' }}>
+          Shared live feed for founders, fund managers, and investors.
+          Post updates, track metrics, and collaborate — all in real-time on
+          the decentralized Calimero network.
         </p>
         <ConnectButton />
         <Button

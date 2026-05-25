@@ -54,6 +54,10 @@ const byId = (id: string) => config.services.find((s) => s.id === id);
 function requireService(id: string): string {
   const svc = byId(id);
   if (!svc) {
+    // Single-service apps omit `id` from studio.config.json — fall back to
+    // the only declared service so SERVICE_NAME.directory resolves correctly
+    // without requiring an `id` field in the config.
+    if (config.services.length === 1) return config.services[0].name;
     throw new Error(`studio.config.json: services[] missing entry for id="${id}"`);
   }
   return svc.name;
