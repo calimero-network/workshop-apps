@@ -14,7 +14,8 @@ async function ensureWorkspace(page: Page): Promise<void> {
   if (visible) {
     await createBtn.click();
     // CreateWorkspaceModal: h3 "New Workspace", button "Create" (name optional → uses default)
-    await page.getByRole('button', { name: 'Create' }).click();
+    // exact: true prevents substring-match against the still-visible "Create Workspace" button
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
     await expect(page.getByText('📡 Update Feed')).toBeVisible({ timeout: 15_000 });
   }
 }
