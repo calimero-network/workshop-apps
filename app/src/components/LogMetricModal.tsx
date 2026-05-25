@@ -40,7 +40,7 @@ export default function LogMetricModal({ onLog, onClose }: LogMetricModalProps) 
         background: '#1e293b', borderRadius: 12, padding: '1.5rem',
         width: 420, border: '1px solid #334155',
       }} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: '1rem', color: '#e2e8f0' }}>Log Metric</h3>
+        <h3 style={{ marginBottom: '1rem', color: '#e2e8f0' }}>New Metric</h3>
 
         <label style={{ display: 'block', marginBottom: '0.75rem' }}>
           <span style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.25rem', display: 'block' }}>

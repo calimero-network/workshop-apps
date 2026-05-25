@@ -69,9 +69,13 @@ export function usePortfolioData(
   }, [mero, contextId, lobbyExecutorPublicKey]);
 
   const getClient = useCallback((): PortfolioClient | null => {
-    if (!mero || !contextId || !executorKey) return null;
-    return new PortfolioClient(mero, contextId, executorKey);
-  }, [mero, contextId, executorKey]);
+    // Use the context-specific identity when resolved; fall back to the lobby
+    // executor key immediately so the first mutation after workspace creation
+    // doesn't silently no-op while getContextIdentitiesOwned is still in flight.
+    const key = executorKey ?? lobbyExecutorPublicKey;
+    if (!mero || !contextId || !key) return null;
+    return new PortfolioClient(mero, contextId, key);
+  }, [mero, contextId, executorKey, lobbyExecutorPublicKey]);
 
   const refresh = useCallback(async () => {
     const client = getClient();

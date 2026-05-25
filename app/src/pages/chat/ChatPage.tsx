@@ -183,6 +183,7 @@ export default function ChatPage() {
                 metrics={portfolio.metrics}
                 loading={portfolio.loading}
                 onLogMetric={() => setShowLogMetric(true)}
+                logMetricOpen={showLogMetric}
               />
             )}
           </div>

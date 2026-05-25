@@ -277,6 +277,11 @@ export function useChatLobby(): UseChatLobbyReturn {
     if (result) {
       setExecutorPublicKey(result.memberPublicKey);
       setLobbyJoined(true);
+      // Set lobbyContextId directly from the bootstrap result so the portfolio
+      // client is available immediately — before the async useGroupContexts +
+      // getContext effect chain completes. Without this, new-workspace tests
+      // race against the async resolution and the first postUpdate is dropped.
+      setLobbyContextId(result.lobbyContextId);
       setSelectedNsId(result.namespaceId);
       persistSelectedNamespaceId(result.namespaceId);
       await refetchNamespaces();

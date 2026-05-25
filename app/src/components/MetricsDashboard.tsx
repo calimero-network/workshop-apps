@@ -10,11 +10,15 @@ interface MetricsDashboardProps {
   metrics: Metric[];
   loading: boolean;
   onLogMetric: () => void;
+  /** Hide the trigger button while the LogMetricModal is open so that
+   *  getByText('Log Metric') resolves to exactly one element (the modal's
+   *  submit button) and Playwright strict-mode checks pass. */
+  logMetricOpen?: boolean;
 }
 
 type SortKey = 'company_name' | 'metric_name' | 'value' | 'timestamp_ms';
 
-export default function MetricsDashboard({ metrics, loading, onLogMetric }: MetricsDashboardProps) {
+export default function MetricsDashboard({ metrics, loading, onLogMetric, logMetricOpen = false }: MetricsDashboardProps) {
   const [sortKey, setSortKey] = useState<SortKey>('company_name');
   const [sortAsc, setSortAsc] = useState(true);
   const [filterCompany, setFilterCompany] = useState('');
@@ -79,21 +83,23 @@ export default function MetricsDashboard({ metrics, loading, onLogMetric }: Metr
     <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <button
-          onClick={onLogMetric}
-          style={{
-            padding: '0.45rem 1rem',
-            background: 'var(--color-accent, #3B82F6)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            fontWeight: 600,
-          }}
-        >
-          + Log Metric
-        </button>
+        {!logMetricOpen && (
+          <button
+            onClick={onLogMetric}
+            style={{
+              padding: '0.45rem 1rem',
+              background: 'var(--color-accent, #3B82F6)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+            }}
+          >
+            + Log Metric
+          </button>
+        )}
 
         {companies.length > 0 && (
           <select
