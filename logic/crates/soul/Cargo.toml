@@ -7,11 +7,9 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-chat-types = { workspace = true }
 bs58 = { workspace = true }
 calimero-sdk = { workspace = true }
 calimero-storage = { workspace = true }
-calimero-storage-macros = { workspace = true }
 
 [build-dependencies]
 calimero-wasm-abi = { workspace = true }

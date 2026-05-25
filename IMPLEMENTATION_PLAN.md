@@ -4,12 +4,12 @@ App: soul
 Summary: Personal knowledge vault with optional sharing — store notes about yourself and collaborate on shared contexts.
 
 ## Backend (logic/src/lib.rs)
-- [ ] Define entity: [soul] MemoryItem (id:LwwRegister<String>, text:LwwRegister<String>, tags:LwwRegister<Vec<String>>, author:LwwRegister<String>, created_at:LwwRegister<u64>, updated_at:LwwRegister<u64>)
-- [ ] Implement mutate: [soul] add_memory(text: String, tags: Vec<String>) → app::Result<String>
-- [ ] Implement mutate: [soul] update_memory(id: String, text: String, tags: Vec<String>) → app::Result<()>
-- [ ] Implement mutate: [soul] delete_memory(id: String) → app::Result<()>
-- [ ] Implement view: [soul] list_memories() → app::Result<Vec<MemoryItem>>
-- [ ] Implement view: [soul] query_by_tags(tags: Vec<String>) → app::Result<Vec<MemoryItem>>
+- [x] Define entity: [soul] MemoryItem (id:LwwRegister<String>, text:LwwRegister<String>, tags:LwwRegister<Vec<String>>, author:LwwRegister<String>, created_at:LwwRegister<u64>, updated_at:LwwRegister<u64>)
+- [x] Implement mutate: [soul] add_memory(text: String, tags: Vec<String>) → app::Result<String>
+- [x] Implement mutate: [soul] update_memory(id: String, text: String, tags: Vec<String>) → app::Result<()>
+- [x] Implement mutate: [soul] delete_memory(id: String) → app::Result<()>
+- [x] Implement view: [soul] list_memories() → app::Result<Vec<MemoryItem>>
+- [x] Implement view: [soul] query_by_tags(tags: Vec<String>) → app::Result<Vec<MemoryItem>>
 
 ## Frontend (app/)
 - [ ] Screen: SoulView — Personal Soul context — list of your own notes, create new, edit/delete, filter by tag, manage your preferences
