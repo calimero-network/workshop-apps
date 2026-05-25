@@ -90,12 +90,12 @@ steps:
     method: get_updates
     args: {}
     outputs:
-      initial_updates: result.output
+      initial_updates: result
 
   - type: json_assert
     name: get_updates is empty on a fresh context
     statements:
-      - 'json_equal({{initial_updates}}, [])'
+      - 'equal({{initial_updates}}, [])'
 
   - type: call
     name: get_latest_metrics on app-node-1 (initial — expect empty)
@@ -104,12 +104,12 @@ steps:
     method: get_latest_metrics
     args: {}
     outputs:
-      initial_metrics: result.output
+      initial_metrics: result
 
   - type: json_assert
     name: get_latest_metrics is empty on a fresh context
     statements:
-      - 'json_equal({{initial_metrics}}, [])'
+      - 'equal({{initial_metrics}}, [])'
 
   - type: call
     name: get_subscriptions on app-node-1 (initial — expect empty)
@@ -118,12 +118,12 @@ steps:
     method: get_subscriptions
     args: {}
     outputs:
-      initial_subs: result.output
+      initial_subs: result
 
   - type: json_assert
     name: get_subscriptions is empty on a fresh context
     statements:
-      - 'json_equal({{initial_subs}}, [])'
+      - 'equal({{initial_subs}}, [])'
 
   # -------------------------------------------------------------------------
   # Mutate: post_update — founder posts; fund manager on node-2 sees it
@@ -138,7 +138,7 @@ steps:
       company_name: "TechCo Inc"
       body: "Strong month. MRR up 15%, runway at 18 months."
     outputs:
-      created_update_id: result.output
+      created_update_id: result
 
   - type: wait_for_sync
     name: Wait for portfolio sync after post_update
@@ -147,18 +147,27 @@ steps:
     timeout: 30
 
   - type: call
-    name: Confirm update visible on app-node-2 via get_updates
+    name: get_updates on app-node-1 after post_update
+    node: app-node-1
+    context_id: '{{portfolio_ctx}}'
+    method: get_updates
+    args: {}
+    outputs:
+      updates_n1: result
+
+  - type: call
+    name: get_updates on app-node-2 after post_update
     node: app-node-2
     context_id: '{{portfolio_ctx}}'
     method: get_updates
     args: {}
     outputs:
-      first_update: result.output.0
+      updates_n2: result
 
   - type: json_assert
-    name: post_update produced a visible Update on app-node-2
+    name: post_update replicated identically to both nodes
     statements:
-      - 'json_subset({{first_update}}, {"company_name": "TechCo Inc", "body": "Strong month. MRR up 15%, runway at 18 months."})'
+      - 'equal({{updates_n1}}, {{updates_n2}})'
 
   # -------------------------------------------------------------------------
   # Mutate: log_metric — founder logs numbers; fund manager on node-2 sees them
@@ -173,8 +182,6 @@ steps:
       company_name: "TechCo Inc"
       metric_name: "MRR"
       value: "$45000"
-    outputs:
-      created_metric_id: result.output
 
   - type: wait_for_sync
     name: Wait for portfolio sync after log_metric
@@ -183,18 +190,27 @@ steps:
     timeout: 30
 
   - type: call
-    name: Confirm metric visible on app-node-2 via get_latest_metrics
+    name: get_latest_metrics on app-node-1 after log_metric
+    node: app-node-1
+    context_id: '{{portfolio_ctx}}'
+    method: get_latest_metrics
+    args: {}
+    outputs:
+      metrics_n1: result
+
+  - type: call
+    name: get_latest_metrics on app-node-2 after log_metric
     node: app-node-2
     context_id: '{{portfolio_ctx}}'
     method: get_latest_metrics
     args: {}
     outputs:
-      first_metric: result.output.0
+      metrics_n2: result
 
   - type: json_assert
-    name: log_metric produced a visible Metric on app-node-2
+    name: log_metric replicated identically to both nodes
     statements:
-      - 'json_subset({{first_metric}}, {"company_name": "TechCo Inc", "metric_name": "MRR", "value": "$45000"})'
+      - 'equal({{metrics_n1}}, {{metrics_n2}})'
 
   # -------------------------------------------------------------------------
   # Mutate: post_comment — fund manager comments; founder on node-2 sees it
@@ -208,8 +224,6 @@ steps:
     args:
       update_id: '{{created_update_id}}'
       body: "Great momentum. Discuss hiring plan next week."
-    outputs:
-      created_comment_id: result.output
 
   - type: wait_for_sync
     name: Wait for portfolio sync after post_comment
@@ -218,19 +232,29 @@ steps:
     timeout: 30
 
   - type: call
-    name: Confirm comment visible on app-node-2 via get_comments
+    name: get_comments on app-node-1 after post_comment
+    node: app-node-1
+    context_id: '{{portfolio_ctx}}'
+    method: get_comments
+    args:
+      update_id: '{{created_update_id}}'
+    outputs:
+      comments_n1: result
+
+  - type: call
+    name: get_comments on app-node-2 after post_comment
     node: app-node-2
     context_id: '{{portfolio_ctx}}'
     method: get_comments
     args:
       update_id: '{{created_update_id}}'
     outputs:
-      first_comment: result.output.0
+      comments_n2: result
 
   - type: json_assert
-    name: post_comment produced a visible Comment on app-node-2
+    name: post_comment replicated identically to both nodes
     statements:
-      - 'json_subset({{first_comment}}, {"body": "Great momentum. Discuss hiring plan next week."})'
+      - 'equal({{comments_n1}}, {{comments_n2}})'
 
   # -------------------------------------------------------------------------
   # Mutate: follow_company — investor follows; subscription replicates to node-2
@@ -243,8 +267,6 @@ steps:
     method: follow_company
     args:
       company_name: "TechCo Inc"
-    outputs:
-      created_sub_id: result.output
 
   - type: wait_for_sync
     name: Wait for portfolio sync after follow_company
@@ -253,15 +275,24 @@ steps:
     timeout: 30
 
   - type: call
-    name: Confirm subscription visible on app-node-2 via get_subscriptions
+    name: get_subscriptions on app-node-1 after follow_company
+    node: app-node-1
+    context_id: '{{portfolio_ctx}}'
+    method: get_subscriptions
+    args: {}
+    outputs:
+      subs_n1: result
+
+  - type: call
+    name: get_subscriptions on app-node-2 after follow_company
     node: app-node-2
     context_id: '{{portfolio_ctx}}'
     method: get_subscriptions
     args: {}
     outputs:
-      first_sub: result.output.0
+      subs_n2: result
 
   - type: json_assert
-    name: follow_company produced a visible Subscription on app-node-2
+    name: follow_company replicated identically to both nodes
     statements:
-      - 'json_subset({{first_sub}}, {"company_name": "TechCo Inc"})'
+      - 'equal({{subs_n1}}, {{subs_n2}})'
