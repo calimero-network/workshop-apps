@@ -4,13 +4,13 @@ App: team-todos
 Summary: Shared task list where teams track who is doing what and celebrate progress together
 
 ## Backend (logic/src/lib.rs)
-- [ ] Define entity: [todos] Task (id:LwwRegister<String>, title:LwwRegister<String>, description:LwwRegister<String>, author:LwwRegister<String>, assigned_to:LwwRegister<Option<String>>, completed:LwwRegister<bool>, created_at:LwwRegister<u64>)
-- [ ] Implement mutate: [todos] create_task(title: String, description: String) → app::Result<String>
-- [ ] Implement view: [todos] list_tasks() → app::Result<Vec<Task>>
-- [ ] Implement mutate: [todos] mark_complete(task_id: String) → app::Result<()>
-- [ ] Implement mutate: [todos] edit_task(task_id: String, title: String, description: String) → app::Result<()>
-- [ ] Implement mutate: [todos] delete_task(task_id: String) → app::Result<()>
-- [ ] Implement mutate: [todos] assign_task(task_id: String, assignee: String) → app::Result<()>
+- [x] Define entity: [todos] Task (id:LwwRegister<String>, title:LwwRegister<String>, description:LwwRegister<String>, author:LwwRegister<String>, assigned_to:LwwRegister<Option<String>>, completed:LwwRegister<bool>, created_at:LwwRegister<u64>)
+- [x] Implement mutate: [todos] create_task(title: String, description: String) → app::Result<String>
+- [x] Implement view: [todos] list_tasks() → app::Result<Vec<Task>>
+- [x] Implement mutate: [todos] mark_complete(task_id: String) → app::Result<()>
+- [x] Implement mutate: [todos] edit_task(task_id: String, title: String, description: String) → app::Result<()>
+- [x] Implement mutate: [todos] delete_task(task_id: String) → app::Result<()>
+- [x] Implement mutate: [todos] assign_task(task_id: String, assignee: String) → app::Result<()>
 
 ## Frontend (app/)
 - [ ] Screen: TaskListView — Open and completed task sections with create, edit, assign, and complete actions
