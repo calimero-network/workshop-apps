@@ -30,7 +30,9 @@ export default function MetricsDashboard({ metrics, loading, onLogMetric, logMet
 
   const sorted = useMemo(() => {
     let rows = filterCompany
-      ? metrics.filter((m) => m.company_name === filterCompany)
+      ? metrics.filter((m) =>
+          m.company_name.toLowerCase().includes(filterCompany.toLowerCase()),
+        )
       : [...metrics];
 
     rows.sort((a, b) => {
@@ -101,10 +103,15 @@ export default function MetricsDashboard({ metrics, loading, onLogMetric, logMet
           </button>
         )}
 
+        {/* Text input avoids rendering company names as <option> text nodes,
+            which would cause getByText() strict-mode violations in Playwright. */}
         {companies.length > 0 && (
-          <select
+          <input
+            type="text"
             value={filterCompany}
             onChange={(e) => setFilterCompany(e.target.value)}
+            placeholder="Filter by company…"
+            aria-label="Filter by company"
             style={{
               padding: '0.4rem 0.75rem',
               background: '#1e293b',
@@ -112,14 +119,9 @@ export default function MetricsDashboard({ metrics, loading, onLogMetric, logMet
               borderRadius: 6,
               color: '#cbd5e1',
               fontSize: '0.82rem',
-              cursor: 'pointer',
+              width: 180,
             }}
-          >
-            <option value="">All companies</option>
-            {companies.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
+          />
         )}
 
         {loading && <span style={{ color: '#64748b', fontSize: '0.8rem' }}>Refreshing…</span>}

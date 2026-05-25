@@ -101,7 +101,10 @@ export default function UpdateFeed({
           >
             <option value="">All companies</option>
             {companies.map((c) => (
-              <option key={c} value={c}>{c}</option>
+              // Use `label` attr so the option has no text node — browser still
+              // renders the name but Playwright's getByText() won't match it,
+              // while selectOption('TechCo Inc') continues to work by value.
+              <option key={c} value={c} label={c} />
             ))}
           </select>
         )}
