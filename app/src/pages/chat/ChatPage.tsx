@@ -148,7 +148,7 @@ export default function ChatPage() {
           }}>
             <div>
               <span style={{ fontWeight: 700, fontSize: '1rem', color: '#e2e8f0' }}>
-                {activeView === 'feed' ? '📡 Update Feed' : '📊 Metrics Dashboard'}
+                {activeView === 'feed' ? 'Update Feed' : 'Metrics Dashboard'}
               </span>
               {lobby.selectedLobby?.alias && (
                 <span style={{ color: '#64748b', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
