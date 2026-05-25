@@ -1,0 +1,22 @@
+{
+  "appName": "soul",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.soul",
+  "metadata": {
+    "name": "soul",
+    "description": "Personal knowledge vault with optional sharing — store notes about yourself and collaborate on shared contexts.",
+    "author": "Calimero",
+    "route": "/soul"
+  },
+  "theme": {
+    "primaryColor": "#7C3AED",
+    "accentColor": "#EC4899",
+    "style": "clean-minimal"
+  },
+  "services": [
+    {
+      "name": "soul",
+      "crate": "soul-soul"
+    }
+  ]
+}
