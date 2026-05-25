@@ -18,6 +18,7 @@ interface UpdateFeedProps {
   subscriptions: Subscription[];
   selfExecutorKey: string | null;
   loading: boolean;
+  postUpdateOpen?: boolean;
   onPostUpdate: () => void;
   onPostComment: (updateId: string, body: string) => Promise<void>;
   onLoadComments: (updateId: string) => Promise<void>;
@@ -30,6 +31,7 @@ export default function UpdateFeed({
   subscriptions,
   selfExecutorKey,
   loading,
+  postUpdateOpen = false,
   onPostUpdate,
   onPostComment,
   onLoadComments,
@@ -65,21 +67,23 @@ export default function UpdateFeed({
     <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <button
-          onClick={onPostUpdate}
-          style={{
-            padding: '0.45rem 1rem',
-            background: 'var(--color-accent, #3B82F6)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            fontWeight: 600,
-          }}
-        >
-          + Post Update
-        </button>
+        {!postUpdateOpen && (
+          <button
+            onClick={onPostUpdate}
+            style={{
+              padding: '0.45rem 1rem',
+              background: 'var(--color-accent, #3B82F6)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+            }}
+          >
+            + Post Update
+          </button>
+        )}
 
         {companies.length > 0 && (
           <select

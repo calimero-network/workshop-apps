@@ -172,6 +172,7 @@ export default function ChatPage() {
                 subscriptions={portfolio.subscriptions}
                 selfExecutorKey={portfolio.executorKey}
                 loading={portfolio.loading}
+                postUpdateOpen={showPostUpdate}
                 onPostUpdate={() => setShowPostUpdate(true)}
                 onPostComment={portfolio.postComment}
                 onLoadComments={portfolio.fetchComments}
