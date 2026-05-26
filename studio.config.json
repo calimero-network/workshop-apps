@@ -1,0 +1,22 @@
+{
+  "appName": "infinite-whiteboard",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.infinite-whiteboard",
+  "metadata": {
+    "name": "infinite-whiteboard",
+    "description": "Shared infinite canvas for sketching shapes, text, and collaborative feedback",
+    "author": "Calimero",
+    "route": "/infinite-whiteboard"
+  },
+  "theme": {
+    "primaryColor": "#7C3AED",
+    "accentColor": "#EC4899",
+    "style": "clean-creative"
+  },
+  "services": [
+    {
+      "name": "whiteboard",
+      "crate": "infinite-whiteboard-whiteboard"
+    }
+  ]
+}
