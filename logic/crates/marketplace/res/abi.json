@@ -1,7 +1,18 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
+    "Event_EscrowDeposited": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "trade_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ListingCancelled": {
       "kind": "record",
       "fields": [
         {
@@ -12,24 +23,7 @@
         }
       ]
     },
-    "Event_RoomCreated": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "Event_RoomDeleted": {
+    "Event_ListingCreated": {
       "kind": "record",
       "fields": [
         {
@@ -40,173 +34,295 @@
         }
       ]
     },
-    "LobbyState": {
+    "Event_OfferAccepted": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
+          "name": "offer_id",
           "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
-            }
+            "kind": "string"
           }
         },
         {
-          "name": "rooms",
+          "name": "trade_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_OfferMade": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "listing_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ProvenanceRecorded": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "item_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ReceiptConfirmed": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "trade_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Listing": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "category",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "asking_price",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "condition",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "MarketplaceState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "listings",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "u64"
+              "$ref": "Listing"
             },
             "crdt_type": "authored_map"
           }
         },
         {
-          "name": "names",
+          "name": "offers",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
+              "$ref": "Offer"
+            },
+            "crdt_type": "unordered_map"
+          }
+        },
+        {
+          "name": "trades",
+          "type": {
+            "kind": "map",
+            "key": {
               "kind": "string"
             },
-            "crdt_type": "authored_map"
+            "value": {
+              "$ref": "Trade"
+            },
+            "crdt_type": "unordered_map"
+          }
+        },
+        {
+          "name": "provenance",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "ProvenanceRecord"
+            },
+            "crdt_type": "unordered_map"
           }
         }
       ]
     },
-    "NameEntry": {
+    "Offer": {
       "kind": "record",
       "fields": [
         {
-          "name": "member",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "PresenceEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
+          "name": "author",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "last_seen_ms",
+          "name": "listing_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "amount",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
         }
       ]
     },
-    "RoomActivity": {
+    "ProvenanceRecord": {
       "kind": "record",
       "fields": [
         {
-          "name": "room_id",
+          "name": "item_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
+          "name": "prior_owner",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "last_message_ms",
+          "name": "price",
           "type": {
             "kind": "u64"
           }
         },
         {
-          "name": "message_count",
+          "name": "sale_date",
           "type": {
             "kind": "u64"
+          }
+        },
+        {
+          "name": "notes",
+          "type": {
+            "kind": "string"
           }
         }
       ]
     },
-    "RoomSummary": {
+    "Trade": {
       "kind": "record",
       "fields": [
         {
-          "name": "room_id",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "listing_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "created_by",
+          "name": "seller",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "context_id",
+          "name": "buyer",
           "type": {
             "kind": "string"
-          },
-          "nullable": true
+          }
         },
         {
-          "name": "member_count",
+          "name": "amount",
           "type": {
             "kind": "u64"
           }
         },
         {
-          "name": "created_ms",
+          "name": "escrow_status",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
@@ -223,60 +339,72 @@
       }
     },
     {
-      "name": "register_room",
+      "name": "create_listing",
       "params": [
         {
-          "name": "room_id",
+          "name": "title",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "description",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "context_id",
+          "name": "category",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "asking_price",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "condition",
           "type": {
             "kind": "string"
           }
         }
       ],
       "returns": {
-        "$ref": "RoomSummary"
+        "kind": "string"
       }
     },
     {
-      "name": "get_rooms",
+      "name": "list_active_listings",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "RoomSummary"
+          "$ref": "Listing"
         }
       }
     },
     {
-      "name": "get_room",
+      "name": "get_listing",
       "params": [
         {
-          "name": "room_id",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         }
       ],
       "returns": {
-        "$ref": "RoomSummary"
+        "$ref": "Listing"
       }
     },
     {
-      "name": "delete_room",
+      "name": "cancel_listing",
       "params": [
         {
-          "name": "room_id",
+          "name": "id",
           "type": {
             "kind": "string"
           }
@@ -287,69 +415,81 @@
       }
     },
     {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
+      "name": "make_offer",
       "params": [
         {
-          "name": "room_id",
+          "name": "listing_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
+          "name": "amount",
           "type": {
             "kind": "u64"
           }
         }
       ],
       "returns": {
-        "kind": "unit"
+        "kind": "string"
       }
     },
     {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
+      "name": "get_offers_for_listing",
+      "params": [
+        {
+          "name": "listing_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "PresenceEntry"
+          "$ref": "Offer"
         }
       }
     },
     {
-      "name": "set_name",
+      "name": "accept_offer",
       "params": [
         {
-          "name": "name",
+          "name": "offer_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "deposit_to_escrow",
+      "params": [
+        {
+          "name": "trade_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "amount",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "confirm_receipt",
+      "params": [
+        {
+          "name": "trade_id",
           "type": {
             "kind": "string"
           }
@@ -360,38 +500,104 @@
       }
     },
     {
-      "name": "list_names",
-      "params": [],
+      "name": "get_provenance",
+      "params": [
+        {
+          "name": "item_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "ProvenanceRecord"
         }
+      }
+    },
+    {
+      "name": "record_provenance",
+      "params": [
+        {
+          "name": "item_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "prior_owner",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "price",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "sale_date",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "notes",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "ListingCreated",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_ListingCreated"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "ListingCancelled",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_ListingCancelled"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "OfferMade",
+      "payload": {
+        "$ref": "Event_OfferMade"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "OfferAccepted",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_OfferAccepted"
+      }
+    },
+    {
+      "name": "EscrowDeposited",
+      "payload": {
+        "$ref": "Event_EscrowDeposited"
+      }
+    },
+    {
+      "name": "ReceiptConfirmed",
+      "payload": {
+        "$ref": "Event_ReceiptConfirmed"
+      }
+    },
+    {
+      "name": "ProvenanceRecorded",
+      "payload": {
+        "$ref": "Event_ProvenanceRecorded"
       }
     }
   ],
-  "state_root": "LobbyState"
+  "state_root": "MarketplaceState"
 }
