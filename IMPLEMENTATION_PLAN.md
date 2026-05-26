@@ -24,9 +24,9 @@ Summary: Shared infinite canvas for sketching shapes, text, and collaborative fe
 - [x] Implement mutate: [whiteboard] clear_canvas() → app::Result<()>
 
 ## Frontend (app/)
-- [ ] Screen: CanvasView — Infinite whiteboard with live shapes, text, cursors, and comment popups
-- [ ] Screen: ToolbarView — Shape/text creation, color picker, clear canvas, and invite teammates
-- [ ] Apply designTheme tokens
+- [x] Screen: CanvasView — Infinite whiteboard with live shapes, text, cursors, and comment popups
+- [x] Screen: ToolbarView — Shape/text creation, color picker, clear canvas, and invite teammates
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

@@ -1,170 +1,135 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMero, useSubscription } from '@calimero-network/mero-react';
 import { useChatLobby } from '../../hooks/useChatLobby';
-import { useLobbyDirectory } from '../../hooks/useLobbyDirectory';
-import { LobbyClient, RoomSummary } from '../../api/lobby/LobbyClient';
-import { SERVICE_NAME } from '../../config';
+import { useWhiteboardCanvas } from '../../hooks/useWhiteboardCanvas';
 import Sidebar from '../../components/Sidebar';
-import RoomView from '../../components/RoomView';
-import CreateRoomModal from '../../components/CreateRoomModal';
+import CanvasView, { type ActiveTool } from '../../components/CanvasView';
+import ToolbarView from '../../components/ToolbarView';
 import CreateWorkspaceModal from '../../components/CreateWorkspaceModal';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
 
-// Mirror chat_types::generate_id (Rust): "room-{ts_ms}-{8-hex-nonce}"
-function generateRoomId(): string {
-  const ts = Date.now();
-  const nonce = crypto.getRandomValues(new Uint8Array(4));
-  const hex = Array.from(nonce).map((b) => b.toString(16).padStart(2, '0')).join('');
-  return `room-${ts}-${hex}`;
-}
+// Cursor active window: a cursor updated within the last 60 s means the user
+// is present on the canvas.
+const CURSOR_ACTIVE_MS = 60_000;
 
 export default function ChatPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, mero } = useMero();
+  const { isAuthenticated } = useMero();
   const lobby = useChatLobby();
-  const { onlineMembers, memberNames, setName } = useLobbyDirectory(
+
+  // Auth guard
+  useEffect(() => {
+    if (!isAuthenticated) navigate('/');
+  }, [isAuthenticated, navigate]);
+
+  // Canvas state for the currently-selected board context
+  const canvas = useWhiteboardCanvas(
     lobby.lobbyContextId,
-    lobby.lobbyExecutorPublicKey,
+    lobby.executorPublicKey,
   );
 
-  const [rooms, setRooms] = useState<RoomSummary[]>([]);
-  const [selectedRoom, setSelectedRoom] = useState<{ id: string; contextId: string | null } | null>(null);
-  const [showCreateRoom, setShowCreateRoom] = useState(false);
+  // Poll namespace members while the page is open (no SSE channel for joins)
+  useEffect(() => {
+    if (!lobby.namespaceId) return;
+    const id = setInterval(() => { void lobby.refetchMembers(); }, 5_000);
+    return () => clearInterval(id);
+  }, [lobby.namespaceId, lobby.refetchMembers]);
+
+  // Subscribe to canvas events and also refresh member list
+  useSubscription(
+    lobby.lobbyContextId ? [lobby.lobbyContextId] : [],
+    () => {
+      void canvas.refresh();
+      void lobby.refetchMembers();
+    },
+  );
+
+  // Toolbar state
+  const [activeTool, setActiveTool] = useState<ActiveTool>('select');
+  // Default to the primary theme color declared in studio.config (index.tsx sets it as a CSS var,
+  // but we can read it at runtime or fall back to the literal default).
+  const [activeColor, setActiveColor] = useState<string>(
+    () => getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#7C3AED',
+  );
+
+  // Modals
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/');
+  // Derive active user IDs from cursor last_updated_at
+  const activeUserIds = useMemo<Set<string>>(() => {
+    const cutoff = Date.now() - CURSOR_ACTIVE_MS;
+    const ids = new Set<string>();
+    for (const c of canvas.cursors) {
+      if (c.last_updated_at >= cutoff) ids.add(c.user_id);
     }
-  }, [isAuthenticated, navigate]);
+    return ids;
+  }, [canvas.cursors]);
 
-  const fetchRooms = useCallback(async () => {
-    if (!mero || !lobby.lobbyContextId || !lobby.executorPublicKey) return;
-    try {
-      const client = new LobbyClient(mero, lobby.lobbyContextId, lobby.executorPublicKey);
-      const roomList = await client.getRooms();
-      setRooms(roomList);
-    } catch (err) {
-      console.error('Failed to fetch rooms:', err);
-    }
-  }, [mero, lobby.lobbyContextId, lobby.executorPublicKey]);
+  // Handle board creation: namespace + whiteboard context created by bootstrap
+  const handleCreateBoard = useCallback(async (name: string) => {
+    await lobby.createLobby(name);
+    setShowCreateWorkspace(false);
+  }, [lobby]);
 
-  useEffect(() => {
-    if (lobby.lobbyJoined) {
-      fetchRooms();
-    }
-  }, [lobby.lobbyJoined, fetchRooms]);
-
-  // React to any lobby state change (local or synced from other nodes).
-  // Also refetch members because some membership changes coincide with lobby
-  // events.
-  useSubscription(
-    lobby.lobbyContextId ? [lobby.lobbyContextId] : [],
-    () => {
-      fetchRooms();
-      lobby.refetchMembers();
-    },
-  );
-
-  // Namespace membership has no SSE channel — peers joining via invitation
-  // never trigger a re-render. Poll while the chat page is open so the
-  // member count and CreateRoomModal pre-selection stay current.
-  useEffect(() => {
-    if (!lobby.namespaceId) return;
-    const interval = setInterval(() => { lobby.refetchMembers(); }, 5_000);
-    return () => clearInterval(interval);
-  }, [lobby.namespaceId, lobby.refetchMembers]);
-
-  const handleCreateRoom = useCallback(async (name: string, selectedMembers: string[]) => {
-    if (!mero || !lobby.lobbyContextId || !lobby.executorPublicKey || !lobby.namespaceId) return;
-
-    const appId = lobby.selectedLobby?.applicationId;
-    if (!appId) return;
-
-    const client = new LobbyClient(mero, lobby.lobbyContextId, lobby.executorPublicKey);
-
-    // Single atomic lobby write: createContext first, then register_room with
-    // the resulting context_id. Avoids the propagation race where remote peers
-    // would see the room name with context_id == null between two writes.
-    const roomId = generateRoomId();
-
-    try {
-      const initParams = JSON.stringify({
-        room_id: roomId,
-        name,
-        lobby_context_id: lobby.lobbyContextId,
-      });
-      const initBytes = Array.from(new TextEncoder().encode(initParams));
-
-      // Create the per-instance context in the root namespace group.
-      // All namespace members can see and join it via auto_join.
-      const instanceServiceName = SERVICE_NAME.instance;
-      if (!instanceServiceName) {
-        throw new Error('No "instance" service declared in studio.config.json');
-      }
-      const { contextId } = await mero.admin.createContext({
-        applicationId: appId,
-        groupId: lobby.namespaceId,
-        serviceName: instanceServiceName,
-        initializationParams: initBytes,
-      });
-
-      await client.registerRoom({ room_id: roomId, name, context_id: contextId });
-      setShowCreateRoom(false);
-      await fetchRooms();
-    } catch (err) {
-      console.error('Failed to create room:', err);
-    }
-  }, [mero, lobby, fetchRooms]);
-
-  const handleSelectRoom = useCallback(async (room: RoomSummary) => {
-    if (!room.context_id || !mero) {
-      setSelectedRoom({ id: room.room_id, contextId: null });
-      return;
-    }
-
-    // Bound the join attempt so a hang doesn't freeze the UI. If we're
-    // already in the context the call returns quickly; if not, the join
-    // needs to complete before useChatRoom can read state from the context.
-    const joinTimeout = new Promise<void>((resolve) => setTimeout(resolve, 5_000));
-    await Promise.race([
-      mero.admin.joinContext(room.context_id).then(() => {}).catch(() => {}),
-      joinTimeout,
-    ]);
-
-    setSelectedRoom({ id: room.room_id, contextId: room.context_id });
-  }, [mero]);
-
-  // Show Welcome only when there are no workspaces at all. Don't gate on
-  // `!lobbyJoined` — that flips to false on every workspace switch and would
-  // flash the Welcome screen mid-transition. Switching is just a transition
-  // between contexts; keep the main layout mounted.
+  // ── Welcome screen when there are no boards yet ───────────────────────
   if (lobby.lobbies.length === 0 && !lobby.lobbiesLoading) {
     return (
       <div className="app-bg">
-        <div className="page-shell" style={{ justifyContent: 'center', alignItems: 'center', gap: '1rem' }}>
-          <h2>No workspaces yet</h2>
-          <p style={{ color: '#888' }}>Create a new workspace or join one with an invitation.</p>
+        <div
+          className="page-shell"
+          style={{ justifyContent: 'center', alignItems: 'center', gap: '1.25rem' }}
+        >
+          <h2 style={{ color: 'var(--color-primary)', fontSize: '1.5rem' }}>
+            No boards yet
+          </h2>
+          <p style={{ color: '#64748b', maxWidth: 360, textAlign: 'center' }}>
+            Create a new board to start sketching, or join an existing one with
+            an invitation link.
+          </p>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button onClick={() => setShowCreateWorkspace(true)}>Create Workspace</button>
-            <button onClick={() => setShowJoin(true)}>Join with Invitation</button>
+            <button
+              onClick={() => setShowCreateWorkspace(true)}
+              style={{
+                padding: '0.5rem 1.25rem',
+                background: 'var(--color-primary)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+              }}
+            >
+              Create board
+            </button>
+            <button
+              onClick={() => setShowJoin(true)}
+              style={{
+                padding: '0.5rem 1.25rem',
+                background: '#1e293b',
+                color: '#cbd5e1',
+                border: '1px solid #334155',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+              }}
+            >
+              Join with invitation
+            </button>
           </div>
+
           {showCreateWorkspace && (
             <CreateWorkspaceModal
-              onCreate={async (name) => { await lobby.createLobby(name); }}
+              onCreate={handleCreateBoard}
               onClose={() => setShowCreateWorkspace(false)}
             />
           )}
           {showJoin && (
             <JoinModal
-              onJoin={async (json) => {
-                await lobby.joinLobby(json);
-                setShowJoin(false);
-              }}
+              onJoin={async (json) => { await lobby.joinLobby(json); setShowJoin(false); }}
               onClose={() => setShowJoin(false)}
             />
           )}
@@ -173,9 +138,11 @@ export default function ChatPage() {
     );
   }
 
+  // ── Main whiteboard layout ────────────────────────────────────────────
   return (
-    <div className="app-bg">
-      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <div className="app-bg" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        {/* Sidebar: boards + collaborators */}
         <Sidebar
           workspaces={lobby.lobbies}
           selectedNamespaceId={lobby.namespaceId}
@@ -184,48 +151,74 @@ export default function ChatPage() {
           workspaceAlias={lobby.selectedLobby?.alias}
           members={lobby.members}
           selfIdentity={lobby.selfIdentity}
-          onlineMembers={onlineMembers}
-          memberNames={memberNames}
-          onSetName={setName}
-          rooms={rooms}
-          selectedRoomId={selectedRoom?.id ?? null}
-          onSelectRoom={handleSelectRoom}
-          onCreateRoom={() => setShowCreateRoom(true)}
+          activeUserIds={activeUserIds}
           onInvite={() => setShowInvite(true)}
         />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {selectedRoom?.contextId ? (
-            <RoomView
-              contextId={selectedRoom.contextId}
-              executorPublicKey={lobby.executorPublicKey}
-              onRoomDeleted={() => {
-                setSelectedRoom(null);
-                fetchRooms();
-              }}
-            />
+
+        {/* Main canvas area */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Toolbar */}
+          <ToolbarView
+            activeTool={activeTool}
+            activeColor={activeColor}
+            canClear={!!lobby.lobbyContextId}
+            onToolChange={setActiveTool}
+            onColorChange={setActiveColor}
+            onClearCanvas={canvas.clearCanvas}
+            onInvite={() => setShowInvite(true)}
+          />
+
+          {/* Canvas */}
+          {lobby.lobbyContextId ? (
+            canvas.loading && canvas.shapes.length === 0 && canvas.texts.length === 0 ? (
+              <div style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#475569',
+              }}>
+                Loading canvas…
+              </div>
+            ) : (
+              <CanvasView
+                shapes={canvas.shapes}
+                texts={canvas.texts}
+                cursors={canvas.cursors}
+                selfUserId={canvas.executorKey}
+                activeTool={activeTool}
+                activeColor={activeColor}
+                onAddShape={canvas.addShape}
+                onUpdateShapePosition={canvas.updateShapePosition}
+                onDeleteShape={canvas.deleteShape}
+                onAddText={canvas.addText}
+                onUpdateText={canvas.updateText}
+                onDeleteText={canvas.deleteText}
+                onAddComment={canvas.addComment}
+                onDeleteComment={canvas.deleteComment}
+                onGetCommentsForTarget={canvas.getCommentsForTarget}
+                onUpdateCursor={canvas.updateCursor}
+              />
+            )
           ) : (
             <div style={{
               flex: 1,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#666',
+              color: '#475569',
             }}>
-              Select a room or create a new one
+              Select a board from the sidebar
             </div>
           )}
         </div>
       </div>
 
-      {showCreateRoom && (
-        <CreateRoomModal
-          members={lobby.members.map((m) => ({
-            identity: m.identity,
-            alias: m.alias,
-            isSelf: m.identity === lobby.selfIdentity,
-          }))}
-          onSubmit={handleCreateRoom}
-          onClose={() => setShowCreateRoom(false)}
+      {/* Modals */}
+      {showCreateWorkspace && (
+        <CreateWorkspaceModal
+          onCreate={handleCreateBoard}
+          onClose={() => setShowCreateWorkspace(false)}
         />
       )}
       {showInvite && (
@@ -234,18 +227,9 @@ export default function ChatPage() {
           onClose={() => setShowInvite(false)}
         />
       )}
-      {showCreateWorkspace && (
-        <CreateWorkspaceModal
-          onCreate={async (name) => { await lobby.createLobby(name); }}
-          onClose={() => setShowCreateWorkspace(false)}
-        />
-      )}
       {showJoin && (
         <JoinModal
-          onJoin={async (json) => {
-            await lobby.joinLobby(json);
-            setShowJoin(false);
-          }}
+          onJoin={async (json) => { await lobby.joinLobby(json); setShowJoin(false); }}
           onClose={() => setShowJoin(false)}
         />
       )}
