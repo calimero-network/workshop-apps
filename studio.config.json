@@ -1,7 +1,7 @@
 {
   "appName": "whiteboard-collab",
-  "appVersion": "0.1.0",
-  "package": "com.calimero.whiteboard-collab",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.tester1.whiteboard-collab",
   "metadata": {
     "name": "whiteboard-collab",
     "description": "Shared endless whiteboard for real-time collaborative sketching, shapes, and pinned comments",
