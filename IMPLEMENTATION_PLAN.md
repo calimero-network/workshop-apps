@@ -21,12 +21,12 @@ Summary: Peer-to-peer marketplace for trusted collectors with provenance trackin
 - [x] Implement mutate: [marketplace] record_provenance(item_id: String, prior_owner: String, price: u64, sale_date: u64, notes: String) → app::Result<()>
 
 ## Frontend (app/)
-- [ ] Screen: MarketplaceView — Browse active listings by category, filter by condition, see seller name
-- [ ] Screen: ListingDetailView — Full item details, provenance timeline, offers panel, escrow status
-- [ ] Screen: MyListingsView — Seller's active listings, pending offers, completed trades
-- [ ] Screen: MyOffersView — Buyer's open offers and their statuses
-- [ ] Screen: TradesView — Active escrows and completed transaction history
-- [ ] Apply designTheme tokens
+- [x] Screen: MarketplaceView — Browse active listings by category, filter by condition, see seller name
+- [x] Screen: ListingDetailView — Full item details, provenance timeline, offers panel, escrow status
+- [x] Screen: MyListingsView — Seller's active listings, pending offers, completed trades
+- [x] Screen: MyOffersView — Buyer's open offers and their statuses
+- [x] Screen: TradesView — Active escrows and completed transaction history
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

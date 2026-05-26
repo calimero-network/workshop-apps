@@ -49,14 +49,14 @@ export const THEME = config.theme;
 const byId = (id: string) => config.services.find((s) => s.id === id);
 
 /** Maps service-role id → wire name (`serviceName` for createContext etc.).
- *  Throws at startup if a referenced role isn't declared, so a misconfigured
- *  studio.config.json fails loudly instead of silently producing `undefined`. */
+ *  For single-service apps whose studio.config.json omits the `id` field,
+ *  falls back to matching by `name`, then to the first (and only) service. */
 function requireService(id: string): string {
-  const svc = byId(id);
-  if (!svc) {
-    throw new Error(`studio.config.json: services[] missing entry for id="${id}"`);
-  }
-  return svc.name;
+  const svc = byId(id) ?? config.services.find((s) => s.name === id);
+  if (svc) return svc.name;
+  // Single-service apps: the sole entry acts as the directory service.
+  if (config.services.length === 1) return config.services[0].name;
+  throw new Error(`studio.config.json: services[] missing entry for id="${id}"`);
 }
 
 export const SERVICE_NAME = {
