@@ -1,7 +1,7 @@
 {
   "appName": "trading-pod-forum",
-  "appVersion": "0.1.0",
-  "package": "com.calimero.trading-pod-forum",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.tester4.trading-pod-forum",
   "metadata": {
     "name": "trading-pod-forum",
     "description": "Private forum for a small group of traders to share positions, theses, and post-mortems.",
