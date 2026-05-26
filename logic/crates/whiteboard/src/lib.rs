@@ -1,18 +1,29 @@
-//! Lobby service — room directory and membership tracking.
+//! Whiteboard service — shared infinite canvas with shapes, text, comments, and cursor tracking.
 
-use chat_types::{ChatError, PublicKey};
 use calimero_sdk::app;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
-use calimero_storage::collections::crdt_meta::MergeError;
-use calimero_storage::collections::{AuthoredMap, LwwRegister, Mergeable, UnorderedMap};
+use calimero_storage::collections::{AuthoredMap, LwwRegister, StoreError};
 use calimero_storage::env as storage_env;
 
 pub mod events;
 use events::Event;
 
-const MAX_NAME_LEN: usize = 20;
+// ---------------------------------------------------------------------------
+// Error helpers
+// ---------------------------------------------------------------------------
+
+fn map_authored_error(action: &'static str) -> impl FnOnce(StoreError) -> AppError {
+    move |e| {
+        let s = e.to_string();
+        if s.contains("ActionNotAllowed") {
+            AppError::msg(format!("forbidden: can only {action} your own entries"))
+        } else {
+            AppError::msg(format!("{action}: {s}"))
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Data models
@@ -21,320 +32,372 @@ const MAX_NAME_LEN: usize = 20;
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct RoomSummary {
-    pub room_id: String,
-    pub name: String,
-    pub created_by: String,
-    pub context_id: Option<String>,
-    pub member_count: u64,
-    pub created_ms: u64,
-}
-
-impl Mergeable for RoomSummary {
-    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        if self.context_id.is_none() && other.context_id.is_some() {
-            self.context_id = other.context_id.clone();
-        }
-        if other.member_count > self.member_count {
-            self.member_count = other.member_count;
-        }
-        Ok(())
-    }
+pub struct Shape {
+    pub id: String,
+    pub author: String,
+    pub shape_type: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub color: String,
+    /// Milliseconds since epoch (time_now() / 1_000_000).
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct RoomActivity {
-    pub room_id: String,
-    pub room_name: String,
-    pub last_message_ms: u64,
-    pub message_count: u64,
-}
-
-impl Mergeable for RoomActivity {
-    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        // Keep the most recent activity.
-        if other.last_message_ms > self.last_message_ms {
-            *self = other.clone();
-        }
-        Ok(())
-    }
+pub struct TextElement {
+    pub id: String,
+    pub author: String,
+    pub content: String,
+    pub x: f64,
+    pub y: f64,
+    pub font_size: u32,
+    pub color: String,
+    /// Milliseconds since epoch (time_now() / 1_000_000).
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct PresenceEntry {
-    pub member: String,
-    pub last_seen_ms: u64,
+pub struct Comment {
+    pub id: String,
+    pub author: String,
+    pub target_id: String,
+    pub body: String,
+    /// Milliseconds since epoch (time_now() / 1_000_000).
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct NameEntry {
-    pub member: String,
-    pub name: String,
+pub struct Cursor {
+    pub user_id: String,
+    pub x: f64,
+    pub y: f64,
+    /// Milliseconds since epoch (time_now() / 1_000_000).
+    pub last_updated_at: u64,
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn from_executor_id() -> Result<PublicKey, ChatError> {
-    PublicKey::from_raw_bytes(&calimero_sdk::env::executor_id())
-}
-
-// ---------------------------------------------------------------------------
-// Lobby state
+// State
 // ---------------------------------------------------------------------------
 
 #[app::state(emits = for<'a> Event<'a>)]
 #[derive(BorshSerialize, BorshDeserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
-pub struct LobbyState {
-    created_ms: LwwRegister<u64>,
-    rooms: UnorderedMap<String, RoomSummary>,
-    activity: UnorderedMap<String, RoomActivity>,
-    /// Per-author presence: only the entry's own author can update or remove
-    /// their `last_seen_ms`. Spoofing is rejected at merge time by `AuthoredMap`.
-    presence: AuthoredMap<String, u64>,
-    /// Per-author display name: each member owns and edits only their own
-    /// entry. Truncated to `MAX_NAME_LEN` Unicode scalars at write time.
-    names: AuthoredMap<String, String>,
+pub struct WhiteboardState {
+    /// Timestamp (ms) of the last canvas clear. Shapes/text/comments with
+    /// created_at < cleared_at_ms are hidden by all query methods, giving a
+    /// CRDT-safe "clear" that doesn't require removing authored entries.
+    cleared_at_ms: LwwRegister<u64>,
+    shapes: AuthoredMap<String, Shape>,
+    texts: AuthoredMap<String, TextElement>,
+    comments: AuthoredMap<String, Comment>,
+    /// Keyed by caller pubkey (base58); each user owns only their own entry.
+    cursors: AuthoredMap<String, Cursor>,
 }
 
 #[app::logic]
-impl LobbyState {
+impl WhiteboardState {
     #[app::init]
-    pub fn init() -> LobbyState {
-        LobbyState {
-            created_ms: LwwRegister::new(storage_env::time_now()),
-            rooms: UnorderedMap::new_with_field_name("lobby:rooms"),
-            activity: UnorderedMap::new_with_field_name("lobby:activity"),
-            presence: AuthoredMap::new_with_field_name("lobby:presence"),
-            names: AuthoredMap::new_with_field_name("lobby:names"),
+    pub fn init() -> WhiteboardState {
+        WhiteboardState {
+            cleared_at_ms: LwwRegister::new(0u64),
+            shapes: AuthoredMap::new_with_field_name("whiteboard:shapes"),
+            texts: AuthoredMap::new_with_field_name("whiteboard:texts"),
+            comments: AuthoredMap::new_with_field_name("whiteboard:comments"),
+            cursors: AuthoredMap::new_with_field_name("whiteboard:cursors"),
         }
     }
 
-    // ---- Lobby API ----
+    // -----------------------------------------------------------------------
+    // Shape methods
+    // -----------------------------------------------------------------------
 
-    /// Atomically register a new room. The client creates the room context
-    /// first (via admin createContext), then calls this with the resulting
-    /// context_id. This avoids the propagation race where a separate
-    /// `create_room` then `set_room_context_id` would expose a window with
-    /// `context_id == null` to remote peers.
-    ///
-    /// Idempotent on collision: if `room_id` already exists with the same
-    /// `name`, `created_by`, and `context_id`, returns the existing summary.
-    pub fn register_room(
+    pub fn add_shape(
         &mut self,
-        room_id: String,
-        name: String,
-        context_id: String,
-    ) -> app::Result<RoomSummary> {
-        let caller = from_executor_id().map_err(|e| AppError::msg(e.to_string()))?;
-        let caller_b58 = caller.to_base58();
+        shape_type: String,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        color: String,
+    ) -> app::Result<String> {
+        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+        let now_ns = storage_env::time_now();
+        let now_ms = now_ns / 1_000_000;
+        let id = format!("shape-{now_ns}");
 
-        if name.is_empty() || name.len() > 64 {
-            app::bail!(ChatError::Invalid(
-                "room name must be 1-64 characters".into()
-            ));
-        }
-        if !room_id.starts_with("room-") || room_id.len() < 16 || room_id.len() > 64 {
-            app::bail!(ChatError::Invalid(
-                "room_id must match room-{timestamp}-{nonce}".into()
-            ));
-        }
-        if context_id.is_empty() {
-            app::bail!(ChatError::Invalid("context_id must not be empty".into()));
-        }
-
-        if let Some(existing) = self
-            .rooms
-            .get(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.get: {e}")))?
-        {
-            if existing.name == name
-                && existing.created_by == caller_b58
-                && existing.context_id.as_deref() == Some(context_id.as_str())
-            {
-                return Ok(existing);
-            }
-            app::bail!(ChatError::RoomAlreadyExists);
-        }
-
-        let summary = RoomSummary {
-            room_id: room_id.clone(),
-            name: name.clone(),
-            created_by: caller_b58,
-            context_id: Some(context_id),
-            member_count: 0,
-            created_ms: storage_env::time_now(),
+        let shape = Shape {
+            id: id.clone(),
+            author: caller,
+            shape_type,
+            x,
+            y,
+            width,
+            height,
+            color,
+            created_at: now_ms,
         };
 
-        self.rooms
-            .insert(room_id.clone(), summary.clone())
-            .map_err(|e| AppError::msg(format!("rooms.insert: {e}")))?;
+        self.shapes
+            .insert(id.clone(), shape)
+            .map_err(|e| AppError::msg(format!("shapes.insert: {e}")))?;
 
-        app::emit!(Event::RoomCreated {
-            id: &room_id,
-            name: &name,
-        });
-        app::emit!(Event::RoomListUpdated {});
-        Ok(summary)
+        app::emit!(Event::ShapeAdded { id: &id });
+        Ok(id)
     }
 
-    pub fn get_rooms(&self) -> app::Result<Vec<RoomSummary>> {
-        let entries = self
-            .rooms
-            .entries()
-            .map_err(|e| AppError::msg(format!("rooms.entries: {e}")))?;
-        Ok(entries.map(|(_, v)| v).collect())
-    }
-
-    pub fn get_room(&self, room_id: String) -> app::Result<Option<RoomSummary>> {
-        self.rooms
-            .get(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.get: {e}")))
-    }
-
-    pub fn delete_room(&mut self, room_id: String) -> app::Result<()> {
-        let exists = self
-            .rooms
-            .contains(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.contains: {e}")))?;
-        if !exists {
-            app::bail!(ChatError::NotFound(room_id));
-        }
-
-        self.rooms
-            .remove(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.remove: {e}")))?;
-        let _ = self.activity.remove(&room_id);
-
-        app::emit!(Event::RoomDeleted { id: &room_id });
-        app::emit!(Event::RoomListUpdated {});
-        Ok(())
-    }
-
-    pub fn get_activity(&self) -> app::Result<Vec<RoomActivity>> {
-        let entries = self
-            .activity
-            .entries()
-            .map_err(|e| AppError::msg(format!("activity.entries: {e}")))?;
-        Ok(entries.map(|(_, v)| v).collect())
-    }
-
-    /// Called via xcall from the room service when a message is sent.
-    pub fn on_room_message(
+    pub fn update_shape_position(
         &mut self,
-        room_id: String,
-        room_name: String,
-        message_count: u64,
-        timestamp_ms: u64,
+        shape_id: String,
+        x: f64,
+        y: f64,
     ) -> app::Result<()> {
-        let activity = RoomActivity {
-            room_id: room_id.clone(),
-            room_name,
-            last_message_ms: timestamp_ms,
-            message_count,
-        };
-        self.activity
-            .insert(room_id, activity)
-            .map_err(|e| AppError::msg(format!("activity.insert: {e}")))?;
+        let mut shape = self
+            .shapes
+            .get(&shape_id)
+            .map_err(|e| AppError::msg(format!("shapes.get: {e}")))?
+            .ok_or_else(|| AppError::msg(format!("shape not found: {shape_id}")))?;
 
-        app::emit!(Event::RoomListUpdated {});
+        shape.x = x;
+        shape.y = y;
+
+        self.shapes
+            .update(&shape_id, shape)
+            .map_err(map_authored_error("update shape position"))?;
+
+        app::emit!(Event::ShapePositionUpdated { id: &shape_id });
         Ok(())
     }
 
-    // ---- Presence ----
+    pub fn delete_shape(&mut self, shape_id: String) -> app::Result<()> {
+        let exists = self
+            .shapes
+            .contains(&shape_id)
+            .map_err(|e| AppError::msg(format!("shapes.contains: {e}")))?;
+        if !exists {
+            app::bail!("shape not found: {shape_id}");
+        }
 
-    /// Record that the caller is currently online. First call inserts;
-    /// subsequent calls update the caller's own entry. AuthoredMap rejects
-    /// updates by anyone other than the original author at merge time, so a
-    /// peer cannot spoof anyone else's last_seen.
-    ///
-    /// `storage_env::time_now()` returns nanoseconds since epoch; we convert
-    /// to ms so the value lines up with `Date.now()` on the frontend.
-    /// Heartbeat emits no event — at 15s cadence it would spam the bus.
-    pub fn heartbeat(&mut self) -> app::Result<()> {
+        self.shapes
+            .remove(&shape_id)
+            .map_err(map_authored_error("delete shape"))?;
+
+        app::emit!(Event::ShapeDeleted { id: &shape_id });
+        Ok(())
+    }
+
+    pub fn get_all_shapes(&self) -> app::Result<Vec<Shape>> {
+        let cleared = *self.cleared_at_ms.get();
+        let entries = self
+            .shapes
+            .entries()
+            .map_err(|e| AppError::msg(format!("shapes.entries: {e}")))?;
+        Ok(entries
+            .map(|(_, v)| v)
+            .filter(|s| s.created_at >= cleared)
+            .collect())
+    }
+
+    // -----------------------------------------------------------------------
+    // Text methods
+    // -----------------------------------------------------------------------
+
+    pub fn add_text(
+        &mut self,
+        content: String,
+        x: f64,
+        y: f64,
+        font_size: u32,
+        color: String,
+    ) -> app::Result<String> {
+        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+        let now_ns = storage_env::time_now();
+        let now_ms = now_ns / 1_000_000;
+        let id = format!("text-{now_ns}");
+
+        let text = TextElement {
+            id: id.clone(),
+            author: caller,
+            content,
+            x,
+            y,
+            font_size,
+            color,
+            created_at: now_ms,
+        };
+
+        self.texts
+            .insert(id.clone(), text)
+            .map_err(|e| AppError::msg(format!("texts.insert: {e}")))?;
+
+        app::emit!(Event::TextAdded { id: &id });
+        Ok(id)
+    }
+
+    pub fn update_text(&mut self, text_id: String, content: String) -> app::Result<()> {
+        let mut text = self
+            .texts
+            .get(&text_id)
+            .map_err(|e| AppError::msg(format!("texts.get: {e}")))?
+            .ok_or_else(|| AppError::msg(format!("text not found: {text_id}")))?;
+
+        text.content = content;
+
+        self.texts
+            .update(&text_id, text)
+            .map_err(map_authored_error("update text"))?;
+
+        app::emit!(Event::TextUpdated { id: &text_id });
+        Ok(())
+    }
+
+    pub fn delete_text(&mut self, text_id: String) -> app::Result<()> {
+        let exists = self
+            .texts
+            .contains(&text_id)
+            .map_err(|e| AppError::msg(format!("texts.contains: {e}")))?;
+        if !exists {
+            app::bail!("text not found: {text_id}");
+        }
+
+        self.texts
+            .remove(&text_id)
+            .map_err(map_authored_error("delete text"))?;
+
+        app::emit!(Event::TextDeleted { id: &text_id });
+        Ok(())
+    }
+
+    pub fn get_all_text(&self) -> app::Result<Vec<TextElement>> {
+        let cleared = *self.cleared_at_ms.get();
+        let entries = self
+            .texts
+            .entries()
+            .map_err(|e| AppError::msg(format!("texts.entries: {e}")))?;
+        Ok(entries
+            .map(|(_, v)| v)
+            .filter(|t| t.created_at >= cleared)
+            .collect())
+    }
+
+    // -----------------------------------------------------------------------
+    // Comment methods
+    // -----------------------------------------------------------------------
+
+    pub fn add_comment(&mut self, target_id: String, body: String) -> app::Result<String> {
+        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+        let now_ns = storage_env::time_now();
+        let now_ms = now_ns / 1_000_000;
+        let id = format!("comment-{now_ns}");
+
+        let comment = Comment {
+            id: id.clone(),
+            author: caller,
+            target_id,
+            body,
+            created_at: now_ms,
+        };
+
+        self.comments
+            .insert(id.clone(), comment)
+            .map_err(|e| AppError::msg(format!("comments.insert: {e}")))?;
+
+        app::emit!(Event::CommentAdded { id: &id });
+        Ok(id)
+    }
+
+    pub fn delete_comment(&mut self, comment_id: String) -> app::Result<()> {
+        let exists = self
+            .comments
+            .contains(&comment_id)
+            .map_err(|e| AppError::msg(format!("comments.contains: {e}")))?;
+        if !exists {
+            app::bail!("comment not found: {comment_id}");
+        }
+
+        self.comments
+            .remove(&comment_id)
+            .map_err(map_authored_error("delete comment"))?;
+
+        app::emit!(Event::CommentDeleted { id: &comment_id });
+        Ok(())
+    }
+
+    pub fn get_comments_for_target(&self, target_id: String) -> app::Result<Vec<Comment>> {
+        let cleared = *self.cleared_at_ms.get();
+        let entries = self
+            .comments
+            .entries()
+            .map_err(|e| AppError::msg(format!("comments.entries: {e}")))?;
+        Ok(entries
+            .map(|(_, v)| v)
+            .filter(|c| c.target_id == target_id && c.created_at >= cleared)
+            .collect())
+    }
+
+    // -----------------------------------------------------------------------
+    // Cursor methods
+    // -----------------------------------------------------------------------
+
+    /// Update the caller's cursor position. Each user owns their own cursor entry.
+    /// Emits CursorUpdated so peers can refresh the live cursor overlay.
+    pub fn update_cursor(&mut self, x: f64, y: f64) -> app::Result<()> {
         let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
         let now_ms = storage_env::time_now() / 1_000_000;
+
+        let cursor = Cursor {
+            user_id: caller.clone(),
+            x,
+            y,
+            last_updated_at: now_ms,
+        };
+
         let exists = self
-            .presence
+            .cursors
             .contains(&caller)
-            .map_err(|e| AppError::msg(format!("presence.contains: {e}")))?;
+            .map_err(|e| AppError::msg(format!("cursors.contains: {e}")))?;
+
         if exists {
-            self.presence
-                .update(&caller, now_ms)
-                .map_err(|e| AppError::msg(format!("presence.update: {e}")))?;
+            self.cursors
+                .update(&caller, cursor)
+                .map_err(map_authored_error("update cursor"))?;
         } else {
-            self.presence
-                .insert(caller, now_ms)
-                .map_err(|e| AppError::msg(format!("presence.insert: {e}")))?;
+            self.cursors
+                .insert(caller, cursor)
+                .map_err(|e| AppError::msg(format!("cursors.insert: {e}")))?;
         }
+
+        app::emit!(Event::CursorUpdated {});
         Ok(())
     }
 
-    /// Return one PresenceEntry per member who has ever heartbeated. Clients
-    /// filter by recency (typically `now - last_seen_ms <= 35_000`) to derive
-    /// the online set.
-    pub fn list_presence(&self) -> app::Result<Vec<PresenceEntry>> {
+    pub fn get_all_cursors(&self) -> app::Result<Vec<Cursor>> {
         let entries = self
-            .presence
+            .cursors
             .entries()
-            .map_err(|e| AppError::msg(format!("presence.entries: {e}")))?;
-        Ok(entries
-            .map(|(member, last_seen_ms)| PresenceEntry { member, last_seen_ms })
-            .collect())
+            .map_err(|e| AppError::msg(format!("cursors.entries: {e}")))?;
+        Ok(entries.map(|(_, v)| v).collect())
     }
 
-    // ---- Display names ----
+    // -----------------------------------------------------------------------
+    // Canvas management
+    // -----------------------------------------------------------------------
 
-    /// Set the caller's display name. Truncated to `MAX_NAME_LEN` Unicode
-    /// scalar values (`chars().take(...)`) so multi-byte codepoints are not
-    /// split in the middle. AuthoredMap enforces author-only edits.
-    pub fn set_name(&mut self, name: String) -> app::Result<()> {
-        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
-        let truncated: String = name.chars().take(MAX_NAME_LEN).collect();
-        let exists = self
-            .names
-            .contains(&caller)
-            .map_err(|e| AppError::msg(format!("names.contains: {e}")))?;
-        if exists {
-            self.names
-                .update(&caller, truncated)
-                .map_err(|e| AppError::msg(format!("names.update: {e}")))?;
-        } else {
-            self.names
-                .insert(caller.clone(), truncated)
-                .map_err(|e| AppError::msg(format!("names.insert: {e}")))?;
-        }
-        app::emit!(Event::NameChanged { id: &caller });
+    /// Clear the canvas. Sets cleared_at_ms to the current time; all shapes,
+    /// text, and comments with created_at < cleared_at_ms are hidden by query
+    /// methods. CRDT-safe: the LwwRegister timestamp resolves concurrent clears
+    /// by keeping the latest.
+    pub fn clear_canvas(&mut self) -> app::Result<()> {
+        let now_ms = storage_env::time_now() / 1_000_000;
+        self.cleared_at_ms = LwwRegister::new(now_ms);
+        app::emit!(Event::CanvasCleared {});
         Ok(())
-    }
-
-    /// Return one NameEntry per member who has set a display name.
-    pub fn list_names(&self) -> app::Result<Vec<NameEntry>> {
-        let entries = self
-            .names
-            .entries()
-            .map_err(|e| AppError::msg(format!("names.entries: {e}")))?;
-        Ok(entries
-            .map(|(member, name)| NameEntry { member, name })
-            .collect())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn init_populates_created_ms() {
-        let state = LobbyState::init();
-        assert!(*state.created_ms.get() > 0);
     }
 }
