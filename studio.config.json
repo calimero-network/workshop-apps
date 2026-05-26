@@ -1,0 +1,22 @@
+{
+  "appName": "collectors-circle",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.collectors-circle",
+  "metadata": {
+    "name": "collectors-circle",
+    "description": "Peer-to-peer marketplace for trusted collectors with provenance tracking and escrow",
+    "author": "Calimero",
+    "route": "/collectors-circle"
+  },
+  "theme": {
+    "primaryColor": "#1F2937",
+    "accentColor": "#D4AF37",
+    "style": "elegant-luxury"
+  },
+  "services": [
+    {
+      "name": "marketplace",
+      "crate": "collectors-circle-marketplace"
+    }
+  ]
+}
