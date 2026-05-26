@@ -1,11 +1,15 @@
 #[calimero_sdk::app::event]
 pub enum Event<'a> {
-    /// A new room was created in the lobby.
-    RoomCreated { id: &'a str, name: &'a str },
-    /// A room was deleted from the lobby.
-    RoomDeleted { id: &'a str },
-    /// The room list changed (created, deleted, or updated).
-    RoomListUpdated {},
-    /// A member set or changed their display name.
-    NameChanged { id: &'a str },
+    /// A new post was created in the forum.
+    PostCreated { id: &'a str },
+    /// A post's body was edited.
+    PostEdited { id: &'a str },
+    /// A post was deleted.
+    PostDeleted { id: &'a str },
+    /// A reply was created under a post.
+    ReplyCreated { id: &'a str, post_id: &'a str },
+    /// A reply's body was edited.
+    ReplyEdited { id: &'a str },
+    /// A reply was deleted.
+    ReplyDeleted { id: &'a str },
 }

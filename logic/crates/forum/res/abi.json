@@ -1,7 +1,7 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
+    "Event_PostCreated": {
       "kind": "record",
       "fields": [
         {
@@ -12,24 +12,7 @@
         }
       ]
     },
-    "Event_RoomCreated": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "Event_RoomDeleted": {
+    "Event_PostDeleted": {
       "kind": "record",
       "fields": [
         {
@@ -40,173 +23,157 @@
         }
       ]
     },
-    "LobbyState": {
+    "Event_PostEdited": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
+          "name": "id",
           "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
-            }
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ReplyCreated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
           }
         },
         {
-          "name": "rooms",
+          "name": "post_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ReplyDeleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ReplyEdited": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "ForumState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "posts",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "u64"
+              "$ref": "Post"
             },
             "crdt_type": "authored_map"
           }
         },
         {
-          "name": "names",
+          "name": "replies",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "kind": "string"
+              "$ref": "Reply"
             },
             "crdt_type": "authored_map"
           }
         }
       ]
     },
-    "NameEntry": {
+    "Post": {
       "kind": "record",
       "fields": [
         {
-          "name": "member",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "PresenceEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
+          "name": "author",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "last_seen_ms",
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "post_type",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
         }
       ]
     },
-    "RoomActivity": {
+    "Reply": {
       "kind": "record",
       "fields": [
         {
-          "name": "room_id",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
+          "name": "post_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomSummary": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
+          "name": "author",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "body",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "created_by",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          },
-          "nullable": true
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "created_ms",
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
@@ -223,60 +190,42 @@
       }
     },
     {
-      "name": "register_room",
+      "name": "create_post",
       "params": [
         {
-          "name": "room_id",
+          "name": "title",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "body",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "context_id",
+          "name": "post_type",
           "type": {
             "kind": "string"
           }
         }
       ],
       "returns": {
-        "$ref": "RoomSummary"
+        "kind": "string"
       }
     },
     {
-      "name": "get_rooms",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomSummary"
-        }
-      }
-    },
-    {
-      "name": "get_room",
+      "name": "edit_post",
       "params": [
         {
-          "name": "room_id",
+          "name": "id",
           "type": {
             "kind": "string"
           }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
+        },
         {
-          "name": "room_id",
+          "name": "new_body",
           "type": {
             "kind": "string"
           }
@@ -287,69 +236,10 @@
       }
     },
     {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
+      "name": "delete_post",
       "params": [
         {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
-      "params": [
-        {
-          "name": "name",
+          "name": "id",
           "type": {
             "kind": "string"
           }
@@ -360,38 +250,124 @@
       }
     },
     {
-      "name": "list_names",
+      "name": "list_posts",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "Post"
+        }
+      }
+    },
+    {
+      "name": "reply_to_post",
+      "params": [
+        {
+          "name": "post_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "edit_reply",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_body",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "delete_reply",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_replies",
+      "params": [
+        {
+          "name": "post_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Reply"
         }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "PostCreated",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_PostCreated"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "PostEdited",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_PostEdited"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "PostDeleted",
+      "payload": {
+        "$ref": "Event_PostDeleted"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "ReplyCreated",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_ReplyCreated"
+      }
+    },
+    {
+      "name": "ReplyEdited",
+      "payload": {
+        "$ref": "Event_ReplyEdited"
+      }
+    },
+    {
+      "name": "ReplyDeleted",
+      "payload": {
+        "$ref": "Event_ReplyDeleted"
       }
     }
   ],
-  "state_root": "LobbyState"
+  "state_root": "ForumState"
 }
