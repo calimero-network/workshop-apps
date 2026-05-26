@@ -1,7 +1,7 @@
 {
   "appName": "hackathon-hub",
-  "appVersion": "0.1.0",
-  "package": "com.calimero.hackathon-hub",
+  "appVersion": "0.1.2",
+  "package": "com.calimero-studio.tester4.hackathon-hub",
   "metadata": {
     "name": "hackathon-hub",
     "description": "Shared team workspace for coordinating docs, tasks, and demo plan over a hackathon weekend",
