@@ -16,10 +16,10 @@ Summary: Private forum for a small group of traders to share positions, theses, 
 - [x] Implement view: [forum] get_replies(post_id: String) → app::Result<Vec<Reply>>
 
 ## Frontend (app/)
-- [ ] Screen: ForumFeed — Chronological list of posts + create-post CTA
-- [ ] Screen: PostDetail — Full post + reply thread + reply composer
-- [ ] Screen: MemberList — Pod members
-- [ ] Apply designTheme tokens
+- [x] Screen: ForumFeed — Chronological list of posts + create-post CTA
+- [x] Screen: PostDetail — Full post + reply thread + reply composer
+- [x] Screen: MemberList — Pod members
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

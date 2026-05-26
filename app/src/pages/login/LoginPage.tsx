@@ -17,10 +17,13 @@ export default function LoginPage() {
   return (
     <div className="app-bg">
       <div className="page-shell" style={{ justifyContent: 'center', alignItems: 'center', gap: '2rem' }}>
-        <h1 style={{ fontSize: '2.5rem', fontWeight: 700 }}>Calimero Chat</h1>
-        <p style={{ color: '#888', maxWidth: 400, textAlign: 'center' }}>
-          Decentralized multi-room chat powered by Calimero. Create rooms,
-          invite friends, and chat with end-to-end privacy.
+        <div style={{ fontSize: '2.5rem' }}>📊</div>
+        <h1 style={{ fontSize: '2.5rem', fontWeight: 700, color: '#f9fafb', margin: 0 }}>
+          Trading Pod Forum
+        </h1>
+        <p style={{ color: '#9ca3af', maxWidth: 400, textAlign: 'center', margin: 0 }}>
+          Private, decentralized forum for your trading group. Share theses,
+          debate ideas, and post-mortem closed positions — with full privacy.
         </p>
         <ConnectButton />
         <Button

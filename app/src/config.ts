@@ -7,8 +7,9 @@
 import raw from '../../studio.config.json';
 
 interface ServiceEntry {
-  /** Stable role: e.g. "directory" (workspace-level) or "instance" (per-context). */
-  id: string;
+  /** Stable role: e.g. "directory" (workspace-level) or "instance" (per-context).
+   *  When absent the service `name` is used as the id (single-service apps). */
+  id?: string;
   /** Wire name passed to `mero.admin.createContext({ serviceName })` and the
    *  bundle manifest service entry. Must match the Cargo crate's domain
    *  identity (typically the directory name under `logic/crates/`). */
@@ -46,23 +47,31 @@ export const APP_DISPLAY_NAME = config.metadata.name;
 export const APP_DESCRIPTION = config.metadata.description;
 export const THEME = config.theme;
 
-const byId = (id: string) => config.services.find((s) => s.id === id);
+/** Look up a service by explicit id, or fall back to matching by name.
+ *  Single-service apps omit the `id` field; we treat `name` as the id. */
+const byId = (id: string) =>
+  config.services.find((s) => (s.id ?? s.name) === id);
 
 /** Maps service-role id → wire name (`serviceName` for createContext etc.).
- *  Throws at startup if a referenced role isn't declared, so a misconfigured
- *  studio.config.json fails loudly instead of silently producing `undefined`. */
+ *  For single-service apps with no `id` field, the first service's `name`
+ *  is used both as the id and the wire name. */
 function requireService(id: string): string {
   const svc = byId(id);
   if (!svc) {
+    // Single-service fallback: if only one service exists and we're looking
+    // for 'directory', return its wire name.
+    if (id === 'directory' && config.services.length > 0) {
+      return config.services[0].name;
+    }
     throw new Error(`studio.config.json: services[] missing entry for id="${id}"`);
   }
   return svc.name;
 }
 
 export const SERVICE_NAME = {
-  /** Workspace-level service (lobby in chat): names, presence, directory listing. */
+  /** Workspace-level service (lobby / forum directory): the primary namespace context. */
   get directory(): string { return requireService('directory'); },
-  /** Per-context service (room in chat): the actual per-instance state. */
+  /** Per-context service: the actual per-instance state. Null for single-service apps. */
   get instance(): string | null {
     const svc = byId('instance');
     return svc ? svc.name : null;
