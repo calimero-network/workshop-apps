@@ -23,6 +23,12 @@ export interface Event_ShapeUpdated {
   id: string;
 }
 
+export interface ProjectMeta {
+  id: string;
+  name: string;
+  created_at_ms: number;
+}
+
 export interface Shape {
   id: string;
   author: string;
@@ -36,9 +42,7 @@ export interface Shape {
 }
 
 export interface WhiteboardState {
-  project_id: string;
-  project_name: string;
-  project_created_at_ms: number;
+  project: ProjectMeta;
   shapes: Record<string, Shape>;
 }
 
