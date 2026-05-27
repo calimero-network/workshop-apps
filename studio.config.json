@@ -1,0 +1,22 @@
+{
+  "appName": "living-memorial",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.living-memorial",
+  "metadata": {
+    "name": "living-memorial",
+    "description": "A shared space where friends and family preserve and celebrate memories of someone who has passed",
+    "author": "Calimero",
+    "route": "/living-memorial"
+  },
+  "theme": {
+    "primaryColor": "#6B4C9A",
+    "accentColor": "#D4A574",
+    "style": "serene-reflective"
+  },
+  "services": [
+    {
+      "name": "memorial",
+      "crate": "living-memorial-memorial"
+    }
+  ]
+}
