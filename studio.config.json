@@ -1,7 +1,7 @@
 {
   "appName": "collectors-circle",
-  "appVersion": "0.1.0",
-  "package": "com.calimero.collectors-circle",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.tester4.collectors-circle",
   "metadata": {
     "name": "collectors-circle",
     "description": "Peer-to-peer marketplace for trusted collectors with provenance tracking and escrow",
