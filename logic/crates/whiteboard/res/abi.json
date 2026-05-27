@@ -1,18 +1,7 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "Event_RoomCreated": {
+    "Event_ProjectCreated": {
       "kind": "record",
       "fields": [
         {
@@ -29,7 +18,7 @@
         }
       ]
     },
-    "Event_RoomDeleted": {
+    "Event_ShapeAdded": {
       "kind": "record",
       "fields": [
         {
@@ -40,11 +29,114 @@
         }
       ]
     },
-    "LobbyState": {
+    "Event_ShapeDeleted": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ShapeUpdated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Shape": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "shape_type",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "x",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "y",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "width",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "height",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "color",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "WhiteboardState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "project_id",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "lww_register",
+            "inner_type": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "project_name",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "lww_register",
+            "inner_type": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "project_created_at_ms",
           "type": {
             "kind": "record",
             "fields": [],
@@ -55,160 +147,16 @@
           }
         },
         {
-          "name": "rooms",
+          "name": "shapes",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "u64"
+              "$ref": "Shape"
             },
             "crdt_type": "authored_map"
-          }
-        },
-        {
-          "name": "names",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "string"
-            },
-            "crdt_type": "authored_map"
-          }
-        }
-      ]
-    },
-    "NameEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "PresenceEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_seen_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomActivity": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomSummary": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "created_by",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          },
-          "nullable": true
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "created_ms",
-          "type": {
-            "kind": "u64"
           }
         }
       ]
@@ -223,130 +171,7 @@
       }
     },
     {
-      "name": "register_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "get_rooms",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomSummary"
-        }
-      }
-    },
-    {
-      "name": "get_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
+      "name": "create_project",
       "params": [
         {
           "name": "name",
@@ -356,42 +181,147 @@
         }
       ],
       "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "add_shape",
+      "params": [
+        {
+          "name": "shape_type",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "x",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "y",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "width",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "height",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "color",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "update_shape",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "x",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "y",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "width",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "height",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "color",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
         "kind": "unit"
       }
     },
     {
-      "name": "list_names",
+      "name": "delete_shape",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "list_shapes",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "Shape"
         }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "ProjectCreated",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_ProjectCreated"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "ShapeAdded",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_ShapeAdded"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "ShapeUpdated",
+      "payload": {
+        "$ref": "Event_ShapeUpdated"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "ShapeDeleted",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_ShapeDeleted"
       }
     }
   ],
-  "state_root": "LobbyState"
+  "state_root": "WhiteboardState"
 }

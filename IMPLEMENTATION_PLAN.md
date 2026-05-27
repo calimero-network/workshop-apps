@@ -4,13 +4,13 @@ App: collab-whiteboard
 Summary: Real-time collaborative canvas where teams sketch shapes and design components together
 
 ## Backend (logic/src/lib.rs)
-- [ ] Define entity: [whiteboard] Project (id:LwwRegister<String>, name:LwwRegister<String>, created_at:LwwRegister<u64>)
-- [ ] Define entity: [whiteboard] Shape (id:String, author:String, shape_type:String, x:f64, y:f64, width:f64, height:f64, color:String, created_at:u64)
-- [ ] Implement mutate: [whiteboard] create_project(name: String) → app::Result<String>
-- [ ] Implement mutate: [whiteboard] add_shape(shape_type: String, x: f64, y: f64, width: f64, height: f64, color: String) → app::Result<String>
-- [ ] Implement mutate: [whiteboard] update_shape(id: String, x: f64, y: f64, width: f64, height: f64, color: String) → app::Result<()>
-- [ ] Implement mutate: [whiteboard] delete_shape(id: String) → app::Result<()>
-- [ ] Implement view: [whiteboard] list_shapes() → app::Result<Vec<Shape>>
+- [x] Define entity: [whiteboard] Project (id:LwwRegister<String>, name:LwwRegister<String>, created_at:LwwRegister<u64>)
+- [x] Define entity: [whiteboard] Shape (id:String, author:String, shape_type:String, x:f64, y:f64, width:f64, height:f64, color:String, created_at:u64)
+- [x] Implement mutate: [whiteboard] create_project(name: String) → app::Result<String>
+- [x] Implement mutate: [whiteboard] add_shape(shape_type: String, x: f64, y: f64, width: f64, height: f64, color: String) → app::Result<String>
+- [x] Implement mutate: [whiteboard] update_shape(id: String, x: f64, y: f64, width: f64, height: f64, color: String) → app::Result<()>
+- [x] Implement mutate: [whiteboard] delete_shape(id: String) → app::Result<()>
+- [x] Implement view: [whiteboard] list_shapes() → app::Result<Vec<Shape>>
 
 ## Frontend (app/)
 - [ ] Screen: ProjectsListView — List of projects the user is part of; create and invite UI
