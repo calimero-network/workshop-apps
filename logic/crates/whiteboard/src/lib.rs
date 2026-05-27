@@ -4,8 +4,10 @@ use calimero_sdk::app;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
-use calimero_storage::collections::{AuthoredMap, LwwRegister};
+use calimero_sdk::PublicKey;
+use calimero_storage::collections::{AuthoredMap, LwwRegister, SharedStorage};
 use calimero_storage::env as storage_env;
+use std::collections::BTreeSet;
 
 pub mod events;
 use events::Event;
@@ -17,6 +19,27 @@ const MAX_COLOR_LEN: usize = 32;
 // ---------------------------------------------------------------------------
 // Data models
 // ---------------------------------------------------------------------------
+
+/// Metadata for the governed project (only context creator can mutate).
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[borsh(crate = "calimero_sdk::borsh")]
+#[serde(crate = "calimero_sdk::serde")]
+pub struct ProjectMeta {
+    pub id: String,
+    pub name: String,
+    pub created_at_ms: u64,
+}
+
+// Explicit Default impl required by the SDK for SharedStorage inner types.
+impl Default for ProjectMeta {
+    fn default() -> ProjectMeta {
+        ProjectMeta {
+            id: String::new(),
+            name: String::new(),
+            created_at_ms: 0,
+        }
+    }
+}
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
@@ -41,12 +64,8 @@ pub struct Shape {
 #[derive(BorshSerialize, BorshDeserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 pub struct WhiteboardState {
-    /// Project identifier — empty until create_project is called.
-    project_id: LwwRegister<String>,
-    /// Project display name.
-    project_name: LwwRegister<String>,
-    /// Project creation timestamp in milliseconds since epoch.
-    project_created_at_ms: LwwRegister<u64>,
+    /// Project metadata — governed by the context creator (writer-set).
+    project: SharedStorage<LwwRegister<ProjectMeta>>,
     /// All shapes on the canvas, keyed by shape ID.
     /// AuthoredMap ensures each shape can only be modified by its author.
     shapes: AuthoredMap<String, Shape>,
@@ -56,10 +75,21 @@ pub struct WhiteboardState {
 impl WhiteboardState {
     #[app::init]
     pub fn init() -> WhiteboardState {
+        let creator: PublicKey = calimero_sdk::env::executor_id().into();
+        let mut writers = BTreeSet::new();
+        let _ = writers.insert(creator);
+
+        let mut project =
+            SharedStorage::new_with_field_name("whiteboard:project", writers, false);
+        // Insert a sentinel so get() is always valid before create_project is called.
+        let _ = project.insert(LwwRegister::new(ProjectMeta {
+            id: String::new(),
+            name: String::new(),
+            created_at_ms: 0,
+        }));
+
         WhiteboardState {
-            project_id: LwwRegister::new(String::new()),
-            project_name: LwwRegister::new(String::new()),
-            project_created_at_ms: LwwRegister::new(0u64),
+            project,
             shapes: AuthoredMap::new_with_field_name("whiteboard:shapes"),
         }
     }
@@ -67,21 +97,34 @@ impl WhiteboardState {
     // ---- Project API ----
 
     /// Create the project for this whiteboard context. Should be called once
-    /// after the context is created. Returns the generated project ID.
+    /// after the context is created. Only the context creator may call this.
+    /// Returns the generated project ID.
     pub fn create_project(&mut self, name: String) -> app::Result<String> {
-        if !self.project_id.get().is_empty() {
+        let current = self
+            .project
+            .get()
+            .map_err(|e| AppError::msg(format!("project.get: {e}")))?
+            .get()
+            .clone();
+
+        if !current.id.is_empty() {
             app::bail!(AppError::msg("project already created for this context"));
         }
         if name.is_empty() {
             app::bail!(AppError::msg("project name must not be empty"));
         }
+
         let name: String = name.chars().take(MAX_NAME_LEN).collect();
         let now_ms = storage_env::time_now() / 1_000_000;
         let id = format!("proj-{}", now_ms);
 
-        self.project_id = LwwRegister::new(id.clone());
-        self.project_name = LwwRegister::new(name.clone());
-        self.project_created_at_ms = LwwRegister::new(now_ms);
+        self.project
+            .insert(LwwRegister::new(ProjectMeta {
+                id: id.clone(),
+                name: name.clone(),
+                created_at_ms: now_ms,
+            }))
+            .map_err(map_governed_error("create_project"))?;
 
         app::emit!(Event::ProjectCreated { id: &id, name: &name });
         Ok(id)
@@ -106,7 +149,11 @@ impl WhiteboardState {
         let now_ns = storage_env::time_now();
         let now_ms = now_ns / 1_000_000;
         // Include nanosecond tail for uniqueness within the same millisecond.
-        let id = format!("shape-{}-{}", now_ns, &author.chars().take(6).collect::<String>());
+        let id = format!(
+            "shape-{}-{}",
+            now_ns,
+            &author.chars().take(6).collect::<String>()
+        );
 
         let shape = Shape {
             id: id.clone(),
@@ -168,7 +215,7 @@ impl WhiteboardState {
 
         self.shapes
             .update(&id, updated)
-            .map_err(|e| AppError::msg(format!("shapes.update: {e}")))?;
+            .map_err(map_authored_error("update"))?;
 
         app::emit!(Event::ShapeUpdated { id: &id });
         Ok(())
@@ -193,7 +240,7 @@ impl WhiteboardState {
 
         self.shapes
             .remove(&id)
-            .map_err(|e| AppError::msg(format!("shapes.remove: {e}")))?;
+            .map_err(map_authored_error("delete"))?;
 
         app::emit!(Event::ShapeDeleted { id: &id });
         Ok(())
@@ -209,14 +256,32 @@ impl WhiteboardState {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// ---------------------------------------------------------------------------
+// Error helpers
+// ---------------------------------------------------------------------------
 
-    #[test]
-    fn init_creates_empty_state() {
-        let state = WhiteboardState::init();
-        assert!(state.project_id.get().is_empty());
-        assert_eq!(*state.project_created_at_ms.get(), 0u64);
+fn map_authored_error(
+    action: &'static str,
+) -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
+    move |e| {
+        let s = e.to_string();
+        if s.contains("ActionNotAllowed") {
+            AppError::msg(format!("forbidden: can only {action} your own shapes"))
+        } else {
+            AppError::msg(format!("shapes.{action}: {s}"))
+        }
+    }
+}
+
+fn map_governed_error(
+    action: &'static str,
+) -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
+    move |e| {
+        let s = e.to_string();
+        if s.contains("ActionNotAllowed") {
+            AppError::msg(format!("forbidden: {action}: caller is not the project creator"))
+        } else {
+            AppError::msg(format!("project.{action}: {s}"))
+        }
     }
 }

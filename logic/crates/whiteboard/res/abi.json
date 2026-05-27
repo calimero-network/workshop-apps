@@ -51,6 +51,29 @@
         }
       ]
     },
+    "ProjectMeta": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at_ms",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
     "Shape": {
       "kind": "record",
       "fields": [
@@ -114,35 +137,13 @@
       "kind": "record",
       "fields": [
         {
-          "name": "project_id",
+          "name": "project",
           "type": {
             "kind": "record",
             "fields": [],
             "crdt_type": "lww_register",
             "inner_type": {
-              "kind": "string"
-            }
-          }
-        },
-        {
-          "name": "project_name",
-          "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "string"
-            }
-          }
-        },
-        {
-          "name": "project_created_at_ms",
-          "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
+              "$ref": "ProjectMeta"
             }
           }
         },
