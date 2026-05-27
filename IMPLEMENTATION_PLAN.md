@@ -13,13 +13,13 @@ Summary: Real-time collaborative canvas where teams sketch shapes and design com
 - [x] Implement view: [whiteboard] list_shapes() → app::Result<Vec<Shape>>
 
 ## Frontend (app/)
-- [ ] Screen: ProjectsListView — List of projects the user is part of; create and invite UI
-- [ ] Screen: WhiteboardView — Live canvas with all shapes; toolbar to add shapes; click to edit properties
-- [ ] Apply designTheme tokens
+- [x] Screen: ProjectsListView — List of projects the user is part of; create and invite UI
+- [x] Screen: WhiteboardView — Live canvas with all shapes; toolbar to add shapes; click to edit properties
+- [x] Apply designTheme tokens
 
 ## Verification
 - [x] cargo build --target wasm32-unknown-unknown succeeds
-- [ ] tsc --noEmit passes
+- [x] tsc --noEmit passes
 - [ ] Test story (designer): create a new project and invite my team
 - [ ] Test story (team member): add a rectangle, circle, or text shape to the canvas with a color and size
 - [ ] Test story (anyone on the canvas): see every shape everyone adds or edits in real time

@@ -60,12 +60,23 @@ function requireService(id: string): string {
 }
 
 export const SERVICE_NAME = {
-  /** Workspace-level service (lobby in chat): names, presence, directory listing. */
-  get directory(): string { return requireService('directory'); },
-  /** Per-context service (room in chat): the actual per-instance state. */
+  /** Workspace-level service (lobby/directory). Returns null when this app uses a
+   *  single service with no dedicated directory context (e.g. collab-whiteboard). */
+  get directory(): string | null {
+    const svc = byId('directory');
+    return svc ? svc.name : null;
+  },
+  /** Per-context instance service. Falls back to the first declared service when
+   *  no explicit 'instance' role is configured (single-service apps). */
   get instance(): string | null {
     const svc = byId('instance');
-    return svc ? svc.name : null;
+    if (svc) return svc.name;
+    // Single-service fallback: the only service IS the per-instance service.
+    return config.services[0]?.name ?? null;
+  },
+  /** The whiteboard service name (collab-whiteboard specific). */
+  get whiteboard(): string {
+    return config.services.find((s) => s.name === 'whiteboard')?.name ?? 'whiteboard';
   },
 };
 

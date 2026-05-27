@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useMero } from '@calimero-network/mero-react';
-import { SERVICE_NAME } from '../config';
+// SERVICE_NAME not used: single-service app, no lobby context on bootstrap.
 
 /**
  * Capability bits for the namespace.
@@ -54,18 +54,12 @@ export function useNamespaceBootstrap(
           defaultCapabilities: DEFAULT_CAPABILITIES,
         });
 
-        // 3. Create the lobby (workspace directory) context inside the namespace root group
-        const ctx = await mero.admin.createContext({
-          applicationId,
-          groupId: namespaceId,
-          serviceName: SERVICE_NAME.directory,
-          initializationParams: [],
-        });
-
+        // 3. Single-service app: no dedicated lobby/directory context.
+        //    Project contexts are created on-demand by the user.
         return {
           namespaceId,
-          lobbyContextId: ctx.contextId,
-          memberPublicKey: ctx.memberPublicKey,
+          lobbyContextId: '',
+          memberPublicKey: '',
         };
       } catch (err) {
         const e = err instanceof Error ? err : new Error(String(err));

@@ -4,7 +4,7 @@ import { AppMode, MeroProvider } from '@calimero-network/mero-react';
 import { ToastProvider } from '@calimero-network/mero-ui';
 
 import LoginPage from './pages/login/LoginPage';
-import ChatPage from './pages/chat/ChatPage';
+import WhiteboardPage from './pages/whiteboard/WhiteboardPage';
 import { APP_PACKAGE, APP_ROUTE } from './config';
 
 export default function App() {
@@ -27,7 +27,7 @@ export default function App() {
         <BrowserRouter basename="/">
           <Routes>
             <Route path="/" element={<LoginPage />} />
-            <Route path={APP_ROUTE} element={<ChatPage />} />
+            <Route path={APP_ROUTE} element={<WhiteboardPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
