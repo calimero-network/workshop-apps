@@ -1,0 +1,22 @@
+{
+  "appName": "collab-whiteboard",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.collab-whiteboard",
+  "metadata": {
+    "name": "collab-whiteboard",
+    "description": "Real-time collaborative canvas where teams sketch shapes and design components together",
+    "author": "Calimero",
+    "route": "/collab-whiteboard"
+  },
+  "theme": {
+    "primaryColor": "#5B21B6",
+    "accentColor": "#EC4899",
+    "style": "modern-design-tool"
+  },
+  "services": [
+    {
+      "name": "whiteboard",
+      "crate": "collab-whiteboard-whiteboard"
+    }
+  ]
+}
