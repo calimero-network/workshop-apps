@@ -4,18 +4,18 @@ App: living-memorial
 Summary: A shared space where friends and family preserve and celebrate memories of someone who has passed
 
 ## Backend (logic/src/lib.rs)
-- [ ] Define entity: [memorial] Memory (id:LwwRegister<String>, author:LwwRegister<String>, body:LwwRegister<String>, attachments:LwwRegister<Vec<Attachment>>, created_at:LwwRegister<u64>)
-- [ ] Define entity: [memorial] Reaction (id:LwwRegister<String>, memory_id:LwwRegister<String>, author:LwwRegister<String>, emoji:LwwRegister<String>, created_at:LwwRegister<u64>)
-- [ ] Define entity: [memorial] Comment (id:LwwRegister<String>, memory_id:LwwRegister<String>, author:LwwRegister<String>, body:LwwRegister<String>, created_at:LwwRegister<u64>)
-- [ ] Implement mutate: [memorial] post_memory(body: String, attachments: Vec<Attachment>) → app::Result<String>
-- [ ] Implement mutate: [memorial] edit_memory(id: String, body: String) → app::Result<()>
-- [ ] Implement mutate: [memorial] delete_memory(id: String) → app::Result<()>
-- [ ] Implement view: [memorial] get_memories() → app::Result<Vec<Memory>>
-- [ ] Implement mutate: [memorial] add_reaction(memory_id: String, emoji: String) → app::Result<String>
-- [ ] Implement mutate: [memorial] remove_reaction(id: String) → app::Result<()>
-- [ ] Implement mutate: [memorial] post_comment(memory_id: String, body: String) → app::Result<String>
-- [ ] Implement view: [memorial] get_comments(memory_id: String) → app::Result<Vec<Comment>>
-- [ ] Implement view: [memorial] get_reactions(memory_id: String) → app::Result<Vec<Reaction>>
+- [x] Define entity: [memorial] Memory (id:LwwRegister<String>, author:LwwRegister<String>, body:LwwRegister<String>, attachments:LwwRegister<Vec<Attachment>>, created_at:LwwRegister<u64>)
+- [x] Define entity: [memorial] Reaction (id:LwwRegister<String>, memory_id:LwwRegister<String>, author:LwwRegister<String>, emoji:LwwRegister<String>, created_at:LwwRegister<u64>)
+- [x] Define entity: [memorial] Comment (id:LwwRegister<String>, memory_id:LwwRegister<String>, author:LwwRegister<String>, body:LwwRegister<String>, created_at:LwwRegister<u64>)
+- [x] Implement mutate: [memorial] post_memory(body: String, attachments: Vec<Attachment>) → app::Result<String>
+- [x] Implement mutate: [memorial] edit_memory(id: String, body: String) → app::Result<()>
+- [x] Implement mutate: [memorial] delete_memory(id: String) → app::Result<()>
+- [x] Implement view: [memorial] get_memories() → app::Result<Vec<Memory>>
+- [x] Implement mutate: [memorial] add_reaction(memory_id: String, emoji: String) → app::Result<String>
+- [x] Implement mutate: [memorial] remove_reaction(id: String) → app::Result<()>
+- [x] Implement mutate: [memorial] post_comment(memory_id: String, body: String) → app::Result<String>
+- [x] Implement view: [memorial] get_comments(memory_id: String) → app::Result<Vec<Comment>>
+- [x] Implement view: [memorial] get_reactions(memory_id: String) → app::Result<Vec<Reaction>>
 
 ## Frontend (app/)
 - [ ] Screen: MemorialTimeline — Reverse-chronological feed of memories with photos, audio, reactions, and comments

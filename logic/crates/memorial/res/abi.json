@@ -1,18 +1,24 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
+    "Attachment": {
       "kind": "record",
       "fields": [
         {
-          "name": "id",
+          "name": "url",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "kind",
           "type": {
             "kind": "string"
           }
         }
       ]
     },
-    "Event_RoomCreated": {
+    "Comment": {
       "kind": "record",
       "fields": [
         {
@@ -22,14 +28,49 @@
           }
         },
         {
-          "name": "name",
+          "name": "memory_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Event_CommentPosted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "memory_id",
           "type": {
             "kind": "string"
           }
         }
       ]
     },
-    "Event_RoomDeleted": {
+    "Event_MemoryDeleted": {
       "kind": "record",
       "fields": [
         {
@@ -40,173 +81,167 @@
         }
       ]
     },
-    "LobbyState": {
+    "Event_MemoryEdited": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
+          "name": "id",
           "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_MemoryPosted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ReactionAdded": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "memory_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ReactionRemoved": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "MemorialState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "memories",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Memory"
+            },
+            "crdt_type": "authored_map"
+          }
+        },
+        {
+          "name": "reactions",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Reaction"
+            },
+            "crdt_type": "authored_map"
+          }
+        },
+        {
+          "name": "comments",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Comment"
+            },
+            "crdt_type": "authored_map"
+          }
+        }
+      ]
+    },
+    "Memory": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "attachments",
+          "type": {
+            "kind": "list",
+            "items": {
+              "$ref": "Attachment"
             }
           }
         },
         {
-          "name": "rooms",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "u64"
-            },
-            "crdt_type": "authored_map"
-          }
-        },
-        {
-          "name": "names",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "string"
-            },
-            "crdt_type": "authored_map"
-          }
-        }
-      ]
-    },
-    "NameEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "PresenceEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_seen_ms",
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
         }
       ]
     },
-    "RoomActivity": {
+    "Reaction": {
       "kind": "record",
       "fields": [
         {
-          "name": "room_id",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
+          "name": "memory_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomSummary": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
+          "name": "author",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "emoji",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "created_by",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          },
-          "nullable": true
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "created_ms",
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
@@ -223,60 +258,39 @@
       }
     },
     {
-      "name": "register_room",
+      "name": "post_memory",
       "params": [
         {
-          "name": "room_id",
+          "name": "body",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "attachments",
+          "type": {
+            "kind": "list",
+            "items": {
+              "$ref": "Attachment"
+            }
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "edit_memory",
+      "params": [
+        {
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "get_rooms",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomSummary"
-        }
-      }
-    },
-    {
-      "name": "get_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
+          "name": "body",
           "type": {
             "kind": "string"
           }
@@ -287,69 +301,10 @@
       }
     },
     {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
+      "name": "delete_memory",
       "params": [
         {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
-      "params": [
-        {
-          "name": "name",
+          "name": "id",
           "type": {
             "kind": "string"
           }
@@ -360,38 +315,141 @@
       }
     },
     {
-      "name": "list_names",
+      "name": "get_memories",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "Memory"
+        }
+      }
+    },
+    {
+      "name": "add_reaction",
+      "params": [
+        {
+          "name": "memory_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "emoji",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "remove_reaction",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_reactions",
+      "params": [
+        {
+          "name": "memory_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Reaction"
+        }
+      }
+    },
+    {
+      "name": "post_comment",
+      "params": [
+        {
+          "name": "memory_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "get_comments",
+      "params": [
+        {
+          "name": "memory_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Comment"
         }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "MemoryPosted",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_MemoryPosted"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "MemoryEdited",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_MemoryEdited"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "MemoryDeleted",
+      "payload": {
+        "$ref": "Event_MemoryDeleted"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "ReactionAdded",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_ReactionAdded"
+      }
+    },
+    {
+      "name": "ReactionRemoved",
+      "payload": {
+        "$ref": "Event_ReactionRemoved"
+      }
+    },
+    {
+      "name": "CommentPosted",
+      "payload": {
+        "$ref": "Event_CommentPosted"
       }
     }
   ],
-  "state_root": "LobbyState"
+  "state_root": "MemorialState"
 }

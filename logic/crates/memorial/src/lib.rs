@@ -1,340 +1,294 @@
-//! Lobby service — room directory and membership tracking.
+//! Memorial service — shared timeline of memories, reactions, and comments.
 
-use chat_types::{ChatError, PublicKey};
+use chat_types::{generate_id, ChatError};
 use calimero_sdk::app;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
-use calimero_storage::collections::crdt_meta::MergeError;
-use calimero_storage::collections::{AuthoredMap, LwwRegister, Mergeable, UnorderedMap};
+use calimero_storage::collections::AuthoredMap;
 use calimero_storage::env as storage_env;
 
 pub mod events;
 use events::Event;
 
-const MAX_NAME_LEN: usize = 20;
-
 // ---------------------------------------------------------------------------
 // Data models
 // ---------------------------------------------------------------------------
 
+/// A file or media attachment on a memory (photo, audio clip, etc.).
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct RoomSummary {
-    pub room_id: String,
-    pub name: String,
-    pub created_by: String,
-    pub context_id: Option<String>,
-    pub member_count: u64,
-    pub created_ms: u64,
+pub struct Attachment {
+    /// URL or CID pointing to the attachment.
+    pub url: String,
+    /// MIME type or short kind label, e.g. "image", "audio".
+    pub kind: String,
 }
 
-impl Mergeable for RoomSummary {
-    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        if self.context_id.is_none() && other.context_id.is_some() {
-            self.context_id = other.context_id.clone();
-        }
-        if other.member_count > self.member_count {
-            self.member_count = other.member_count;
-        }
-        Ok(())
-    }
-}
-
+/// A story or memory shared on the memorial timeline.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct RoomActivity {
-    pub room_id: String,
-    pub room_name: String,
-    pub last_message_ms: u64,
-    pub message_count: u64,
+pub struct Memory {
+    pub id: String,
+    pub author: String,
+    pub body: String,
+    pub attachments: Vec<Attachment>,
+    /// Milliseconds since Unix epoch.
+    pub created_at: u64,
 }
 
-impl Mergeable for RoomActivity {
-    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        // Keep the most recent activity.
-        if other.last_message_ms > self.last_message_ms {
-            *self = other.clone();
-        }
-        Ok(())
-    }
-}
-
+/// An emoji reaction on a memory.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct PresenceEntry {
-    pub member: String,
-    pub last_seen_ms: u64,
+pub struct Reaction {
+    pub id: String,
+    pub memory_id: String,
+    pub author: String,
+    pub emoji: String,
+    /// Milliseconds since Unix epoch.
+    pub created_at: u64,
 }
 
+/// A text comment on a memory.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct NameEntry {
-    pub member: String,
-    pub name: String,
+pub struct Comment {
+    pub id: String,
+    pub memory_id: String,
+    pub author: String,
+    pub body: String,
+    /// Milliseconds since Unix epoch.
+    pub created_at: u64,
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn from_executor_id() -> Result<PublicKey, ChatError> {
-    PublicKey::from_raw_bytes(&calimero_sdk::env::executor_id())
+/// Return the caller's public key as a base58 string.
+fn caller_b58() -> String {
+    bs58::encode(calimero_sdk::env::executor_id()).into_string()
+}
+
+/// Map `AuthoredMap` storage errors to domain errors so the frontend receives
+/// `Forbidden` instead of a raw `ActionNotAllowed` string.
+fn map_authored_error(
+    action: &'static str,
+) -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
+    move |e| {
+        let s = e.to_string();
+        if s.contains("ActionNotAllowed") {
+            AppError::from(ChatError::Forbidden(format!(
+                "can only {action} your own entry"
+            )))
+        } else {
+            AppError::msg(format!("{action}: {s}"))
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Lobby state
+// State
 // ---------------------------------------------------------------------------
 
 #[app::state(emits = for<'a> Event<'a>)]
 #[derive(BorshSerialize, BorshDeserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
-pub struct LobbyState {
-    created_ms: LwwRegister<u64>,
-    rooms: UnorderedMap<String, RoomSummary>,
-    activity: UnorderedMap<String, RoomActivity>,
-    /// Per-author presence: only the entry's own author can update or remove
-    /// their `last_seen_ms`. Spoofing is rejected at merge time by `AuthoredMap`.
-    presence: AuthoredMap<String, u64>,
-    /// Per-author display name: each member owns and edits only their own
-    /// entry. Truncated to `MAX_NAME_LEN` Unicode scalars at write time.
-    names: AuthoredMap<String, String>,
+pub struct MemorialState {
+    /// All memories; keyed by memory id. AuthoredMap enforces author-only edits/deletes.
+    memories: AuthoredMap<String, Memory>,
+    /// All reactions; keyed by reaction id.
+    reactions: AuthoredMap<String, Reaction>,
+    /// All comments; keyed by comment id.
+    comments: AuthoredMap<String, Comment>,
 }
 
 #[app::logic]
-impl LobbyState {
+impl MemorialState {
     #[app::init]
-    pub fn init() -> LobbyState {
-        LobbyState {
-            created_ms: LwwRegister::new(storage_env::time_now()),
-            rooms: UnorderedMap::new_with_field_name("lobby:rooms"),
-            activity: UnorderedMap::new_with_field_name("lobby:activity"),
-            presence: AuthoredMap::new_with_field_name("lobby:presence"),
-            names: AuthoredMap::new_with_field_name("lobby:names"),
+    pub fn init() -> MemorialState {
+        MemorialState {
+            memories: AuthoredMap::new_with_field_name("memorial:memories"),
+            reactions: AuthoredMap::new_with_field_name("memorial:reactions"),
+            comments: AuthoredMap::new_with_field_name("memorial:comments"),
         }
     }
 
-    // ---- Lobby API ----
+    // ---- Memory ----
 
-    /// Atomically register a new room. The client creates the room context
-    /// first (via admin createContext), then calls this with the resulting
-    /// context_id. This avoids the propagation race where a separate
-    /// `create_room` then `set_room_context_id` would expose a window with
-    /// `context_id == null` to remote peers.
-    ///
-    /// Idempotent on collision: if `room_id` already exists with the same
-    /// `name`, `created_by`, and `context_id`, returns the existing summary.
-    pub fn register_room(
+    /// Post a new memory to the timeline. Returns the new memory id.
+    pub fn post_memory(
         &mut self,
-        room_id: String,
-        name: String,
-        context_id: String,
-    ) -> app::Result<RoomSummary> {
-        let caller = from_executor_id().map_err(|e| AppError::msg(e.to_string()))?;
-        let caller_b58 = caller.to_base58();
-
-        if name.is_empty() || name.len() > 64 {
-            app::bail!(ChatError::Invalid(
-                "room name must be 1-64 characters".into()
-            ));
-        }
-        if !room_id.starts_with("room-") || room_id.len() < 16 || room_id.len() > 64 {
-            app::bail!(ChatError::Invalid(
-                "room_id must match room-{timestamp}-{nonce}".into()
-            ));
-        }
-        if context_id.is_empty() {
-            app::bail!(ChatError::Invalid("context_id must not be empty".into()));
-        }
-
-        if let Some(existing) = self
-            .rooms
-            .get(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.get: {e}")))?
-        {
-            if existing.name == name
-                && existing.created_by == caller_b58
-                && existing.context_id.as_deref() == Some(context_id.as_str())
-            {
-                return Ok(existing);
-            }
-            app::bail!(ChatError::RoomAlreadyExists);
-        }
-
-        let summary = RoomSummary {
-            room_id: room_id.clone(),
-            name: name.clone(),
-            created_by: caller_b58,
-            context_id: Some(context_id),
-            member_count: 0,
-            created_ms: storage_env::time_now(),
-        };
-
-        self.rooms
-            .insert(room_id.clone(), summary.clone())
-            .map_err(|e| AppError::msg(format!("rooms.insert: {e}")))?;
-
-        app::emit!(Event::RoomCreated {
-            id: &room_id,
-            name: &name,
-        });
-        app::emit!(Event::RoomListUpdated {});
-        Ok(summary)
-    }
-
-    pub fn get_rooms(&self) -> app::Result<Vec<RoomSummary>> {
-        let entries = self
-            .rooms
-            .entries()
-            .map_err(|e| AppError::msg(format!("rooms.entries: {e}")))?;
-        Ok(entries.map(|(_, v)| v).collect())
-    }
-
-    pub fn get_room(&self, room_id: String) -> app::Result<Option<RoomSummary>> {
-        self.rooms
-            .get(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.get: {e}")))
-    }
-
-    pub fn delete_room(&mut self, room_id: String) -> app::Result<()> {
-        let exists = self
-            .rooms
-            .contains(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.contains: {e}")))?;
-        if !exists {
-            app::bail!(ChatError::NotFound(room_id));
-        }
-
-        self.rooms
-            .remove(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.remove: {e}")))?;
-        let _ = self.activity.remove(&room_id);
-
-        app::emit!(Event::RoomDeleted { id: &room_id });
-        app::emit!(Event::RoomListUpdated {});
-        Ok(())
-    }
-
-    pub fn get_activity(&self) -> app::Result<Vec<RoomActivity>> {
-        let entries = self
-            .activity
-            .entries()
-            .map_err(|e| AppError::msg(format!("activity.entries: {e}")))?;
-        Ok(entries.map(|(_, v)| v).collect())
-    }
-
-    /// Called via xcall from the room service when a message is sent.
-    pub fn on_room_message(
-        &mut self,
-        room_id: String,
-        room_name: String,
-        message_count: u64,
-        timestamp_ms: u64,
-    ) -> app::Result<()> {
-        let activity = RoomActivity {
-            room_id: room_id.clone(),
-            room_name,
-            last_message_ms: timestamp_ms,
-            message_count,
-        };
-        self.activity
-            .insert(room_id, activity)
-            .map_err(|e| AppError::msg(format!("activity.insert: {e}")))?;
-
-        app::emit!(Event::RoomListUpdated {});
-        Ok(())
-    }
-
-    // ---- Presence ----
-
-    /// Record that the caller is currently online. First call inserts;
-    /// subsequent calls update the caller's own entry. AuthoredMap rejects
-    /// updates by anyone other than the original author at merge time, so a
-    /// peer cannot spoof anyone else's last_seen.
-    ///
-    /// `storage_env::time_now()` returns nanoseconds since epoch; we convert
-    /// to ms so the value lines up with `Date.now()` on the frontend.
-    /// Heartbeat emits no event — at 15s cadence it would spam the bus.
-    pub fn heartbeat(&mut self) -> app::Result<()> {
-        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+        body: String,
+        attachments: Vec<Attachment>,
+    ) -> app::Result<String> {
+        let author = caller_b58();
         let now_ms = storage_env::time_now() / 1_000_000;
-        let exists = self
-            .presence
-            .contains(&caller)
-            .map_err(|e| AppError::msg(format!("presence.contains: {e}")))?;
-        if exists {
-            self.presence
-                .update(&caller, now_ms)
-                .map_err(|e| AppError::msg(format!("presence.update: {e}")))?;
-        } else {
-            self.presence
-                .insert(caller, now_ms)
-                .map_err(|e| AppError::msg(format!("presence.insert: {e}")))?;
-        }
+        let mut nonce = [0u8; 4];
+        calimero_sdk::env::random_bytes(&mut nonce);
+        let id = generate_id("mem", now_ms, &nonce);
+
+        let memory = Memory {
+            id: id.clone(),
+            author,
+            body,
+            attachments,
+            created_at: now_ms,
+        };
+
+        self.memories
+            .insert(id.clone(), memory)
+            .map_err(|e| AppError::msg(format!("memories.insert: {e}")))?;
+
+        app::emit!(Event::MemoryPosted { id: &id });
+        Ok(id)
+    }
+
+    /// Edit the body of an existing memory. Only the original author may edit.
+    pub fn edit_memory(&mut self, id: String, body: String) -> app::Result<()> {
+        let mut memory = self
+            .memories
+            .get(&id)
+            .map_err(|e| AppError::msg(format!("memories.get: {e}")))?
+            .ok_or_else(|| AppError::from(ChatError::NotFound(id.clone())))?;
+
+        memory.body = body;
+
+        self.memories
+            .update(&id, memory)
+            .map_err(map_authored_error("edit_memory"))?;
+
+        app::emit!(Event::MemoryEdited { id: &id });
         Ok(())
     }
 
-    /// Return one PresenceEntry per member who has ever heartbeated. Clients
-    /// filter by recency (typically `now - last_seen_ms <= 35_000`) to derive
-    /// the online set.
-    pub fn list_presence(&self) -> app::Result<Vec<PresenceEntry>> {
-        let entries = self
-            .presence
-            .entries()
-            .map_err(|e| AppError::msg(format!("presence.entries: {e}")))?;
-        Ok(entries
-            .map(|(member, last_seen_ms)| PresenceEntry { member, last_seen_ms })
-            .collect())
-    }
+    /// Delete a memory. Only the original author may delete.
+    pub fn delete_memory(&mut self, id: String) -> app::Result<()> {
+        let removed = self
+            .memories
+            .remove(&id)
+            .map_err(map_authored_error("delete_memory"))?;
 
-    // ---- Display names ----
-
-    /// Set the caller's display name. Truncated to `MAX_NAME_LEN` Unicode
-    /// scalar values (`chars().take(...)`) so multi-byte codepoints are not
-    /// split in the middle. AuthoredMap enforces author-only edits.
-    pub fn set_name(&mut self, name: String) -> app::Result<()> {
-        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
-        let truncated: String = name.chars().take(MAX_NAME_LEN).collect();
-        let exists = self
-            .names
-            .contains(&caller)
-            .map_err(|e| AppError::msg(format!("names.contains: {e}")))?;
-        if exists {
-            self.names
-                .update(&caller, truncated)
-                .map_err(|e| AppError::msg(format!("names.update: {e}")))?;
-        } else {
-            self.names
-                .insert(caller.clone(), truncated)
-                .map_err(|e| AppError::msg(format!("names.insert: {e}")))?;
+        if removed.is_none() {
+            app::bail!(ChatError::NotFound(id));
         }
-        app::emit!(Event::NameChanged { id: &caller });
+
+        app::emit!(Event::MemoryDeleted { id: &id });
         Ok(())
     }
 
-    /// Return one NameEntry per member who has set a display name.
-    pub fn list_names(&self) -> app::Result<Vec<NameEntry>> {
-        let entries = self
-            .names
+    /// Return all memories in reverse-chronological order (newest first).
+    pub fn get_memories(&self) -> app::Result<Vec<Memory>> {
+        let mut out: Vec<Memory> = self
+            .memories
             .entries()
-            .map_err(|e| AppError::msg(format!("names.entries: {e}")))?;
-        Ok(entries
-            .map(|(member, name)| NameEntry { member, name })
-            .collect())
+            .map_err(|e| AppError::msg(format!("memories.entries: {e}")))?
+            .map(|(_, v)| v)
+            .collect();
+        // Reverse-chronological: sort descending by created_at, then by id for stability.
+        out.sort_by(|a, b| b.created_at.cmp(&a.created_at).then(b.id.cmp(&a.id)));
+        Ok(out)
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+    // ---- Reaction ----
 
-    #[test]
-    fn init_populates_created_ms() {
-        let state = LobbyState::init();
-        assert!(*state.created_ms.get() > 0);
+    /// Add an emoji reaction to a memory. Returns the new reaction id.
+    pub fn add_reaction(&mut self, memory_id: String, emoji: String) -> app::Result<String> {
+        let author = caller_b58();
+        let now_ms = storage_env::time_now() / 1_000_000;
+        let mut nonce = [0u8; 4];
+        calimero_sdk::env::random_bytes(&mut nonce);
+        let id = generate_id("react", now_ms, &nonce);
+
+        let reaction = Reaction {
+            id: id.clone(),
+            memory_id: memory_id.clone(),
+            author,
+            emoji,
+            created_at: now_ms,
+        };
+
+        self.reactions
+            .insert(id.clone(), reaction)
+            .map_err(|e| AppError::msg(format!("reactions.insert: {e}")))?;
+
+        app::emit!(Event::ReactionAdded {
+            id: &id,
+            memory_id: &memory_id,
+        });
+        Ok(id)
+    }
+
+    /// Remove a reaction. Only the original author may remove.
+    pub fn remove_reaction(&mut self, id: String) -> app::Result<()> {
+        let removed = self
+            .reactions
+            .remove(&id)
+            .map_err(map_authored_error("remove_reaction"))?;
+
+        if removed.is_none() {
+            app::bail!(ChatError::NotFound(id));
+        }
+
+        app::emit!(Event::ReactionRemoved { id: &id });
+        Ok(())
+    }
+
+    /// Return all reactions for a given memory.
+    pub fn get_reactions(&self, memory_id: String) -> app::Result<Vec<Reaction>> {
+        let out: Vec<Reaction> = self
+            .reactions
+            .entries()
+            .map_err(|e| AppError::msg(format!("reactions.entries: {e}")))?
+            .map(|(_, v)| v)
+            .filter(|r| r.memory_id == memory_id)
+            .collect();
+        Ok(out)
+    }
+
+    // ---- Comment ----
+
+    /// Post a comment on a memory. Returns the new comment id.
+    pub fn post_comment(&mut self, memory_id: String, body: String) -> app::Result<String> {
+        let author = caller_b58();
+        let now_ms = storage_env::time_now() / 1_000_000;
+        let mut nonce = [0u8; 4];
+        calimero_sdk::env::random_bytes(&mut nonce);
+        let id = generate_id("comment", now_ms, &nonce);
+
+        let comment = Comment {
+            id: id.clone(),
+            memory_id: memory_id.clone(),
+            author,
+            body,
+            created_at: now_ms,
+        };
+
+        self.comments
+            .insert(id.clone(), comment)
+            .map_err(|e| AppError::msg(format!("comments.insert: {e}")))?;
+
+        app::emit!(Event::CommentPosted {
+            id: &id,
+            memory_id: &memory_id,
+        });
+        Ok(id)
+    }
+
+    /// Return all comments for a given memory, oldest first.
+    pub fn get_comments(&self, memory_id: String) -> app::Result<Vec<Comment>> {
+        let mut out: Vec<Comment> = self
+            .comments
+            .entries()
+            .map_err(|e| AppError::msg(format!("comments.entries: {e}")))?
+            .map(|(_, v)| v)
+            .filter(|c| c.memory_id == memory_id)
+            .collect();
+        out.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
+        Ok(out)
     }
 }
