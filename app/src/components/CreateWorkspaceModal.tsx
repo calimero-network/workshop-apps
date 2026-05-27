@@ -32,9 +32,10 @@ export default function CreateWorkspaceModal({ onCreate, onClose }: CreateWorksp
         background: '#1a1a1a', borderRadius: 12, padding: '1.5rem',
         width: 380, border: '1px solid #333',
       }} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: '1rem' }}>New Workspace</h3>
-        <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '0.5rem' }}>
-          Name your workspace — you can invite teammates and create rooms after it's created.
+        <h3 style={{ marginBottom: '1rem', color: 'var(--color-primary)' }}>Create a Memorial</h3>
+        <p style={{ color: '#8a7aaa', fontSize: '0.82rem', marginBottom: '0.65rem' }}>
+          Give this memorial a name — typically the person's name or a meaningful title.
+          You can invite family and friends once it's created.
         </p>
         <input
           autoFocus
@@ -42,7 +43,7 @@ export default function CreateWorkspaceModal({ onCreate, onClose }: CreateWorksp
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-          placeholder="Workspace name (e.g. Design Team)"
+          placeholder="e.g. In Memory of Jane Doe"
           style={{
             width: '100%', padding: '0.5rem 0.75rem', background: '#222',
             border: '1px solid #444', borderRadius: 6, color: '#eee',

@@ -18,9 +18,9 @@ Summary: A shared space where friends and family preserve and celebrate memories
 - [x] Implement view: [memorial] get_reactions(memory_id: String) → app::Result<Vec<Reaction>>
 
 ## Frontend (app/)
-- [ ] Screen: MemorialTimeline — Reverse-chronological feed of memories with photos, audio, reactions, and comments
-- [ ] Screen: MemoryDetail — Full memory view with attachments, all reactions, and comment thread
-- [ ] Apply designTheme tokens
+- [x] Screen: MemorialTimeline — Reverse-chronological feed of memories with photos, audio, reactions, and comments
+- [x] Screen: MemoryDetail — Full memory view with attachments, all reactions, and comment thread
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

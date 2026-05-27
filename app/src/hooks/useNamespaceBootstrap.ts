@@ -5,11 +5,13 @@ import { SERVICE_NAME } from '../config';
 /**
  * Capability bits for the namespace.
  *
- * CAN_CREATE_CONTEXT (1) — members can create per-instance contexts (e.g. rooms) in subgroups
  * CAN_INVITE_MEMBERS (2) — members can invite other users
- * MANAGE_MEMBERS     (8) — members can add users to per-instance subgroups
+ * MANAGE_MEMBERS     (8) — members can manage membership
+ *
+ * Spec: topology.defaultCapabilities = ["CAN_INVITE", "MANAGE_MEMBERS"]
+ * No CAN_CREATE_CONTEXT (1) because living-memorial has no per-instance contexts.
  */
-const DEFAULT_CAPABILITIES = 1 | 2 | 8; // = 11
+const DEFAULT_CAPABILITIES = 2 | 8; // = 10
 
 export interface NamespaceBootstrapResult {
   namespaceId: string;
