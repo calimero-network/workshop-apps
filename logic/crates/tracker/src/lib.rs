@@ -29,6 +29,7 @@ pub struct Submission {
     pub author: String,
     pub title: String,
     pub description: String,
+    #[serde(rename = "type")]
     pub submission_type: String,
     /// "pending" while awaiting triage. "withdrawn" if the author removed it.
     pub status: String,
