@@ -50,6 +50,7 @@ export default function ForumFeed({
   onDeletePost,
 }: ForumFeedProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<'all' | 'thesis' | 'post-mortem' | 'general'>('all');
 
   const handleDelete = async (e: React.MouseEvent, postId: string) => {
     e.stopPropagation();
@@ -60,6 +61,13 @@ export default function ForumFeed({
       setDeletingId(null);
     }
   };
+
+  const TYPE_FILTERS = ['all', 'thesis', 'post-mortem', 'general'] as const;
+
+  const countByType = (type: string) => posts.filter((p) => p.post_type === type).length;
+
+  const filteredPosts =
+    activeFilter === 'all' ? posts : posts.filter((p) => p.post_type === activeFilter);
 
   if (loading && posts.length === 0) {
     return (
@@ -88,7 +96,8 @@ export default function ForumFeed({
             Forum Feed
           </h2>
           <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-            {posts.length} post{posts.length !== 1 ? 's' : ''}
+            {filteredPosts.length} post{filteredPosts.length !== 1 ? 's' : ''}
+            {activeFilter !== 'all' && ` · ${POST_TYPE_LABELS[activeFilter]}`}
           </span>
         </div>
         <button
@@ -109,6 +118,58 @@ export default function ForumFeed({
         </button>
       </div>
 
+      {/* Filter tabs */}
+      <div style={{
+        display: 'flex',
+        gap: '0.25rem',
+        padding: '0.6rem 1.25rem',
+        borderBottom: '1px solid #374151',
+        background: '#111827',
+        overflowX: 'auto',
+      }}>
+        {TYPE_FILTERS.map((type) => {
+          const isActive = activeFilter === type;
+          const label = type === 'all' ? 'All' : POST_TYPE_LABELS[type];
+          const count = type === 'all' ? posts.length : countByType(type);
+          const color = type === 'all' ? '#6b7280' : POST_TYPE_COLORS[type];
+
+          return (
+            <button
+              key={type}
+              data-testid={`filter-tab-${type}`}
+              onClick={() => setActiveFilter(type)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.3rem',
+                padding: '0.3rem 0.75rem',
+                borderRadius: 20,
+                border: isActive ? `1px solid ${color}` : '1px solid #374151',
+                background: isActive ? `${color}22` : 'transparent',
+                color: isActive ? color : '#6b7280',
+                cursor: 'pointer',
+                fontSize: '0.78rem',
+                fontWeight: isActive ? 700 : 400,
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s',
+              }}
+            >
+              {label}
+              <span style={{
+                fontSize: '0.65rem',
+                background: isActive ? `${color}33` : '#374151',
+                color: isActive ? color : '#9ca3af',
+                borderRadius: 10,
+                padding: '0.05rem 0.4rem',
+                fontWeight: 600,
+              }}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {error && (
         <div style={{
           padding: '0.75rem 1.25rem',
@@ -123,7 +184,7 @@ export default function ForumFeed({
 
       {/* Post list */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
-        {posts.length === 0 && !loading && (
+        {filteredPosts.length === 0 && !loading && (
           <div style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center',
             justifyContent: 'center', gap: '0.75rem', padding: '3rem',
@@ -131,26 +192,30 @@ export default function ForumFeed({
           }}>
             <div style={{ fontSize: '2rem' }}>📊</div>
             <p style={{ margin: 0, fontSize: '0.9rem' }}>
-              No posts yet. Share your first position thesis or post-mortem.
+              {activeFilter === 'all'
+                ? 'No posts yet. Share your first position thesis or post-mortem.'
+                : `No ${POST_TYPE_LABELS[activeFilter]} posts yet.`}
             </p>
-            <button
-              onClick={onCreatePost}
-              style={{
-                padding: '0.5rem 1rem',
-                background: 'var(--color-accent, #10B981)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-              }}
-            >
-              Write a post
-            </button>
+            {activeFilter === 'all' && (
+              <button
+                onClick={onCreatePost}
+                style={{
+                  padding: '0.5rem 1rem',
+                  background: 'var(--color-accent, #10B981)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                }}
+              >
+                Write a post
+              </button>
+            )}
           </div>
         )}
 
-        {[...posts].reverse().map((post) => {
+        {[...filteredPosts].reverse().map((post) => {
           const isMine = post.author === selfExecutorKey;
           const authorLabel = memberNames[post.author] || shortenId(post.author);
           const typeColor = POST_TYPE_COLORS[post.post_type] ?? '#6b7280';
