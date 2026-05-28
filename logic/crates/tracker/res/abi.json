@@ -1,7 +1,7 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
+    "Event_ProjectCreated": {
       "kind": "record",
       "fields": [
         {
@@ -12,7 +12,40 @@
         }
       ]
     },
-    "Event_RoomCreated": {
+    "Event_SubmissionCreated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_SubmissionEdited": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_SubmissionWithdrawn": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TriageResultSubmitted": {
       "kind": "record",
       "fields": [
         {
@@ -22,14 +55,14 @@
           }
         },
         {
-          "name": "name",
+          "name": "submission_id",
           "type": {
             "kind": "string"
           }
         }
       ]
     },
-    "Event_RoomDeleted": {
+    "Submission": {
       "kind": "record",
       "fields": [
         {
@@ -37,14 +70,83 @@
           "type": {
             "kind": "string"
           }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "submission_type",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
         }
       ]
     },
-    "LobbyState": {
+    "TrackerState": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
+          "name": "owner_key",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "lww_register",
+            "inner_type": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "project_id",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "lww_register",
+            "inner_type": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "project_name",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "lww_register",
+            "inner_type": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "project_created_at",
           "type": {
             "kind": "record",
             "fields": [],
@@ -55,158 +157,68 @@
           }
         },
         {
-          "name": "rooms",
+          "name": "submissions",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "u64"
+              "$ref": "Submission"
             },
             "crdt_type": "authored_map"
           }
         },
         {
-          "name": "names",
+          "name": "triage_results",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "kind": "string"
+              "$ref": "TriageResult"
             },
-            "crdt_type": "authored_map"
+            "crdt_type": "unordered_map"
           }
         }
       ]
     },
-    "NameEntry": {
+    "TriageResult": {
       "kind": "record",
       "fields": [
         {
-          "name": "member",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "PresenceEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
+          "name": "submission_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "last_seen_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomActivity": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
+          "name": "status",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
+          "name": "impact",
           "type": {
-            "kind": "string"
+            "kind": "u32"
           }
         },
         {
-          "name": "last_message_ms",
+          "name": "effort",
           "type": {
-            "kind": "u64"
+            "kind": "u32"
           }
         },
         {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomSummary": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "created_by",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          },
-          "nullable": true
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "created_ms",
+          "name": "triaged_at",
           "type": {
             "kind": "u64"
           }
@@ -223,130 +235,7 @@
       }
     },
     {
-      "name": "register_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "get_rooms",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomSummary"
-        }
-      }
-    },
-    {
-      "name": "get_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
+      "name": "create_project",
       "params": [
         {
           "name": "name",
@@ -356,42 +245,159 @@
         }
       ],
       "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "submit_request",
+      "params": [
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "type_",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "edit_submission",
+      "params": [
+        {
+          "name": "submission_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
         "kind": "unit"
       }
     },
     {
-      "name": "list_names",
+      "name": "withdraw_submission",
+      "params": [
+        {
+          "name": "submission_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "triage_submission",
+      "params": [
+        {
+          "name": "submission_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "impact",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "effort",
+          "type": {
+            "kind": "u32"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "list_submissions",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "Submission"
+        }
+      }
+    },
+    {
+      "name": "list_approved_tasks",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "TriageResult"
         }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "ProjectCreated",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_ProjectCreated"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "SubmissionCreated",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_SubmissionCreated"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "SubmissionEdited",
+      "payload": {
+        "$ref": "Event_SubmissionEdited"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "SubmissionWithdrawn",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_SubmissionWithdrawn"
+      }
+    },
+    {
+      "name": "TriageResultSubmitted",
+      "payload": {
+        "$ref": "Event_TriageResultSubmitted"
       }
     }
   ],
-  "state_root": "LobbyState"
+  "state_root": "TrackerState"
 }
