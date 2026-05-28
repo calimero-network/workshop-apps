@@ -12,11 +12,11 @@ Summary: Personal vault + shared team knowledge. Notes with tags, invitation-bas
 - [x] Implement view: [soul] query_by_tags(tags: Vec<String>) → app::Result<Vec<MemoryItem>>
 
 ## Frontend (app/)
-- [ ] Screen: ContextSidebar — List of personal vault + all shared contexts; quick switch between them
-- [ ] Screen: VaultView — Personal notes with add/edit/delete and tag filtering
-- [ ] Screen: SharedContextView — Team notes with authorship, add/edit/delete (own only), tag filtering, and invite UI
-- [ ] Screen: NotesListWithSearch — Display memories with author, timestamp, and tag pills; search/filter by tags
-- [ ] Apply designTheme tokens
+- [x] Screen: ContextSidebar — List of personal vault + all shared contexts; quick switch between them
+- [x] Screen: VaultView — Personal notes with add/edit/delete and tag filtering
+- [x] Screen: SharedContextView — Team notes with authorship, add/edit/delete (own only), tag filtering, and invite UI
+- [x] Screen: NotesListWithSearch — Display memories with author, timestamp, and tag pills; search/filter by tags
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

@@ -17,7 +17,7 @@ export default function CreateWorkspaceModal({ onCreate, onClose }: CreateWorksp
       await onCreate(name.trim() || DEFAULT_WORKSPACE_NAME);
       onClose();
     } catch (err) {
-      console.error('Failed to create workspace:', err);
+      console.error('Failed to create context:', err);
     } finally {
       setCreating(false);
     }
@@ -32,9 +32,10 @@ export default function CreateWorkspaceModal({ onCreate, onClose }: CreateWorksp
         background: '#1a1a1a', borderRadius: 12, padding: '1.5rem',
         width: 380, border: '1px solid #333',
       }} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: '1rem' }}>New Workspace</h3>
-        <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '0.5rem' }}>
-          Name your workspace — you can invite teammates and create rooms after it's created.
+        <h3 style={{ marginBottom: '0.5rem', color: '#e2e8f0' }}>New Context</h3>
+        <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '1rem' }}>
+          Create a personal vault for your private notes, or a team space to share knowledge with others.
+          You can invite teammates after creation.
         </p>
         <input
           autoFocus
@@ -42,11 +43,11 @@ export default function CreateWorkspaceModal({ onCreate, onClose }: CreateWorksp
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-          placeholder="Workspace name (e.g. Design Team)"
+          placeholder="e.g. My Vault, Design Team, Q2 Research"
           style={{
             width: '100%', padding: '0.5rem 0.75rem', background: '#222',
             border: '1px solid #444', borderRadius: 6, color: '#eee',
-            fontSize: '0.9rem',
+            fontSize: '0.9rem', boxSizing: 'border-box',
           }}
         />
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
@@ -55,7 +56,7 @@ export default function CreateWorkspaceModal({ onCreate, onClose }: CreateWorksp
             border: '1px solid #444', borderRadius: 6, cursor: 'pointer',
           }}>Cancel</button>
           <button onClick={handleCreate} disabled={creating} style={{
-            padding: '0.4rem 1rem', background: 'var(--color-primary, #3B82F6)', color: '#fff',
+            padding: '0.4rem 1rem', background: 'var(--color-accent)', color: '#fff',
             border: 'none', borderRadius: 6, cursor: creating ? 'default' : 'pointer',
           }}>{creating ? 'Creating…' : 'Create'}</button>
         </div>

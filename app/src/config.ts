@@ -69,6 +69,10 @@ export const SERVICE_NAME = {
   },
 };
 
+/** Wire name of the primary (first) service in studio.config.json.
+ *  Use this for single-service apps instead of SERVICE_NAME.directory. */
+export const PRIMARY_SERVICE_NAME: string = config.services[0]?.name ?? '';
+
 /** localStorage key for persisting the selected namespace, scoped per-app. */
 export const SELECTED_NAMESPACE_KEY = `${APP_NAME}:selectedNamespaceId`;
 
