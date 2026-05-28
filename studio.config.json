@@ -1,0 +1,22 @@
+{
+  "appName": "project-tracker",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.project-tracker",
+  "metadata": {
+    "name": "project-tracker",
+    "description": "Centralized bug and feature request submission with owner-driven triage and priority ranking",
+    "author": "Calimero",
+    "route": "/project-tracker"
+  },
+  "theme": {
+    "primaryColor": "#2563EB",
+    "accentColor": "#10B981",
+    "style": "professional-minimal"
+  },
+  "services": [
+    {
+      "name": "tracker",
+      "crate": "project-tracker-tracker"
+    }
+  ]
+}
