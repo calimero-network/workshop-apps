@@ -16,10 +16,10 @@ Summary: Centralized bug and feature request submission with owner-driven triage
 - [x] Implement view: [tracker] list_approved_tasks() → app::Result<Vec<TriageResult>>
 
 ## Frontend (app/)
-- [ ] Screen: ProjectListView — List of projects the user is part of + create project CTA
-- [ ] Screen: SubmissionQueueView — Owner's pending submissions awaiting triage + triage form
-- [ ] Screen: TaskBoardView — Approved tasks ranked by impact/effort + submission form
-- [ ] Apply designTheme tokens
+- [x] Screen: ProjectListView — List of projects the user is part of + create project CTA
+- [x] Screen: SubmissionQueueView — Owner's pending submissions awaiting triage + triage form
+- [x] Screen: TaskBoardView — Approved tasks ranked by impact/effort + submission form
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

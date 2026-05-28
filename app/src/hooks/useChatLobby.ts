@@ -7,7 +7,7 @@ import {
   useMero,
 } from '@calimero-network/mero-react';
 import type { GroupMember } from '@calimero-network/mero-react';
-import { useNamespaceBootstrap } from './useNamespaceBootstrap';
+import { useNamespaceBootstrap, type NamespaceBootstrapResult } from './useNamespaceBootstrap';
 import { SERVICE_NAME, SELECTED_NAMESPACE_KEY, DEFAULT_WORKSPACE_NAME } from '../config';
 
 const SELECTED_NS_KEY = SELECTED_NAMESPACE_KEY;
@@ -28,7 +28,7 @@ export interface UseChatLobbyReturn {
   clearLobby: () => void;
   refetchLobbies: () => Promise<void>;
 
-  createLobby: (name?: string) => Promise<string | null>;
+  createLobby: (name?: string) => Promise<NamespaceBootstrapResult | null>;
   createLobbyLoading: boolean;
   createLobbyError: Error | null;
 
@@ -157,12 +157,14 @@ export function useChatLobby(): UseChatLobbyReturn {
   // (Filed/to-file as upstream bug in @calimero-network/mero-react.)
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [selfIdentity, setSelfIdentity] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [membersLoading, setMembersLoading] = useState(false);
 
   const refetchMembers = useCallback(async () => {
     if (!mero || !namespaceId) {
       setMembers([]);
       setSelfIdentity(null);
+      setIsAdmin(false);
       return;
     }
     setMembersLoading(true);
@@ -171,6 +173,8 @@ export function useChatLobby(): UseChatLobbyReturn {
       const r = raw as unknown as { members?: GroupMember[]; selfIdentity?: string };
       const all = r.members ?? [];
       const self = r.selfIdentity ?? null;
+      // isAdmin must be computed from the full list (including self) BEFORE filtering.
+      setIsAdmin(all.some((m) => m.identity === self && m.role === 'Admin'));
       // Match SDK semantics: members excludes self.
       setMembers(all.filter((m) => m.identity !== self));
       setSelfIdentity(self);
@@ -255,9 +259,6 @@ export function useChatLobby(): UseChatLobbyReturn {
     }
   }, [lobbyContextId, executorPublicKey, lobbyJoined]);
 
-  const isAdmin = selfIdentity !== null
-    && members.some((m) => m.identity === selfIdentity && m.role === 'Admin');
-
   // --- Callbacks ---
 
   const selectLobby = useCallback((nsId: string) => {
@@ -280,7 +281,7 @@ export function useChatLobby(): UseChatLobbyReturn {
       setSelectedNsId(result.namespaceId);
       persistSelectedNamespaceId(result.namespaceId);
       await refetchNamespaces();
-      return result.namespaceId;
+      return result; // Return full NamespaceBootstrapResult so callers can init the service context
     }
     return null;
   }, [createNamespaceWithLobby, refetchNamespaces]);

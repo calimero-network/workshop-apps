@@ -30,9 +30,9 @@ export default function JoinModal({ onJoin, onClose }: JoinModalProps) {
         background: '#1a1a1a', borderRadius: 12, padding: '1.5rem',
         width: 440, border: '1px solid #333',
       }} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: '1rem' }}>Join Chat</h3>
+        <h3 style={{ marginBottom: '1rem' }}>Join Project</h3>
         <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '0.5rem' }}>
-          Paste the invitation JSON you received:
+          Paste the invitation JSON you received from the project owner:
         </p>
         <textarea
           value={json}

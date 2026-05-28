@@ -2,39 +2,27 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMero, useSubscription } from '@calimero-network/mero-react';
 import { useChatLobby } from '../../hooks/useChatLobby';
-import { useLobbyDirectory } from '../../hooks/useLobbyDirectory';
-import { LobbyClient, RoomSummary } from '../../api/lobby/LobbyClient';
-import { SERVICE_NAME } from '../../config';
+import { useTrackerData } from '../../hooks/useTrackerData';
+import { TrackerClient } from '../../api/tracker/TrackerClient';
 import Sidebar from '../../components/Sidebar';
-import RoomView from '../../components/RoomView';
-import CreateRoomModal from '../../components/CreateRoomModal';
+import SubmissionQueueView from '../../components/SubmissionQueueView';
+import TaskBoardView from '../../components/TaskBoardView';
 import CreateWorkspaceModal from '../../components/CreateWorkspaceModal';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
 
-// Mirror chat_types::generate_id (Rust): "room-{ts_ms}-{8-hex-nonce}"
-function generateRoomId(): string {
-  const ts = Date.now();
-  const nonce = crypto.getRandomValues(new Uint8Array(4));
-  const hex = Array.from(nonce).map((b) => b.toString(16).padStart(2, '0')).join('');
-  return `room-${ts}-${hex}`;
-}
+type ActiveTab = 'submissions' | 'tasks';
 
 export default function ChatPage() {
   const navigate = useNavigate();
   const { isAuthenticated, mero } = useMero();
   const lobby = useChatLobby();
-  const { onlineMembers, memberNames, setName } = useLobbyDirectory(
-    lobby.lobbyContextId,
-    lobby.lobbyExecutorPublicKey,
-  );
 
-  const [rooms, setRooms] = useState<RoomSummary[]>([]);
-  const [selectedRoom, setSelectedRoom] = useState<{ id: string; contextId: string | null } | null>(null);
-  const [showCreateRoom, setShowCreateRoom] = useState(false);
-  const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
+  const [activeTab, setActiveTab] = useState<ActiveTab>('tasks');
+  const [showCreateProject, setShowCreateProject] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
+  const [createProjectError, setCreateProjectError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -42,121 +30,80 @@ export default function ChatPage() {
     }
   }, [isAuthenticated, navigate]);
 
-  const fetchRooms = useCallback(async () => {
-    if (!mero || !lobby.lobbyContextId || !lobby.executorPublicKey) return;
-    try {
-      const client = new LobbyClient(mero, lobby.lobbyContextId, lobby.executorPublicKey);
-      const roomList = await client.getRooms();
-      setRooms(roomList);
-    } catch (err) {
-      console.error('Failed to fetch rooms:', err);
-    }
-  }, [mero, lobby.lobbyContextId, lobby.executorPublicKey]);
-
-  useEffect(() => {
-    if (lobby.lobbyJoined) {
-      fetchRooms();
-    }
-  }, [lobby.lobbyJoined, fetchRooms]);
-
-  // React to any lobby state change (local or synced from other nodes).
-  // Also refetch members because some membership changes coincide with lobby
-  // events.
-  useSubscription(
-    lobby.lobbyContextId ? [lobby.lobbyContextId] : [],
-    () => {
-      fetchRooms();
-      lobby.refetchMembers();
-    },
+  // Tracker data for the currently selected project.
+  const tracker = useTrackerData(
+    lobby.lobbyContextId,
+    lobby.executorPublicKey,
   );
 
-  // Namespace membership has no SSE channel — peers joining via invitation
-  // never trigger a re-render. Poll while the chat page is open so the
-  // member count and CreateRoomModal pre-selection stay current.
+  // Keep members current (no SSE channel for namespace joins).
   useEffect(() => {
     if (!lobby.namespaceId) return;
-    const interval = setInterval(() => { lobby.refetchMembers(); }, 5_000);
+    const interval = setInterval(() => { void lobby.refetchMembers(); }, 5_000);
     return () => clearInterval(interval);
   }, [lobby.namespaceId, lobby.refetchMembers]);
 
-  const handleCreateRoom = useCallback(async (name: string, selectedMembers: string[]) => {
-    if (!mero || !lobby.lobbyContextId || !lobby.executorPublicKey || !lobby.namespaceId) return;
+  // Refresh tracker data when lobby context emits events.
+  useSubscription(
+    lobby.lobbyContextId ? [lobby.lobbyContextId] : [],
+    () => {
+      void tracker.refresh();
+      void lobby.refetchMembers();
+    },
+  );
 
-    const appId = lobby.selectedLobby?.applicationId;
-    if (!appId) return;
-
-    const client = new LobbyClient(mero, lobby.lobbyContextId, lobby.executorPublicKey);
-
-    // Single atomic lobby write: createContext first, then register_room with
-    // the resulting context_id. Avoids the propagation race where remote peers
-    // would see the room name with context_id == null between two writes.
-    const roomId = generateRoomId();
-
+  // Create project: 1) create namespace + context, 2) call create_project to
+  // set owner and project name in the tracker contract state.
+  const handleCreateProject = useCallback(async (name: string) => {
+    if (!mero) return;
+    setCreateProjectError(null);
     try {
-      const initParams = JSON.stringify({
-        room_id: roomId,
-        name,
-        lobby_context_id: lobby.lobbyContextId,
-      });
-      const initBytes = Array.from(new TextEncoder().encode(initParams));
-
-      // Create the per-instance context in the root namespace group.
-      // All namespace members can see and join it via auto_join.
-      const instanceServiceName = SERVICE_NAME.instance;
-      if (!instanceServiceName) {
-        throw new Error('No "instance" service declared in studio.config.json');
+      const result = await lobby.createLobby(name);
+      if (result) {
+        const client = new TrackerClient(mero, result.lobbyContextId, result.memberPublicKey);
+        await client.createProject({ name });
       }
-      const { contextId } = await mero.admin.createContext({
-        applicationId: appId,
-        groupId: lobby.namespaceId,
-        serviceName: instanceServiceName,
-        initializationParams: initBytes,
-      });
-
-      await client.registerRoom({ room_id: roomId, name, context_id: contextId });
-      setShowCreateRoom(false);
-      await fetchRooms();
     } catch (err) {
-      console.error('Failed to create room:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setCreateProjectError(msg);
+      console.error('Failed to initialize project:', err);
     }
-  }, [mero, lobby, fetchRooms]);
+  }, [mero, lobby]);
 
-  const handleSelectRoom = useCallback(async (room: RoomSummary) => {
-    if (!room.context_id || !mero) {
-      setSelectedRoom({ id: room.room_id, contextId: null });
-      return;
-    }
-
-    // Bound the join attempt so a hang doesn't freeze the UI. If we're
-    // already in the context the call returns quickly; if not, the join
-    // needs to complete before useChatRoom can read state from the context.
-    const joinTimeout = new Promise<void>((resolve) => setTimeout(resolve, 5_000));
-    await Promise.race([
-      mero.admin.joinContext(room.context_id).then(() => {}).catch(() => {}),
-      joinTimeout,
-    ]);
-
-    setSelectedRoom({ id: room.room_id, contextId: room.context_id });
-  }, [mero]);
-
-  // Show Welcome only when there are no workspaces at all. Don't gate on
-  // `!lobbyJoined` — that flips to false on every workspace switch and would
-  // flash the Welcome screen mid-transition. Switching is just a transition
-  // between contexts; keep the main layout mounted.
+  // Welcome screen when no projects exist yet.
   if (lobby.lobbies.length === 0 && !lobby.lobbiesLoading) {
     return (
       <div className="app-bg">
         <div className="page-shell" style={{ justifyContent: 'center', alignItems: 'center', gap: '1rem' }}>
-          <h2>No workspaces yet</h2>
-          <p style={{ color: '#888' }}>Create a new workspace or join one with an invitation.</p>
+          <h2 style={{ color: 'var(--color-primary)' }}>Welcome to Project Tracker</h2>
+          <p style={{ color: '#888' }}>Create a project or join one with an invitation to get started.</p>
+          {createProjectError && (
+            <div style={{ color: '#fca5a5', fontSize: '0.85rem' }}>{createProjectError}</div>
+          )}
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button onClick={() => setShowCreateWorkspace(true)}>Create Workspace</button>
-            <button onClick={() => setShowJoin(true)}>Join with Invitation</button>
+            <button
+              onClick={() => setShowCreateProject(true)}
+              style={{
+                padding: '0.5rem 1.25rem', background: 'var(--color-primary)', color: '#fff',
+                border: 'none', borderRadius: 6, cursor: 'pointer',
+              }}
+            >
+              Create Project
+            </button>
+            <button
+              onClick={() => setShowJoin(true)}
+              style={{
+                padding: '0.5rem 1.25rem', background: '#1e293b', color: '#cbd5e1',
+                border: '1px solid #334155', borderRadius: 6, cursor: 'pointer',
+              }}
+            >
+              Join with Invitation
+            </button>
           </div>
-          {showCreateWorkspace && (
+          {showCreateProject && (
             <CreateWorkspaceModal
-              onCreate={async (name) => { await lobby.createLobby(name); }}
-              onClose={() => setShowCreateWorkspace(false)}
+              onCreate={handleCreateProject}
+              onClose={() => setShowCreateProject(false)}
             />
           )}
           {showJoin && (
@@ -173,6 +120,8 @@ export default function ChatPage() {
     );
   }
 
+  const projectName = lobby.selectedLobby?.alias || 'Project';
+
   return (
     <div className="app-bg">
       <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
@@ -180,64 +129,113 @@ export default function ChatPage() {
           workspaces={lobby.lobbies}
           selectedNamespaceId={lobby.namespaceId}
           onSelectWorkspace={lobby.selectLobby}
-          onCreateWorkspace={() => setShowCreateWorkspace(true)}
+          onCreateWorkspace={() => setShowCreateProject(true)}
           workspaceAlias={lobby.selectedLobby?.alias}
           members={lobby.members}
           selfIdentity={lobby.selfIdentity}
-          onlineMembers={onlineMembers}
-          memberNames={memberNames}
-          onSetName={setName}
-          rooms={rooms}
-          selectedRoomId={selectedRoom?.id ?? null}
-          onSelectRoom={handleSelectRoom}
-          onCreateRoom={() => setShowCreateRoom(true)}
           onInvite={() => setShowInvite(true)}
         />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {selectedRoom?.contextId ? (
-            <RoomView
-              contextId={selectedRoom.contextId}
-              executorPublicKey={lobby.executorPublicKey}
-              onRoomDeleted={() => {
-                setSelectedRoom(null);
-                fetchRooms();
-              }}
-            />
-          ) : (
-            <div style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#666',
-            }}>
-              Select a room or create a new one
+
+        {/* Main content */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Header */}
+          <div style={{
+            padding: '0.75rem 1.25rem',
+            borderBottom: '1px solid #1e293b',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            background: '#0f172a',
+          }}>
+            <div>
+              <h2 style={{ fontSize: '1.05rem', color: '#e2e8f0', fontWeight: 700 }}>
+                {projectName}
+              </h2>
+              {lobby.isAdmin && (
+                <span style={{
+                  fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: 4,
+                  background: 'rgba(16,185,129,0.15)', color: '#6ee7b7',
+                }}>
+                  Owner
+                </span>
+              )}
+            </div>
+
+            {/* Tab switcher */}
+            <div style={{ display: 'flex', gap: '0.25rem' }}>
+              {([
+                { id: 'tasks', label: 'Tasks' },
+                { id: 'submissions', label: 'Submissions' },
+              ] as const).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    padding: '0.35rem 0.85rem',
+                    borderRadius: 6,
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    background: activeTab === tab.id ? 'var(--color-primary)' : '#1e293b',
+                    color: activeTab === tab.id ? '#fff' : '#94a3b8',
+                    fontWeight: activeTab === tab.id ? 600 : 400,
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Loading / error state */}
+          {tracker.loading && tracker.submissions.length === 0 && (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+              Loading project data…
+            </div>
+          )}
+
+          {tracker.error && tracker.submissions.length === 0 && (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fca5a5', fontSize: '0.85rem' }}>
+              {tracker.error.message}
+            </div>
+          )}
+
+          {/* Tab content */}
+          {(!tracker.loading || tracker.submissions.length > 0) && !tracker.error && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              {activeTab === 'submissions' ? (
+                <SubmissionQueueView
+                  submissions={tracker.submissions}
+                  triageResults={tracker.approvedTasks}
+                  selfIdentity={tracker.executorPublicKey}
+                  isOwner={lobby.isAdmin}
+                  onTriage={tracker.triageSubmission}
+                  onEdit={tracker.editSubmission}
+                  onWithdraw={tracker.withdrawSubmission}
+                />
+              ) : (
+                <TaskBoardView
+                  approvedTasks={tracker.approvedTasks}
+                  submissions={tracker.submissions}
+                  onSubmitRequest={tracker.submitRequest}
+                />
+              )}
             </div>
           )}
         </div>
       </div>
 
-      {showCreateRoom && (
-        <CreateRoomModal
-          members={lobby.members.map((m) => ({
-            identity: m.identity,
-            alias: m.alias,
-            isSelf: m.identity === lobby.selfIdentity,
-          }))}
-          onSubmit={handleCreateRoom}
-          onClose={() => setShowCreateRoom(false)}
+      {/* Modals */}
+      {showCreateProject && (
+        <CreateWorkspaceModal
+          onCreate={handleCreateProject}
+          onClose={() => setShowCreateProject(false)}
         />
       )}
       {showInvite && (
         <InviteModal
           onInvite={lobby.inviteUser}
           onClose={() => setShowInvite(false)}
-        />
-      )}
-      {showCreateWorkspace && (
-        <CreateWorkspaceModal
-          onCreate={async (name) => { await lobby.createLobby(name); }}
-          onClose={() => setShowCreateWorkspace(false)}
         />
       )}
       {showJoin && (
