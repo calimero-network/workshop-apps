@@ -1,9 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import type { GroupMember } from '@calimero-network/mero-react';
-import { RoomSummary } from '../api/lobby/LobbyClient';
+import type { Document, Tag } from '../api/knowledge-graph/KnowledgeGraphClient';
 import type { LobbyRecord } from '../hooks/useChatLobby';
 
 const MAX_NAME_LEN = 20;
+
+function shortenId(id: string): string {
+  if (id.length <= 14) return id;
+  return `${id.slice(0, 6)}…${id.slice(-5)}`;
+}
+
+export type ActiveView = 'list' | 'graph' | 'tag-filter';
 
 interface SidebarProps {
   // Workspace selector
@@ -13,24 +20,23 @@ interface SidebarProps {
   onCreateWorkspace: () => void;
   workspaceAlias?: string;
 
-  // Member directory
+  // Members
   members: GroupMember[];
   selfIdentity: string | null;
-  onlineMembers: Set<string>;
-  memberNames: Record<string, string>;
-  onSetName: (name: string) => Promise<void>;
-
-  // Room list
-  rooms: RoomSummary[];
-  selectedRoomId: string | null;
-  onSelectRoom: (room: RoomSummary) => void;
-  onCreateRoom: () => void;
   onInvite: () => void;
-}
 
-function shortenId(id: string): string {
-  if (id.length <= 14) return id;
-  return `${id.slice(0, 6)}…${id.slice(-5)}`;
+  // Documents
+  documents: Document[];
+  tagsByDocument: Record<string, Tag[]>;
+  selectedDocId: string | null;
+  onSelectDoc: (docId: string) => void;
+  onCreateDoc: () => void;
+  activeView: ActiveView;
+  onSetView: (view: ActiveView) => void;
+
+  // Tag filter
+  activeTag: string | null;
+  onSelectTag: (tag: string | null) => void;
 }
 
 export default function Sidebar({
@@ -41,36 +47,25 @@ export default function Sidebar({
   workspaceAlias,
   members,
   selfIdentity,
-  onlineMembers,
-  memberNames,
-  onSetName,
-  rooms,
-  selectedRoomId,
-  onSelectRoom,
-  onCreateRoom,
   onInvite,
+  documents,
+  tagsByDocument,
+  selectedDocId,
+  onSelectDoc,
+  onCreateDoc,
+  activeView,
+  onSetView,
+  activeTag,
+  onSelectTag,
 }: SidebarProps) {
-  // Editable display name for self. Names are author-owned, so the only
-  // source of `persistedName` change is our own committed write — sync the
-  // draft whenever the backend value changes. Don't gate this on a local
-  // `isEditing` flag; flipping it during commit re-fires the effect and
-  // reverts the optimistic value before the roundtrip lands.
-  const persistedName = (selfIdentity && memberNames[selfIdentity]) || '';
-  const [draftName, setDraftName] = useState(persistedName);
-
-  useEffect(() => {
-    setDraftName(persistedName);
-  }, [persistedName]);
-
-  const commitName = async () => {
-    const trimmed = draftName.trim().slice(0, MAX_NAME_LEN);
-    setDraftName(trimmed);
-    if (trimmed === persistedName) return;
-    try { await onSetName(trimmed); } catch { /* keep draft on failure */ }
-  };
-
-  const renderMemberLabel = (identity: string, alias?: string) =>
-    memberNames[identity] || alias || shortenId(identity);
+  // Collect all unique tags across all documents
+  const allTags: string[] = React.useMemo(() => {
+    const seen = new Set<string>();
+    Object.values(tagsByDocument).forEach((tags) =>
+      tags.forEach((t) => seen.add(t.label)),
+    );
+    return Array.from(seen).sort();
+  }, [tagsByDocument]);
 
   return (
     <div style={{
@@ -79,29 +74,27 @@ export default function Sidebar({
       display: 'flex',
       flexDirection: 'column',
       background: '#0f172a',
+      flexShrink: 0,
     }}>
       {/* Workspace header */}
-      <div style={{
-        padding: '1rem',
-        borderBottom: '1px solid #1e293b',
-      }}>
+      <div style={{ padding: '1rem', borderBottom: '1px solid #1e293b' }}>
         <h2 style={{
           fontSize: '1rem',
           fontWeight: 700,
-          color: 'var(--color-primary, #3B82F6)',
+          color: 'var(--color-accent, #8B5CF6)',
           marginBottom: '0.2rem',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
         }}>
-          {workspaceAlias || 'Chat'}
+          {workspaceAlias || 'Knowledge Graph'}
         </h2>
         <span style={{ color: '#64748b', fontSize: '0.78rem' }}>
-          {members.length + (selfIdentity ? 1 : 0)} member{members.length === 0 && selfIdentity ? '' : 's'}
+          {members.length + (selfIdentity ? 1 : 0)} member{(members.length + (selfIdentity ? 1 : 0)) === 1 ? '' : 's'}
         </span>
       </div>
 
-      {/* Workspace list (always visible — switching is just a transition) */}
+      {/* Workspace list */}
       <div style={{ padding: '0.5rem', borderBottom: '1px solid #1e293b' }}>
         <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.25rem', paddingLeft: '0.25rem' }}>
           WORKSPACES
@@ -116,9 +109,9 @@ export default function Sidebar({
               cursor: 'pointer',
               fontSize: '0.82rem',
               background: ws.namespaceId === selectedNamespaceId
-                ? 'rgba(59,130,246,0.15)'
+                ? 'rgba(139,92,246,0.15)'
                 : 'transparent',
-              color: ws.namespaceId === selectedNamespaceId ? '#93c5fd' : '#94a3b8',
+              color: ws.namespaceId === selectedNamespaceId ? '#a78bfa' : '#94a3b8',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -143,102 +136,156 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* Members */}
-      <div style={{ padding: '0.5rem', borderBottom: '1px solid #1e293b' }}>
-        <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.4rem', paddingLeft: '0.25rem' }}>
-          MEMBERS
+      {/* View switcher */}
+      <div style={{ padding: '0.5rem', borderBottom: '1px solid #1e293b', display: 'flex', gap: '0.25rem' }}>
+        {(['list', 'graph', 'tag-filter'] as ActiveView[]).map((v) => (
+          <button
+            key={v}
+            onClick={() => onSetView(v)}
+            style={{
+              flex: 1,
+              padding: '0.3rem',
+              fontSize: '0.72rem',
+              borderRadius: 4,
+              border: 'none',
+              cursor: 'pointer',
+              background: activeView === v ? 'var(--color-accent, #8B5CF6)' : '#1e293b',
+              color: activeView === v ? '#fff' : '#94a3b8',
+            }}
+          >
+            {v === 'list' ? 'Docs' : v === 'graph' ? 'Graph' : 'Tags'}
+          </button>
+        ))}
+      </div>
+
+      {/* Document list */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0.25rem' }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0.25rem 0.5rem',
+          marginBottom: '0.1rem',
+        }}>
+          <span style={{ fontSize: '0.7rem', color: '#64748b' }}>DOCUMENTS</span>
+          <button
+            onClick={onCreateDoc}
+            style={{
+              fontSize: '0.72rem',
+              padding: '0.15rem 0.4rem',
+              background: 'var(--color-accent, #8B5CF6)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 3,
+              cursor: 'pointer',
+            }}
+          >
+            + New
+          </button>
         </div>
 
-        {/* Self — editable display name */}
-        {selfIdentity && (
+        {/* Tag filter strip (when active) */}
+        {activeTag && (
           <div style={{
-            padding: '0.35rem 0.6rem',
-            borderRadius: 6,
-            marginBottom: 2,
+            margin: '0 0.4rem 0.4rem',
+            padding: '0.25rem 0.5rem',
+            borderRadius: 4,
+            background: 'rgba(139,92,246,0.12)',
             display: 'flex',
             alignItems: 'center',
-            gap: '0.5rem',
+            justifyContent: 'space-between',
+            fontSize: '0.75rem',
           }}>
-            <span style={{
-              width: 8, height: 8, borderRadius: '50%',
-              background: 'var(--color-accent, #10B981)',
-              flexShrink: 0,
-            }} />
-            <input
-              value={draftName}
-              onChange={(e) => setDraftName(e.target.value)}
-              onBlur={commitName}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
-                if (e.key === 'Escape') {
-                  setDraftName(persistedName);
-                  (e.currentTarget as HTMLInputElement).blur();
-                }
-              }}
-              maxLength={MAX_NAME_LEN}
-              placeholder={shortenId(selfIdentity)}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                color: '#e2e8f0',
-                fontSize: '0.82rem',
-                padding: 0,
-              }}
-            />
+            <span style={{ color: '#a78bfa' }}>#{activeTag}</span>
+            <button
+              onClick={() => onSelectTag(null)}
+              style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.75rem' }}
+            >
+              ✕
+            </button>
           </div>
         )}
 
-        {/* Other members */}
-        {members.map((m) => {
-          const online = onlineMembers.has(m.identity);
+        {documents.length === 0 && (
+          <div style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', textAlign: 'center' }}>
+            No documents yet
+          </div>
+        )}
+
+        {documents.map((doc) => {
+          const tags = tagsByDocument[doc.id] ?? [];
           return (
             <div
-              key={m.identity}
+              key={doc.id}
+              data-testid={`sidebar-doc-${doc.id}`}
+              onClick={() => onSelectDoc(doc.id)}
               style={{
-                padding: '0.35rem 0.6rem',
+                padding: '0.5rem 0.7rem',
                 borderRadius: 6,
+                cursor: 'pointer',
+                background: doc.id === selectedDocId ? 'rgba(139,92,246,0.15)' : 'transparent',
+                color: doc.id === selectedDocId ? '#c4b5fd' : '#cbd5e1',
                 marginBottom: 2,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                color: '#94a3b8',
-                fontSize: '0.82rem',
               }}
-              title={m.identity}
             >
-              <span style={{
-                width: 8, height: 8, borderRadius: '50%',
-                background: online ? 'var(--color-accent, #10B981)' : '#475569',
-                flexShrink: 0,
-              }} />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {renderMemberLabel(m.identity, m.alias)}
-              </span>
+              <div style={{ fontSize: '0.85rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {doc.title || '(untitled)'}
+              </div>
+              {tags.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem', marginTop: '0.25rem' }}>
+                  {tags.slice(0, 4).map((t) => (
+                    <span
+                      key={t.id}
+                      onClick={(e) => { e.stopPropagation(); onSelectTag(t.label); }}
+                      style={{
+                        fontSize: '0.65rem',
+                        padding: '0.1rem 0.3rem',
+                        borderRadius: 3,
+                        background: 'rgba(139,92,246,0.2)',
+                        color: '#a78bfa',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      #{t.label}
+                    </span>
+                  ))}
+                  {tags.length > 4 && (
+                    <span style={{ fontSize: '0.65rem', color: '#64748b' }}>+{tags.length - 4}</span>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* Room actions */}
-      <div style={{ padding: '0.5rem', display: 'flex', gap: '0.25rem' }}>
-        <button
-          onClick={onCreateRoom}
-          style={{
-            flex: 1,
-            padding: '0.4rem',
-            background: '#2563eb',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            cursor: 'pointer',
-            fontSize: '0.8rem',
-          }}
-        >
-          + Room
-        </button>
+      {/* All tags (tag filter view) */}
+      {allTags.length > 0 && (
+        <div style={{ padding: '0.5rem', borderTop: '1px solid #1e293b' }}>
+          <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.25rem' }}>ALL TAGS</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+            {allTags.map((tag) => (
+              <span
+                key={tag}
+                onClick={() => onSelectTag(activeTag === tag ? null : tag)}
+                style={{
+                  fontSize: '0.7rem',
+                  padding: '0.15rem 0.4rem',
+                  borderRadius: 3,
+                  background: activeTag === tag ? 'rgba(139,92,246,0.4)' : 'rgba(139,92,246,0.1)',
+                  color: activeTag === tag ? '#e9d5ff' : '#a78bfa',
+                  cursor: 'pointer',
+                }}
+              >
+                #{tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Invite / member actions */}
+      <div style={{ padding: '0.5rem', borderTop: '1px solid #1e293b', display: 'flex', gap: '0.25rem' }}>
         <button
           onClick={onInvite}
           style={{
@@ -252,40 +299,8 @@ export default function Sidebar({
             fontSize: '0.8rem',
           }}
         >
-          Invite
+          Invite Member
         </button>
-      </div>
-
-      {/* Room list */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0.25rem' }}>
-        <div style={{ fontSize: '0.7rem', color: '#64748b', margin: '0.25rem 0.5rem' }}>
-          ROOMS
-        </div>
-        {rooms.length === 0 && (
-          <div style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', textAlign: 'center' }}>
-            No rooms yet
-          </div>
-        )}
-        {rooms.map((room) => (
-          <div
-            key={room.room_id}
-            data-testid={`sidebar-room-${room.name}`}
-            onClick={() => onSelectRoom(room)}
-            style={{
-              padding: '0.55rem 0.7rem',
-              borderRadius: 6,
-              cursor: 'pointer',
-              background: room.room_id === selectedRoomId ? 'rgba(59,130,246,0.15)' : 'transparent',
-              color: room.room_id === selectedRoomId ? '#93c5fd' : '#cbd5e1',
-              marginBottom: 2,
-            }}
-          >
-            <div style={{ fontSize: '0.88rem' }}># {room.name}</div>
-            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-              {room.member_count} member{room.member_count !== 1 ? 's' : ''}
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );

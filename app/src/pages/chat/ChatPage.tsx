@@ -1,170 +1,114 @@
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMero, useSubscription } from '@calimero-network/mero-react';
+import { useMero } from '@calimero-network/mero-react';
 import { useChatLobby } from '../../hooks/useChatLobby';
-import { useLobbyDirectory } from '../../hooks/useLobbyDirectory';
-import { LobbyClient, RoomSummary } from '../../api/lobby/LobbyClient';
-import { SERVICE_NAME } from '../../config';
-import Sidebar from '../../components/Sidebar';
-import RoomView from '../../components/RoomView';
-import CreateRoomModal from '../../components/CreateRoomModal';
+import { useKnowledgeGraph } from '../../hooks/useKnowledgeGraph';
+import Sidebar, { type ActiveView } from '../../components/Sidebar';
+import DocumentDetailView from '../../components/DocumentDetailView';
+import GraphVisualizationView from '../../components/GraphVisualizationView';
+import TagFilterView from '../../components/TagFilterView';
+import CreateDocumentModal from '../../components/CreateDocumentModal';
 import CreateWorkspaceModal from '../../components/CreateWorkspaceModal';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
 
-// Mirror chat_types::generate_id (Rust): "room-{ts_ms}-{8-hex-nonce}"
-function generateRoomId(): string {
-  const ts = Date.now();
-  const nonce = crypto.getRandomValues(new Uint8Array(4));
-  const hex = Array.from(nonce).map((b) => b.toString(16).padStart(2, '0')).join('');
-  return `room-${ts}-${hex}`;
-}
-
 export default function ChatPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, mero } = useMero();
+  const { isAuthenticated } = useMero();
   const lobby = useChatLobby();
-  const { onlineMembers, memberNames, setName } = useLobbyDirectory(
-    lobby.lobbyContextId,
-    lobby.lobbyExecutorPublicKey,
-  );
 
-  const [rooms, setRooms] = useState<RoomSummary[]>([]);
-  const [selectedRoom, setSelectedRoom] = useState<{ id: string; contextId: string | null } | null>(null);
-  const [showCreateRoom, setShowCreateRoom] = useState(false);
+  // The lobbyContextId IS the knowledge-graph context (single-service app).
+  const graph = useKnowledgeGraph(lobby.lobbyContextId, lobby.executorPublicKey);
+
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<ActiveView>('list');
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+
+  const [showCreateDoc, setShowCreateDoc] = useState(false);
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/');
-    }
+    if (!isAuthenticated) navigate('/');
   }, [isAuthenticated, navigate]);
 
-  const fetchRooms = useCallback(async () => {
-    if (!mero || !lobby.lobbyContextId || !lobby.executorPublicKey) return;
-    try {
-      const client = new LobbyClient(mero, lobby.lobbyContextId, lobby.executorPublicKey);
-      const roomList = await client.getRooms();
-      setRooms(roomList);
-    } catch (err) {
-      console.error('Failed to fetch rooms:', err);
-    }
-  }, [mero, lobby.lobbyContextId, lobby.executorPublicKey]);
-
-  useEffect(() => {
-    if (lobby.lobbyJoined) {
-      fetchRooms();
-    }
-  }, [lobby.lobbyJoined, fetchRooms]);
-
-  // React to any lobby state change (local or synced from other nodes).
-  // Also refetch members because some membership changes coincide with lobby
-  // events.
-  useSubscription(
-    lobby.lobbyContextId ? [lobby.lobbyContextId] : [],
-    () => {
-      fetchRooms();
-      lobby.refetchMembers();
-    },
-  );
-
-  // Namespace membership has no SSE channel — peers joining via invitation
-  // never trigger a re-render. Poll while the chat page is open so the
-  // member count and CreateRoomModal pre-selection stay current.
+  // Poll members while the page is open (no SSE for membership joins)
   useEffect(() => {
     if (!lobby.namespaceId) return;
     const interval = setInterval(() => { lobby.refetchMembers(); }, 5_000);
     return () => clearInterval(interval);
   }, [lobby.namespaceId, lobby.refetchMembers]);
 
-  const handleCreateRoom = useCallback(async (name: string, selectedMembers: string[]) => {
-    if (!mero || !lobby.lobbyContextId || !lobby.executorPublicKey || !lobby.namespaceId) return;
-
-    const appId = lobby.selectedLobby?.applicationId;
-    if (!appId) return;
-
-    const client = new LobbyClient(mero, lobby.lobbyContextId, lobby.executorPublicKey);
-
-    // Single atomic lobby write: createContext first, then register_room with
-    // the resulting context_id. Avoids the propagation race where remote peers
-    // would see the room name with context_id == null between two writes.
-    const roomId = generateRoomId();
-
-    try {
-      const initParams = JSON.stringify({
-        room_id: roomId,
-        name,
-        lobby_context_id: lobby.lobbyContextId,
-      });
-      const initBytes = Array.from(new TextEncoder().encode(initParams));
-
-      // Create the per-instance context in the root namespace group.
-      // All namespace members can see and join it via auto_join.
-      const instanceServiceName = SERVICE_NAME.instance;
-      if (!instanceServiceName) {
-        throw new Error('No "instance" service declared in studio.config.json');
-      }
-      const { contextId } = await mero.admin.createContext({
-        applicationId: appId,
-        groupId: lobby.namespaceId,
-        serviceName: instanceServiceName,
-        initializationParams: initBytes,
-      });
-
-      await client.registerRoom({ room_id: roomId, name, context_id: contextId });
-      setShowCreateRoom(false);
-      await fetchRooms();
-    } catch (err) {
-      console.error('Failed to create room:', err);
+  // Auto-select first document when list loads
+  useEffect(() => {
+    if (graph.documents.length > 0 && !selectedDocId) {
+      setSelectedDocId(graph.documents[0].id);
     }
-  }, [mero, lobby, fetchRooms]);
+  }, [graph.documents, selectedDocId]);
 
-  const handleSelectRoom = useCallback(async (room: RoomSummary) => {
-    if (!room.context_id || !mero) {
-      setSelectedRoom({ id: room.room_id, contextId: null });
-      return;
-    }
+  const handleSelectDoc = useCallback((docId: string) => {
+    setSelectedDocId(docId);
+    setActiveView('list');
+  }, []);
 
-    // Bound the join attempt so a hang doesn't freeze the UI. If we're
-    // already in the context the call returns quickly; if not, the join
-    // needs to complete before useChatRoom can read state from the context.
-    const joinTimeout = new Promise<void>((resolve) => setTimeout(resolve, 5_000));
-    await Promise.race([
-      mero.admin.joinContext(room.context_id).then(() => {}).catch(() => {}),
-      joinTimeout,
-    ]);
+  const handleSelectTag = useCallback((tag: string | null) => {
+    setActiveTag(tag);
+    if (tag) setActiveView('tag-filter');
+  }, []);
 
-    setSelectedRoom({ id: room.room_id, contextId: room.context_id });
-  }, [mero]);
+  const handleSetView = useCallback((view: ActiveView) => {
+    setActiveView(view);
+    if (view !== 'tag-filter') setActiveTag(null);
+  }, []);
 
-  // Show Welcome only when there are no workspaces at all. Don't gate on
-  // `!lobbyJoined` — that flips to false on every workspace switch and would
-  // flash the Welcome screen mid-transition. Switching is just a transition
-  // between contexts; keep the main layout mounted.
+  const handleCreateDoc = useCallback(async (title: string, content: string) => {
+    const id = await graph.createDocument(title, content);
+    if (id) setSelectedDocId(id);
+  }, [graph]);
+
+  const selectedDoc = graph.documents.find((d) => d.id === selectedDocId) ?? null;
+
+  // Welcome screen: no workspaces yet
   if (lobby.lobbies.length === 0 && !lobby.lobbiesLoading) {
     return (
       <div className="app-bg">
         <div className="page-shell" style={{ justifyContent: 'center', alignItems: 'center', gap: '1rem' }}>
-          <h2>No workspaces yet</h2>
-          <p style={{ color: '#888' }}>Create a new workspace or join one with an invitation.</p>
+          <h2 style={{ color: '#f1f5f9' }}>No workspaces yet</h2>
+          <p style={{ color: '#64748b', maxWidth: 380, textAlign: 'center' }}>
+            Create a new knowledge-graph workspace or join one with an invitation.
+          </p>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button onClick={() => setShowCreateWorkspace(true)}>Create Workspace</button>
-            <button onClick={() => setShowJoin(true)}>Join with Invitation</button>
+            <button
+              onClick={() => setShowCreateWorkspace(true)}
+              style={{
+                padding: '0.5rem 1.25rem',
+                background: 'var(--color-accent, #8B5CF6)',
+                color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer',
+              }}
+            >
+              Create Workspace
+            </button>
+            <button
+              onClick={() => setShowJoin(true)}
+              style={{
+                padding: '0.5rem 1.25rem',
+                background: '#1e293b', color: '#cbd5e1',
+                border: '1px solid #334155', borderRadius: 6, cursor: 'pointer',
+              }}
+            >
+              Join with Invitation
+            </button>
           </div>
           {showCreateWorkspace && (
             <CreateWorkspaceModal
-              onCreate={async (name) => { await lobby.createLobby(name); }}
+              onCreate={async (name) => { await lobby.createLobby(name); setShowCreateWorkspace(false); }}
               onClose={() => setShowCreateWorkspace(false)}
             />
           )}
           {showJoin && (
             <JoinModal
-              onJoin={async (json) => {
-                await lobby.joinLobby(json);
-                setShowJoin(false);
-              }}
+              onJoin={async (json) => { await lobby.joinLobby(json); setShowJoin(false); }}
               onClose={() => setShowJoin(false)}
             />
           )}
@@ -184,48 +128,113 @@ export default function ChatPage() {
           workspaceAlias={lobby.selectedLobby?.alias}
           members={lobby.members}
           selfIdentity={lobby.selfIdentity}
-          onlineMembers={onlineMembers}
-          memberNames={memberNames}
-          onSetName={setName}
-          rooms={rooms}
-          selectedRoomId={selectedRoom?.id ?? null}
-          onSelectRoom={handleSelectRoom}
-          onCreateRoom={() => setShowCreateRoom(true)}
           onInvite={() => setShowInvite(true)}
+          documents={graph.documents}
+          tagsByDocument={graph.tagsByDocument}
+          selectedDocId={selectedDocId}
+          onSelectDoc={handleSelectDoc}
+          onCreateDoc={() => setShowCreateDoc(true)}
+          activeView={activeView}
+          onSetView={handleSetView}
+          activeTag={activeTag}
+          onSelectTag={handleSelectTag}
         />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {selectedRoom?.contextId ? (
-            <RoomView
-              contextId={selectedRoom.contextId}
-              executorPublicKey={lobby.executorPublicKey}
-              onRoomDeleted={() => {
-                setSelectedRoom(null);
-                fetchRooms();
-              }}
-            />
-          ) : (
+
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#0a1628' }}>
+          {/* Error banner */}
+          {graph.error && (
             <div style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#666',
+              padding: '0.5rem 1rem',
+              background: 'rgba(239,68,68,0.1)',
+              borderBottom: '1px solid rgba(239,68,68,0.2)',
+              color: '#fca5a5', fontSize: '0.8rem',
             }}>
-              Select a room or create a new one
+              {graph.error.message}
             </div>
           )}
+
+          {/* Loading indicator */}
+          {graph.loading && graph.documents.length === 0 && (
+            <div style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#475569', fontSize: '0.9rem',
+            }}>
+              Loading knowledge graph…
+            </div>
+          )}
+
+          {/* Graph view */}
+          {!graph.loading || graph.documents.length > 0 ? (
+            activeView === 'graph' ? (
+              <GraphVisualizationView
+                documents={graph.documents}
+                links={graph.links}
+                selectedDocId={selectedDocId}
+                onSelectDoc={handleSelectDoc}
+              />
+            ) : activeView === 'tag-filter' ? (
+              <TagFilterView
+                documents={graph.documents}
+                tagsByDocument={graph.tagsByDocument}
+                activeTag={activeTag}
+                onSelectTag={handleSelectTag}
+                onSelectDoc={handleSelectDoc}
+              />
+            ) : selectedDoc ? (
+              <DocumentDetailView
+                document={selectedDoc}
+                tags={graph.tagsByDocument[selectedDoc.id] ?? []}
+                links={graph.links}
+                allDocuments={graph.documents}
+                selfIdentity={lobby.selfIdentity}
+                executorKey={graph.executorKey}
+                onEditDocument={(t, c) => graph.editDocument(selectedDoc.id, t, c)}
+                onAddTag={(label) => graph.addTag(selectedDoc.id, label).then(() => {})}
+                onRemoveTag={graph.removeTag}
+                onCreateLink={(srcText, tgtDocId, tgtText) =>
+                  graph.createLink(selectedDoc.id, srcText, tgtDocId, tgtText).then(() => {})
+                }
+                onDeleteLink={graph.deleteLink}
+                onSelectDoc={handleSelectDoc}
+              />
+            ) : (
+              <div style={{
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#475569', flexDirection: 'column', gap: '0.75rem',
+              }}>
+                <div style={{ fontSize: '2rem' }}>📄</div>
+                <div>
+                  {graph.documents.length === 0
+                    ? 'No documents yet — create one to get started'
+                    : 'Select a document from the sidebar'}
+                </div>
+                <button
+                  onClick={() => setShowCreateDoc(true)}
+                  style={{
+                    padding: '0.4rem 1rem',
+                    background: 'var(--color-accent, #8B5CF6)',
+                    color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer',
+                    fontSize: '0.85rem',
+                  }}
+                >
+                  + New Document
+                </button>
+              </div>
+            )
+          ) : null}
         </div>
       </div>
 
-      {showCreateRoom && (
-        <CreateRoomModal
-          members={lobby.members.map((m) => ({
-            identity: m.identity,
-            alias: m.alias,
-            isSelf: m.identity === lobby.selfIdentity,
-          }))}
-          onSubmit={handleCreateRoom}
-          onClose={() => setShowCreateRoom(false)}
+      {showCreateDoc && (
+        <CreateDocumentModal
+          onCreate={handleCreateDoc}
+          onClose={() => setShowCreateDoc(false)}
+        />
+      )}
+      {showCreateWorkspace && (
+        <CreateWorkspaceModal
+          onCreate={async (name) => { await lobby.createLobby(name); setShowCreateWorkspace(false); }}
+          onClose={() => setShowCreateWorkspace(false)}
         />
       )}
       {showInvite && (
@@ -234,18 +243,9 @@ export default function ChatPage() {
           onClose={() => setShowInvite(false)}
         />
       )}
-      {showCreateWorkspace && (
-        <CreateWorkspaceModal
-          onCreate={async (name) => { await lobby.createLobby(name); }}
-          onClose={() => setShowCreateWorkspace(false)}
-        />
-      )}
       {showJoin && (
         <JoinModal
-          onJoin={async (json) => {
-            await lobby.joinLobby(json);
-            setShowJoin(false);
-          }}
+          onJoin={async (json) => { await lobby.joinLobby(json); setShowJoin(false); }}
           onClose={() => setShowJoin(false)}
         />
       )}

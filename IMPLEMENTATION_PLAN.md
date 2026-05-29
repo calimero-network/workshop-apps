@@ -19,11 +19,11 @@ Summary: Collaborative knowledge graph where teams link documents and ideas thro
 - [x] Implement mutate: [knowledge-graph] edit_document(document_id: String, new_title: String, new_content: String) → app::Result<()>
 
 ## Frontend (app/)
-- [ ] Screen: DocumentListView — Sidebar of all documents with tags + create-doc
-- [ ] Screen: DocumentDetailView — Document content + tag editor + text selection to link
-- [ ] Screen: GraphVisualizationView — Force-directed graph of documents and links
-- [ ] Screen: TagFilterView — Filter documents by selected tag
-- [ ] Apply designTheme tokens
+- [x] Screen: DocumentListView — Sidebar of all documents with tags + create-doc
+- [x] Screen: DocumentDetailView — Document content + tag editor + text selection to link
+- [x] Screen: GraphVisualizationView — Force-directed graph of documents and links
+- [x] Screen: TagFilterView — Filter documents by selected tag
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds
