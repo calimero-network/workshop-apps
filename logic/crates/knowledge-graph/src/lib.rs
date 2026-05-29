@@ -83,8 +83,6 @@ pub struct KnowledgeGraphState {
     documents: AuthoredMap<String, Document>,
     tags: UnorderedMap<String, Tag>,
     links: AuthoredMap<String, Link>,
-    /// Monotonic counter used for deterministic ID generation (no random_bytes).
-    next_seq: u64,
 }
 
 #[app::logic]
@@ -95,20 +93,18 @@ impl KnowledgeGraphState {
             documents: AuthoredMap::new_with_field_name("kg:documents"),
             tags: UnorderedMap::new_with_field_name("kg:tags"),
             links: AuthoredMap::new_with_field_name("kg:links"),
-            next_seq: 0,
         }
     }
 
-    /// Generate a deterministic ID using the global sequence counter + the
-    /// caller's pubkey prefix.  Both values are identical on every replica
-    /// when it replays the same transaction, so state converges correctly.
-    fn next_id(&mut self, prefix: &str) -> String {
-        self.next_seq += 1;
+    /// Generate a deterministic ID from the transaction's timestamp (nanoseconds,
+    /// captured at submission time — identical on every replica during replay)
+    /// plus the first 8 chars of the caller's base-58 pubkey (unique per caller).
+    /// No shared mutable counter is needed, so state always converges.
+    fn next_id(&self, prefix: &str) -> String {
+        let now_ns = storage_env::time_now();
         let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
-        // Use the first 8 chars of the base-58 pubkey as a namespace so that
-        // two different callers creating items at seq==1 still get distinct IDs.
         let caller_prefix = caller.chars().take(8).collect::<String>();
-        format!("{prefix}-{}-{caller_prefix}", self.next_seq)
+        format!("{prefix}-{now_ns}-{caller_prefix}")
     }
 
     // ---- Mutating methods ----
