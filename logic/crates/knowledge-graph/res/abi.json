@@ -1,7 +1,42 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
+    "Document": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "content",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Event_DocumentCreated": {
       "kind": "record",
       "fields": [
         {
@@ -12,24 +47,7 @@
         }
       ]
     },
-    "Event_RoomCreated": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "Event_RoomDeleted": {
+    "Event_DocumentEdited": {
       "kind": "record",
       "fields": [
         {
@@ -40,175 +58,184 @@
         }
       ]
     },
-    "LobbyState": {
+    "Event_LinkCreated": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
+          "name": "id",
           "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
-            }
+            "kind": "string"
           }
         },
         {
-          "name": "rooms",
+          "name": "source_doc_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "target_doc_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_LinkDeleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TagAdded": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "document_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TagRemoved": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "KnowledgeGraphState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "documents",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "u64"
+              "$ref": "Document"
             },
             "crdt_type": "authored_map"
           }
         },
         {
-          "name": "names",
+          "name": "tags",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
+              "$ref": "Tag"
+            },
+            "crdt_type": "unordered_map"
+          }
+        },
+        {
+          "name": "links",
+          "type": {
+            "kind": "map",
+            "key": {
               "kind": "string"
+            },
+            "value": {
+              "$ref": "Link"
             },
             "crdt_type": "authored_map"
           }
         }
       ]
     },
-    "NameEntry": {
+    "Link": {
       "kind": "record",
       "fields": [
         {
-          "name": "member",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "PresenceEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
+          "name": "source_doc_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "last_seen_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomActivity": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
+          "name": "source_text",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
+          "name": "target_doc_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "last_message_ms",
+          "name": "target_text",
           "type": {
-            "kind": "u64"
+            "kind": "string"
           }
         },
         {
-          "name": "message_count",
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
         }
       ]
     },
-    "RoomSummary": {
+    "Tag": {
       "kind": "record",
       "fields": [
         {
-          "name": "room_id",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "document_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "created_by",
+          "name": "label",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "context_id",
+          "name": "added_by",
           "type": {
             "kind": "string"
-          },
-          "nullable": true
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "created_ms",
-          "type": {
-            "kind": "u64"
           }
         }
       ]
@@ -223,60 +250,42 @@
       }
     },
     {
-      "name": "register_room",
+      "name": "create_document",
       "params": [
         {
-          "name": "room_id",
+          "name": "title",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
+          "name": "content",
           "type": {
             "kind": "string"
           }
         }
       ],
       "returns": {
-        "$ref": "RoomSummary"
+        "kind": "string"
       }
     },
     {
-      "name": "get_rooms",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomSummary"
-        }
-      }
-    },
-    {
-      "name": "get_room",
+      "name": "edit_document",
       "params": [
         {
-          "name": "room_id",
+          "name": "document_id",
           "type": {
             "kind": "string"
           }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
+        },
         {
-          "name": "room_id",
+          "name": "new_title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_content",
           "type": {
             "kind": "string"
           }
@@ -287,69 +296,30 @@
       }
     },
     {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
+      "name": "add_tag",
       "params": [
         {
-          "name": "room_id",
+          "name": "document_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
+          "name": "label",
           "type": {
             "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
           }
         }
       ],
       "returns": {
-        "kind": "unit"
+        "kind": "string"
       }
     },
     {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
+      "name": "remove_tag",
       "params": [
         {
-          "name": "name",
+          "name": "tag_id",
           "type": {
             "kind": "string"
           }
@@ -360,38 +330,143 @@
       }
     },
     {
-      "name": "list_names",
+      "name": "create_link",
+      "params": [
+        {
+          "name": "source_doc_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "source_text",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "target_doc_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "target_text",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "delete_link",
+      "params": [
+        {
+          "name": "link_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "list_documents",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "Document"
+        }
+      }
+    },
+    {
+      "name": "list_tags_by_document",
+      "params": [
+        {
+          "name": "document_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Tag"
+        }
+      }
+    },
+    {
+      "name": "list_documents_by_tag",
+      "params": [
+        {
+          "name": "label",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Document"
+        }
+      }
+    },
+    {
+      "name": "list_links",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Link"
         }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "DocumentCreated",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_DocumentCreated"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "DocumentEdited",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_DocumentEdited"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "TagAdded",
+      "payload": {
+        "$ref": "Event_TagAdded"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "TagRemoved",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_TagRemoved"
+      }
+    },
+    {
+      "name": "LinkCreated",
+      "payload": {
+        "$ref": "Event_LinkCreated"
+      }
+    },
+    {
+      "name": "LinkDeleted",
+      "payload": {
+        "$ref": "Event_LinkDeleted"
       }
     }
   ],
-  "state_root": "LobbyState"
+  "state_root": "KnowledgeGraphState"
 }
