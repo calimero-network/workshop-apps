@@ -61,16 +61,6 @@ pub struct Link {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn new_id(prefix: &str, now_ms: u64) -> String {
-    let mut nonce = [0u8; 4];
-    calimero_sdk::env::random_bytes(&mut nonce);
-    let hex: String = nonce.iter().fold(String::with_capacity(8), |mut acc, b| {
-        acc.push_str(&format!("{:02x}", b));
-        acc
-    });
-    format!("{prefix}-{now_ms}-{hex}")
-}
-
 fn map_authored_error(action: &'static str) -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
     move |e| {
         let s = e.to_string();
@@ -93,6 +83,8 @@ pub struct KnowledgeGraphState {
     documents: AuthoredMap<String, Document>,
     tags: UnorderedMap<String, Tag>,
     links: AuthoredMap<String, Link>,
+    /// Monotonic counter used for deterministic ID generation (no random_bytes).
+    next_seq: u64,
 }
 
 #[app::logic]
@@ -103,7 +95,20 @@ impl KnowledgeGraphState {
             documents: AuthoredMap::new_with_field_name("kg:documents"),
             tags: UnorderedMap::new_with_field_name("kg:tags"),
             links: AuthoredMap::new_with_field_name("kg:links"),
+            next_seq: 0,
         }
+    }
+
+    /// Generate a deterministic ID using the global sequence counter + the
+    /// caller's pubkey prefix.  Both values are identical on every replica
+    /// when it replays the same transaction, so state converges correctly.
+    fn next_id(&mut self, prefix: &str) -> String {
+        self.next_seq += 1;
+        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+        // Use the first 8 chars of the base-58 pubkey as a namespace so that
+        // two different callers creating items at seq==1 still get distinct IDs.
+        let caller_prefix = caller.chars().take(8).collect::<String>();
+        format!("{prefix}-{}-{caller_prefix}", self.next_seq)
     }
 
     // ---- Mutating methods ----
@@ -111,7 +116,7 @@ impl KnowledgeGraphState {
     pub fn create_document(&mut self, title: String, content: String) -> app::Result<String> {
         let author = bs58::encode(calimero_sdk::env::executor_id()).into_string();
         let now_ms = storage_env::time_now() / 1_000_000;
-        let id = new_id("doc", now_ms);
+        let id = self.next_id("doc");
         let doc = Document {
             id: id.clone(),
             title,
@@ -153,8 +158,7 @@ impl KnowledgeGraphState {
 
     pub fn add_tag(&mut self, document_id: String, label: String) -> app::Result<String> {
         let added_by = bs58::encode(calimero_sdk::env::executor_id()).into_string();
-        let now_ms = storage_env::time_now() / 1_000_000;
-        let id = new_id("tag", now_ms);
+        let id = self.next_id("tag");
         let tag = Tag {
             id: id.clone(),
             document_id: document_id.clone(),
@@ -192,7 +196,7 @@ impl KnowledgeGraphState {
     ) -> app::Result<String> {
         let author = bs58::encode(calimero_sdk::env::executor_id()).into_string();
         let now_ms = storage_env::time_now() / 1_000_000;
-        let id = new_id("link", now_ms);
+        let id = self.next_id("link");
         let link = Link {
             id: id.clone(),
             source_doc_id: source_doc_id.clone(),
