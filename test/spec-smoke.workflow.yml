@@ -1,0 +1,319 @@
+# Spec-smoke workflow for the knowledge-graph app.
+#
+# Exercises the knowledge-graph service across two nodes:
+#   - create_document, add_tag, create_link, edit_document, remove_tag, delete_link
+#   - CRDT replication verified after every mutate via wait_for_sync + json_assert
+#
+# Usage (run from the project root, after a dev bundle has been built):
+#   merobox bootstrap run test/spec-smoke.workflow.yml
+#
+# Pre-flight: logic/res/knowledge-graph-0.1.0.mpk must exist.
+
+name: knowledge-graph spec smoke
+description: Install and exercise all knowledge-graph service methods; verify CRDT replication across two nodes.
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 12428
+  base_rpc_port: 12528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # ── Bootstrap ──────────────────────────────────────────────────────────────
+
+  - type: install_application
+    name: Install knowledge-graph bundle on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/knowledge-graph-0.1.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install knowledge-graph bundle on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/knowledge-graph-0.1.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create knowledge-graph context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: knowledge-graph
+    outputs:
+      knowledge_graph_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: join_context
+    name: app-node-2 joins knowledge-graph context
+    node: app-node-2
+    context_id: '{{knowledge_graph_ctx}}'
+
+  # ── Deterministic floor: view methods on empty state ──────────────────────
+
+  - type: call
+    name: list_documents returns empty list initially
+    node: app-node-1
+    context_id: '{{knowledge_graph_ctx}}'
+    method: list_documents
+    args: {}
+    outputs:
+      docs_empty: result.output
+
+  - type: json_assert
+    name: list_documents is empty before any document is created
+    statements:
+      - 'json_equal({{docs_empty}}, [])'
+
+  - type: call
+    name: list_links returns empty list initially
+    node: app-node-1
+    context_id: '{{knowledge_graph_ctx}}'
+    method: list_links
+    args: {}
+    outputs:
+      links_empty: result.output
+
+  - type: json_assert
+    name: list_links is empty before any link is created
+    statements:
+      - 'json_equal({{links_empty}}, [])'
+
+  # ── Mutate: create_document ────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise create_document on app-node-1
+    node: app-node-1
+    context_id: '{{knowledge_graph_ctx}}'
+    method: create_document
+    args:
+      title: "Q3 Roadmap"
+      content: "Machine learning initiative..."
+    outputs:
+      created_doc_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for knowledge-graph sync after create_document
+    context_id: '{{knowledge_graph_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm document visible on app-node-2
+    node: app-node-2
+    context_id: '{{knowledge_graph_ctx}}'
+    method: list_documents
+    args: {}
+    outputs:
+      doc_n2_0: result.output.0
+
+  - type: json_assert
+    name: create_document produced a visible Document with correct title on app-node-2
+    statements:
+      - 'json_subset({{doc_n2_0}}, {"title": "Q3 Roadmap"})'
+
+  # ── Mutate: add_tag ────────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise add_tag on app-node-1
+    node: app-node-1
+    context_id: '{{knowledge_graph_ctx}}'
+    method: add_tag
+    args:
+      document_id: '{{created_doc_id}}'
+      label: "machine-learning"
+    outputs:
+      created_tag_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for knowledge-graph sync after add_tag
+    context_id: '{{knowledge_graph_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm tag visible on app-node-2 via list_tags_by_document
+    node: app-node-2
+    context_id: '{{knowledge_graph_ctx}}'
+    method: list_tags_by_document
+    args:
+      document_id: '{{created_doc_id}}'
+    outputs:
+      tag_n2_0: result.output.0
+
+  - type: json_assert
+    name: add_tag produced a visible Tag with correct label on app-node-2
+    statements:
+      - 'json_subset({{tag_n2_0}}, {"label": "machine-learning"})'
+
+  # ── Mutate: create_link (requires a second document) ──────────────────────
+
+  - type: call
+    name: Create a second document to serve as the link target
+    node: app-node-1
+    context_id: '{{knowledge_graph_ctx}}'
+    method: create_document
+    args:
+      title: "Technical Constraints"
+      content: "technical constraint details..."
+    outputs:
+      target_doc_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for knowledge-graph sync after second create_document
+    context_id: '{{knowledge_graph_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Exercise create_link on app-node-1
+    node: app-node-1
+    context_id: '{{knowledge_graph_ctx}}'
+    method: create_link
+    args:
+      source_doc_id: '{{created_doc_id}}'
+      source_text: "machine learning..."
+      target_doc_id: '{{target_doc_id}}'
+      target_text: "technical constraint..."
+    outputs:
+      created_link_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for knowledge-graph sync after create_link
+    context_id: '{{knowledge_graph_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm link visible on app-node-2 via list_links
+    node: app-node-2
+    context_id: '{{knowledge_graph_ctx}}'
+    method: list_links
+    args: {}
+    outputs:
+      link_n2_0: result.output.0
+
+  - type: json_assert
+    name: create_link produced a visible Link with correct source_text on app-node-2
+    statements:
+      - 'json_subset({{link_n2_0}}, {"source_text": "machine learning..."})'
+
+  # ── Mutate: edit_document ─────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise edit_document on app-node-1
+    node: app-node-1
+    context_id: '{{knowledge_graph_ctx}}'
+    method: edit_document
+    args:
+      document_id: '{{created_doc_id}}'
+      new_title: "Q3 Roadmap (Updated)"
+      new_content: "Machine learning initiative..."
+
+  - type: wait_for_sync
+    name: Wait for knowledge-graph sync after edit_document
+    context_id: '{{knowledge_graph_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  # Observe the edit via list_documents_by_tag — doc still has 'machine-learning'
+  # at this point, so this view uniquely returns the edited document.
+  - type: call
+    name: Confirm edited title visible on app-node-2 via list_documents_by_tag
+    node: app-node-2
+    context_id: '{{knowledge_graph_ctx}}'
+    method: list_documents_by_tag
+    args:
+      label: "machine-learning"
+    outputs:
+      edited_doc_n2: result.output.0
+
+  - type: json_assert
+    name: edit_document updated the title visible on app-node-2
+    statements:
+      - 'json_subset({{edited_doc_n2}}, {"title": "Q3 Roadmap (Updated)"})'
+
+  # ── Mutate: remove_tag ────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise remove_tag on app-node-1
+    node: app-node-1
+    context_id: '{{knowledge_graph_ctx}}'
+    method: remove_tag
+    args:
+      tag_id: '{{created_tag_id}}'
+
+  - type: wait_for_sync
+    name: Wait for knowledge-graph sync after remove_tag
+    context_id: '{{knowledge_graph_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm tag list is empty on app-node-2 after remove_tag
+    node: app-node-2
+    context_id: '{{knowledge_graph_ctx}}'
+    method: list_tags_by_document
+    args:
+      document_id: '{{created_doc_id}}'
+    outputs:
+      tags_after_remove: result.output
+
+  - type: json_assert
+    name: remove_tag cleared all tags for the document on app-node-2
+    statements:
+      - 'json_equal({{tags_after_remove}}, [])'
+
+  # ── Mutate: delete_link ───────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise delete_link on app-node-1
+    node: app-node-1
+    context_id: '{{knowledge_graph_ctx}}'
+    method: delete_link
+    args:
+      link_id: '{{created_link_id}}'
+
+  - type: wait_for_sync
+    name: Wait for knowledge-graph sync after delete_link
+    context_id: '{{knowledge_graph_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm link list is empty on app-node-2 after delete_link
+    node: app-node-2
+    context_id: '{{knowledge_graph_ctx}}'
+    method: list_links
+    args: {}
+    outputs:
+      links_after_delete: result.output
+
+  - type: json_assert
+    name: delete_link cleared all links on app-node-2
+    statements:
+      - 'json_equal({{links_after_delete}}, [])'
