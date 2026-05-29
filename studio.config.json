@@ -1,0 +1,22 @@
+{
+  "appName": "knowledge-graph",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.knowledge-graph",
+  "metadata": {
+    "name": "knowledge-graph",
+    "description": "Collaborative knowledge graph where teams link documents and ideas through tags and cross-references",
+    "author": "Calimero",
+    "route": "/knowledge-graph"
+  },
+  "theme": {
+    "primaryColor": "#1F2937",
+    "accentColor": "#8B5CF6",
+    "style": "knowledge-centric"
+  },
+  "services": [
+    {
+      "name": "knowledge-graph",
+      "crate": "knowledge-graph-knowledge-graph"
+    }
+  ]
+}
