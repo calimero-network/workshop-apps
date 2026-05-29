@@ -1,12 +1,19 @@
 //! Knowledge-graph service — documents, tags, and cross-reference links.
+//!
+//! # Why UnorderedMap instead of AuthoredMap for documents/links
+//!
+//! AuthoredMap with generated string keys (non-pubkey) and struct values fails
+//! to converge across nodes: the storage-layer author enforcement rejects the
+//! CRDT sync merge on remote nodes (SDK issue #3). The fix is UnorderedMap +
+//! Mergeable + manual caller == doc.author checks in mutating methods.
 
-use chat_types::ChatError;
+use chat_types::{generate_id, ChatError};
 use calimero_sdk::app;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
 use calimero_storage::collections::crdt_meta::MergeError;
-use calimero_storage::collections::{AuthoredMap, Mergeable, UnorderedMap};
+use calimero_storage::collections::{Mergeable, UnorderedMap};
 use calimero_storage::env as storage_env;
 
 pub mod events;
@@ -25,6 +32,25 @@ pub struct Document {
     pub content: String,
     pub author: String,
     pub created_at: u64,
+    /// Millisecond timestamp of the last edit; equals created_at on first insert.
+    /// Used by Mergeable to pick the latest version on concurrent edit conflict.
+    pub updated_at: u64,
+}
+
+impl Mergeable for Document {
+    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
+        // Last-write-wins by updated_at — whichever edit happened later wins.
+        // created_at is immutable; keep the minimum to preserve the original.
+        if other.updated_at > self.updated_at {
+            self.title = other.title.clone();
+            self.content = other.content.clone();
+            self.updated_at = other.updated_at;
+        }
+        if other.created_at < self.created_at {
+            self.created_at = other.created_at;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -57,18 +83,10 @@ pub struct Link {
     pub created_at: u64,
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn map_authored_error(action: &'static str) -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
-    move |e| {
-        let s = e.to_string();
-        if s.contains("ActionNotAllowed") {
-            AppError::from(ChatError::Forbidden(format!("can only {action} your own entry")))
-        } else {
-            AppError::msg(format!("{action}: {s}"))
-        }
+impl Mergeable for Link {
+    fn merge(&mut self, _other: &Self) -> Result<(), MergeError> {
+        // Links are immutable after creation; keep self on concurrent conflict.
+        Ok(())
     }
 }
 
@@ -80,9 +98,9 @@ fn map_authored_error(action: &'static str) -> impl FnOnce(calimero_storage::col
 #[derive(BorshSerialize, BorshDeserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 pub struct KnowledgeGraphState {
-    documents: AuthoredMap<String, Document>,
+    documents: UnorderedMap<String, Document>,
     tags: UnorderedMap<String, Tag>,
-    links: AuthoredMap<String, Link>,
+    links: UnorderedMap<String, Link>,
 }
 
 #[app::logic]
@@ -90,21 +108,20 @@ impl KnowledgeGraphState {
     #[app::init]
     pub fn init() -> KnowledgeGraphState {
         KnowledgeGraphState {
-            documents: AuthoredMap::new_with_field_name("kg:documents"),
+            documents: UnorderedMap::new_with_field_name("kg:documents"),
             tags: UnorderedMap::new_with_field_name("kg:tags"),
-            links: AuthoredMap::new_with_field_name("kg:links"),
+            links: UnorderedMap::new_with_field_name("kg:links"),
         }
     }
 
-    /// Generate a deterministic ID from the transaction's timestamp (nanoseconds,
-    /// captured at submission time — identical on every replica during replay)
-    /// plus the first 8 chars of the caller's base-58 pubkey (unique per caller).
-    /// No shared mutable counter is needed, so state always converges.
-    fn next_id(&self, prefix: &str) -> String {
-        let now_ns = storage_env::time_now();
-        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
-        let caller_prefix = caller.chars().take(8).collect::<String>();
-        format!("{prefix}-{now_ns}-{caller_prefix}")
+    /// Generate a deterministic unique ID using the SDK-recommended pattern:
+    /// tx-embedded timestamp (deterministic on all replicas during replay)
+    /// combined with WASM-host VRF bytes (also deterministic per tx).
+    fn make_id(prefix: &str) -> String {
+        let now = storage_env::time_now();
+        let mut nonce = [0u8; 4];
+        calimero_sdk::env::random_bytes(&mut nonce);
+        generate_id(prefix, now, &nonce)
     }
 
     // ---- Mutating methods ----
@@ -112,13 +129,14 @@ impl KnowledgeGraphState {
     pub fn create_document(&mut self, title: String, content: String) -> app::Result<String> {
         let author = bs58::encode(calimero_sdk::env::executor_id()).into_string();
         let now_ms = storage_env::time_now() / 1_000_000;
-        let id = self.next_id("doc");
+        let id = Self::make_id("doc");
         let doc = Document {
             id: id.clone(),
             title,
             content,
             author,
             created_at: now_ms,
+            updated_at: now_ms,
         };
         self.documents
             .insert(id.clone(), doc)
@@ -138,23 +156,39 @@ impl KnowledgeGraphState {
             .get(&document_id)
             .map_err(|e| AppError::msg(format!("documents.get: {e}")))?
             .ok_or_else(|| AppError::msg(format!("not found: {document_id}")))?;
+
+        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+        if existing.author != caller {
+            return Err(AppError::from(ChatError::Forbidden(
+                "can only edit your own document".into(),
+            )));
+        }
+
+        let now_ms = storage_env::time_now() / 1_000_000;
         let updated = Document {
             id: document_id.clone(),
             title: new_title,
             content: new_content,
             author: existing.author.clone(),
             created_at: existing.created_at,
+            // Bump updated_at so Mergeable LWW picks this version on conflict.
+            updated_at: now_ms,
         };
+
+        // Direct insert triggers Mergeable::merge when the key already exists.
+        // updated_at is higher than the stored value, so the LWW Mergeable picks
+        // this version. Avoids a tombstone that could shadow concurrent replicas.
         self.documents
-            .update(&document_id, updated)
-            .map_err(map_authored_error("edit_document"))?;
+            .insert(document_id.clone(), updated)
+            .map_err(|e| AppError::msg(format!("documents.insert: {e}")))?;
+
         app::emit!(Event::DocumentEdited { id: &document_id });
         Ok(())
     }
 
     pub fn add_tag(&mut self, document_id: String, label: String) -> app::Result<String> {
         let added_by = bs58::encode(calimero_sdk::env::executor_id()).into_string();
-        let id = self.next_id("tag");
+        let id = Self::make_id("tag");
         let tag = Tag {
             id: id.clone(),
             document_id: document_id.clone(),
@@ -192,7 +226,7 @@ impl KnowledgeGraphState {
     ) -> app::Result<String> {
         let author = bs58::encode(calimero_sdk::env::executor_id()).into_string();
         let now_ms = storage_env::time_now() / 1_000_000;
-        let id = self.next_id("link");
+        let id = Self::make_id("link");
         let link = Link {
             id: id.clone(),
             source_doc_id: source_doc_id.clone(),
@@ -214,16 +248,22 @@ impl KnowledgeGraphState {
     }
 
     pub fn delete_link(&mut self, link_id: String) -> app::Result<()> {
-        let exists = self
+        let link = self
             .links
-            .contains(&link_id)
-            .map_err(|e| AppError::msg(format!("links.contains: {e}")))?;
-        if !exists {
-            app::bail!(ChatError::NotFound(link_id));
+            .get(&link_id)
+            .map_err(|e| AppError::msg(format!("links.get: {e}")))?
+            .ok_or_else(|| AppError::from(ChatError::NotFound(link_id.clone())))?;
+
+        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+        if link.author != caller {
+            return Err(AppError::from(ChatError::Forbidden(
+                "can only delete your own link".into(),
+            )));
         }
+
         self.links
             .remove(&link_id)
-            .map_err(map_authored_error("delete_link"))?;
+            .map_err(|e| AppError::msg(format!("links.remove: {e}")))?;
         app::emit!(Event::LinkDeleted { id: &link_id });
         Ok(())
     }
