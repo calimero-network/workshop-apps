@@ -1,7 +1,7 @@
 {
   "appName": "project-tracker",
-  "appVersion": "0.1.0",
-  "package": "com.calimero.project-tracker",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.tester4.project-tracker",
   "metadata": {
     "name": "project-tracker",
     "description": "Centralized bug and feature request submission with owner-driven triage and priority ranking",
