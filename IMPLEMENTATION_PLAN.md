@@ -4,14 +4,14 @@ App: team-todo
 Summary: Shared task list where teams collaborate on what needs doing
 
 ## Backend (logic/src/lib.rs)
-- [ ] Define entity: [todo] Task (id:LwwRegister<String>, title:LwwRegister<String>, description:LwwRegister<String>, creator:LwwRegister<String>, assigned_to:LwwRegister<Option<String>>, completed:LwwRegister<bool>, created_at:LwwRegister<u64>)
-- [ ] Implement mutate: [todo] create_task(title: String, description: String) → app::Result<String>
-- [ ] Implement mutate: [todo] complete_task(task_id: String) → app::Result<()>
-- [ ] Implement mutate: [todo] reopen_task(task_id: String) → app::Result<()>
-- [ ] Implement mutate: [todo] edit_task(task_id: String, title: String, description: String) → app::Result<()>
-- [ ] Implement mutate: [todo] delete_task(task_id: String) → app::Result<()>
-- [ ] Implement mutate: [todo] assign_task(task_id: String, assignee: String) → app::Result<()>
-- [ ] Implement view: [todo] list_tasks() → app::Result<Vec<Task>>
+- [x] Define entity: [todo] Task (id:LwwRegister<String>, title:LwwRegister<String>, description:LwwRegister<String>, creator:LwwRegister<String>, assigned_to:LwwRegister<Option<String>>, completed:LwwRegister<bool>, created_at:LwwRegister<u64>)
+- [x] Implement mutate: [todo] create_task(title: String, description: String) → app::Result<String>
+- [x] Implement mutate: [todo] complete_task(task_id: String) → app::Result<()>
+- [x] Implement mutate: [todo] reopen_task(task_id: String) → app::Result<()>
+- [x] Implement mutate: [todo] edit_task(task_id: String, title: String, description: String) → app::Result<()>
+- [x] Implement mutate: [todo] delete_task(task_id: String) → app::Result<()>
+- [x] Implement mutate: [todo] assign_task(task_id: String, assignee: String) → app::Result<()>
+- [x] Implement view: [todo] list_tasks() → app::Result<Vec<Task>>
 
 ## Frontend (app/)
 - [ ] Screen: TodoListView — List of all tasks grouped by status (open/completed) + task creator + task add form

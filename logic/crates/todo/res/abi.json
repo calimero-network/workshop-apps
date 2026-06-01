@@ -1,7 +1,24 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
+    "Event_TaskAssigned": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "assignee",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TaskCompleted": {
       "kind": "record",
       "fields": [
         {
@@ -12,7 +29,7 @@
         }
       ]
     },
-    "Event_RoomCreated": {
+    "Event_TaskCreated": {
       "kind": "record",
       "fields": [
         {
@@ -22,14 +39,14 @@
           }
         },
         {
-          "name": "name",
+          "name": "title",
           "type": {
             "kind": "string"
           }
         }
       ]
     },
-    "Event_RoomDeleted": {
+    "Event_TaskDeleted": {
       "kind": "record",
       "fields": [
         {
@@ -40,175 +57,90 @@
         }
       ]
     },
-    "LobbyState": {
+    "Event_TaskEdited": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
-          "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
-            }
-          }
-        },
-        {
-          "name": "rooms",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "u64"
-            },
-            "crdt_type": "authored_map"
-          }
-        },
-        {
-          "name": "names",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "string"
-            },
-            "crdt_type": "authored_map"
-          }
-        }
-      ]
-    },
-    "NameEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         }
       ]
     },
-    "PresenceEntry": {
+    "Event_TaskReopened": {
       "kind": "record",
       "fields": [
         {
-          "name": "member",
+          "name": "id",
           "type": {
             "kind": "string"
-          }
-        },
-        {
-          "name": "last_seen_ms",
-          "type": {
-            "kind": "u64"
           }
         }
       ]
     },
-    "RoomActivity": {
+    "Task": {
       "kind": "record",
       "fields": [
         {
-          "name": "room_id",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
+          "name": "title",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomSummary": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
+          "name": "description",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "creator",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "created_by",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
+          "name": "assigned_to",
           "type": {
             "kind": "string"
           },
           "nullable": true
         },
         {
-          "name": "member_count",
+          "name": "completed",
           "type": {
-            "kind": "u64"
+            "kind": "bool"
           }
         },
         {
-          "name": "created_ms",
+          "name": "created_at",
           "type": {
             "kind": "u64"
+          }
+        }
+      ]
+    },
+    "TodoState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "tasks",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Task"
+            },
+            "crdt_type": "authored_map"
           }
         }
       ]
@@ -223,60 +155,30 @@
       }
     },
     {
-      "name": "register_room",
+      "name": "create_task",
       "params": [
         {
-          "name": "room_id",
+          "name": "title",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
+          "name": "description",
           "type": {
             "kind": "string"
           }
         }
       ],
       "returns": {
-        "$ref": "RoomSummary"
+        "kind": "string"
       }
     },
     {
-      "name": "get_rooms",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomSummary"
-        }
-      }
-    },
-    {
-      "name": "get_room",
+      "name": "complete_task",
       "params": [
         {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
+          "name": "task_id",
           "type": {
             "kind": "string"
           }
@@ -287,69 +189,10 @@
       }
     },
     {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
+      "name": "reopen_task",
       "params": [
         {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
-      "params": [
-        {
-          "name": "name",
+          "name": "task_id",
           "type": {
             "kind": "string"
           }
@@ -360,38 +203,113 @@
       }
     },
     {
-      "name": "list_names",
+      "name": "edit_task",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "delete_task",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "assign_task",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "assignee",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "list_tasks",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "Task"
         }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "TaskCreated",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_TaskCreated"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "TaskCompleted",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_TaskCompleted"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "TaskReopened",
+      "payload": {
+        "$ref": "Event_TaskReopened"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "TaskEdited",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_TaskEdited"
+      }
+    },
+    {
+      "name": "TaskDeleted",
+      "payload": {
+        "$ref": "Event_TaskDeleted"
+      }
+    },
+    {
+      "name": "TaskAssigned",
+      "payload": {
+        "$ref": "Event_TaskAssigned"
       }
     }
   ],
-  "state_root": "LobbyState"
+  "state_root": "TodoState"
 }
