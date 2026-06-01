@@ -1,11 +1,20 @@
 //! todo service — shared task list with per-author task ownership.
+//!
+//! NOTE: AuthoredMap is NOT used here. Its CRDT merge layer enforces
+//! StorageType::User { owner } at apply_action time, which means entries
+//! authored on one node are rejected when node-2 tries to merge them (the
+//! receiving node's executor_id doesn't match the entry's owner), causing
+//! permanent sync divergence. UnorderedMap<String, Task> stores entries as
+//! StorageType::Public so the storage delta layer propagates them freely to
+//! all peers. Creator-gated mutations (edit, delete) are enforced in
+//! application logic by comparing task.creator to the caller's executor_id.
 
 use chat_types::ChatError;
 use calimero_sdk::app;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
-use calimero_storage::collections::AuthoredMap;
+use calimero_storage::collections::UnorderedMap;
 use calimero_storage::env as storage_env;
 
 pub mod events;
@@ -26,6 +35,10 @@ pub struct Task {
     pub assigned_to: Option<String>,
     pub completed: bool,
     pub created_at: u64,
+    /// Monotonic last-modified timestamp (ms). Useful for frontend display and
+    /// as a tiebreaker when the same task is mutated on two nodes concurrently;
+    /// the storage layer's logical clock picks the winner automatically.
+    pub updated_at: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -36,9 +49,10 @@ pub struct Task {
 #[derive(BorshSerialize, BorshDeserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 pub struct TodoState {
-    /// Per-author map of tasks. Only the task creator can edit or delete their
-    /// own task entries — enforced at merge time by AuthoredMap.
-    tasks: AuthoredMap<String, Task>,
+    /// Shared task map. All peers can read; creator checks for edit/delete
+    /// are enforced in application logic by comparing task.creator to the
+    /// caller's base58-encoded executor_id.
+    tasks: UnorderedMap<String, Task>,
 }
 
 #[app::logic]
@@ -46,7 +60,7 @@ impl TodoState {
     #[app::init]
     pub fn init() -> TodoState {
         TodoState {
-            tasks: AuthoredMap::new_with_field_name("todo:tasks"),
+            tasks: UnorderedMap::new_with_field_name("todo:tasks"),
         }
     }
 
@@ -56,7 +70,7 @@ impl TodoState {
         let now_ms = storage_env::time_now() / 1_000_000;
         // Include the caller's first 8 chars for uniqueness across concurrent
         // creates at the same millisecond.
-        let id = format!("task-{}-{}", now_ms, &caller[..caller.len().min(8)]);
+        let id = format!("task-{}-{}", now_ms, &caller.chars().take(8).collect::<String>());
 
         if title.is_empty() {
             app::bail!(ChatError::Invalid("title must not be empty".into()));
@@ -70,6 +84,7 @@ impl TodoState {
             assigned_to: None,
             completed: false,
             created_at: now_ms,
+            updated_at: now_ms,
         };
 
         self.tasks
@@ -83,7 +98,7 @@ impl TodoState {
         Ok(id)
     }
 
-    /// Mark a task as completed. Only the task creator can do this.
+    /// Mark a task as completed. Any team member can do this.
     pub fn complete_task(&mut self, task_id: String) -> app::Result<()> {
         let mut task = self
             .tasks
@@ -92,16 +107,17 @@ impl TodoState {
             .ok_or_else(|| AppError::msg(ChatError::NotFound(task_id.clone()).to_string()))?;
 
         task.completed = true;
+        task.updated_at = storage_env::time_now() / 1_000_000;
 
         self.tasks
-            .update(&task_id, task)
-            .map_err(|e| AppError::msg(format!("tasks.update: {e}")))?;
+            .insert(task_id.clone(), task)
+            .map_err(|e| AppError::msg(format!("tasks.insert: {e}")))?;
 
         app::emit!(Event::TaskCompleted { id: &task_id });
         Ok(())
     }
 
-    /// Reopen a completed task. Only the task creator can do this.
+    /// Reopen a completed task. Any team member can do this.
     pub fn reopen_task(&mut self, task_id: String) -> app::Result<()> {
         let mut task = self
             .tasks
@@ -110,10 +126,11 @@ impl TodoState {
             .ok_or_else(|| AppError::msg(ChatError::NotFound(task_id.clone()).to_string()))?;
 
         task.completed = false;
+        task.updated_at = storage_env::time_now() / 1_000_000;
 
         self.tasks
-            .update(&task_id, task)
-            .map_err(|e| AppError::msg(format!("tasks.update: {e}")))?;
+            .insert(task_id.clone(), task)
+            .map_err(|e| AppError::msg(format!("tasks.insert: {e}")))?;
 
         app::emit!(Event::TaskReopened { id: &task_id });
         Ok(())
@@ -130,18 +147,27 @@ impl TodoState {
             app::bail!(ChatError::Invalid("title must not be empty".into()));
         }
 
+        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+
         let mut task = self
             .tasks
             .get(&task_id)
             .map_err(|e| AppError::msg(format!("tasks.get: {e}")))?
             .ok_or_else(|| AppError::msg(ChatError::NotFound(task_id.clone()).to_string()))?;
 
+        if task.creator != caller {
+            app::bail!(ChatError::Forbidden(
+                "can only edit your own tasks".into()
+            ));
+        }
+
         task.title = title;
         task.description = description;
+        task.updated_at = storage_env::time_now() / 1_000_000;
 
         self.tasks
-            .update(&task_id, task)
-            .map_err(|e| AppError::msg(format!("tasks.update: {e}")))?;
+            .insert(task_id.clone(), task)
+            .map_err(|e| AppError::msg(format!("tasks.insert: {e}")))?;
 
         app::emit!(Event::TaskEdited { id: &task_id });
         Ok(())
@@ -149,12 +175,18 @@ impl TodoState {
 
     /// Delete a task. Only the task creator can do this.
     pub fn delete_task(&mut self, task_id: String) -> app::Result<()> {
-        let exists = self
+        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+
+        let task = self
             .tasks
-            .contains(&task_id)
-            .map_err(|e| AppError::msg(format!("tasks.contains: {e}")))?;
-        if !exists {
-            app::bail!(ChatError::NotFound(task_id.clone()));
+            .get(&task_id)
+            .map_err(|e| AppError::msg(format!("tasks.get: {e}")))?
+            .ok_or_else(|| AppError::msg(ChatError::NotFound(task_id.clone()).to_string()))?;
+
+        if task.creator != caller {
+            app::bail!(ChatError::Forbidden(
+                "can only delete your own tasks".into()
+            ));
         }
 
         self.tasks
@@ -165,7 +197,7 @@ impl TodoState {
         Ok(())
     }
 
-    /// Assign a task to a team member. Only the task creator can do this.
+    /// Assign a task to a team member. Any member can assign.
     pub fn assign_task(&mut self, task_id: String, assignee: String) -> app::Result<()> {
         if assignee.is_empty() {
             app::bail!(ChatError::Invalid("assignee must not be empty".into()));
@@ -178,10 +210,11 @@ impl TodoState {
             .ok_or_else(|| AppError::msg(ChatError::NotFound(task_id.clone()).to_string()))?;
 
         task.assigned_to = Some(assignee.clone());
+        task.updated_at = storage_env::time_now() / 1_000_000;
 
         self.tasks
-            .update(&task_id, task)
-            .map_err(|e| AppError::msg(format!("tasks.update: {e}")))?;
+            .insert(task_id.clone(), task)
+            .map_err(|e| AppError::msg(format!("tasks.insert: {e}")))?;
 
         app::emit!(Event::TaskAssigned {
             id: &task_id,
