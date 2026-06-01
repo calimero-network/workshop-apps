@@ -17,10 +17,10 @@ export default function LoginPage() {
   return (
     <div className="app-bg">
       <div className="page-shell" style={{ justifyContent: 'center', alignItems: 'center', gap: '2rem' }}>
-        <h1 style={{ fontSize: '2.5rem', fontWeight: 700 }}>Calimero Chat</h1>
+        <h1 style={{ fontSize: '2.5rem', fontWeight: 700, color: 'var(--color-primary)' }}>Team Todo</h1>
         <p style={{ color: '#888', maxWidth: 400, textAlign: 'center' }}>
-          Decentralized multi-room chat powered by Calimero. Create rooms,
-          invite friends, and chat with end-to-end privacy.
+          Shared task lists for your team, powered by Calimero. Create a
+          workspace, invite teammates, and track what needs doing — together.
         </p>
         <ConnectButton />
         <Button

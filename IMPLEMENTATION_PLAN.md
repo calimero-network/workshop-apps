@@ -14,8 +14,8 @@ Summary: Shared task list where teams collaborate on what needs doing
 - [x] Implement view: [todo] list_tasks() → app::Result<Vec<Task>>
 
 ## Frontend (app/)
-- [ ] Screen: TodoListView — List of all tasks grouped by status (open/completed) + task creator + task add form
-- [ ] Apply designTheme tokens
+- [x] Screen: TodoListView — List of all tasks grouped by status (open/completed) + task creator + task add form
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds
