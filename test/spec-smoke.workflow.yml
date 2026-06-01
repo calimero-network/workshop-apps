@@ -1,0 +1,270 @@
+name: team-todo spec smoke
+description: >
+  Verify the todo service installs, creates contexts, and replicates all
+  mutate methods (create_task, complete_task, reopen_task, edit_task,
+  assign_task, delete_task) across two nodes via CRDT sync.
+log_level: info
+
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 12428
+  base_rpc_port: 12528
+
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # ── Bootstrap ──────────────────────────────────────────────────────────────
+
+  - type: install_application
+    name: Install team-todo bundle on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/team-todo-0.1.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install team-todo bundle on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/team-todo-0.1.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create todo context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: todo
+    outputs:
+      todo_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: join_context
+    name: app-node-2 joins todo context
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+
+  # ── Floor: parameterless view (empty state) ────────────────────────────────
+
+  - type: call
+    name: list_tasks returns empty list on app-node-1 (floor)
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_initial: result.output
+
+  - type: json_assert
+    name: Initial task list is empty
+    statements:
+      - 'json_equal({{tasks_initial}}, [])'
+
+  # ── Mutate: create_task ────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise create_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: create_task
+    args:
+      title: "Fix login bug"
+      description: "Users report 500 error on sign-in"
+    outputs:
+      created_task_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for todo sync after create_task
+    context_id: '{{todo_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm task visible on app-node-2 after create_task
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      task_created: result.output.0
+
+  - type: json_assert
+    name: create_task produced a Task with expected title on app-node-2
+    statements:
+      - 'json_subset({{task_created}}, {"title": "Fix login bug"})'
+
+  # ── Mutate: complete_task ──────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise complete_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: complete_task
+    args:
+      task_id: '{{created_task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for todo sync after complete_task
+    context_id: '{{todo_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm task marked completed on app-node-2
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      task_completed: result.output.0
+
+  - type: json_assert
+    name: complete_task set completed=true on app-node-2
+    statements:
+      - 'json_subset({{task_completed}}, {"completed": true})'
+
+  # ── Mutate: reopen_task ────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise reopen_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: reopen_task
+    args:
+      task_id: '{{created_task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for todo sync after reopen_task
+    context_id: '{{todo_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm task reopened on app-node-2
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      task_reopened: result.output.0
+
+  - type: json_assert
+    name: reopen_task set completed=false on app-node-2
+    statements:
+      - 'json_subset({{task_reopened}}, {"completed": false})'
+
+  # ── Mutate: edit_task ──────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise edit_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: edit_task
+    args:
+      task_id: '{{created_task_id}}'
+      title: "Fix login bug urgently"
+      description: "Users report 500 error on sign-in"
+
+  - type: wait_for_sync
+    name: Wait for todo sync after edit_task
+    context_id: '{{todo_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm task title updated on app-node-2
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      task_edited: result.output.0
+
+  - type: json_assert
+    name: edit_task updated task title on app-node-2
+    statements:
+      - 'json_subset({{task_edited}}, {"title": "Fix login bug urgently"})'
+
+  # ── Mutate: assign_task ────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise assign_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: assign_task
+    args:
+      task_id: '{{created_task_id}}'
+      assignee: "alice"
+
+  - type: wait_for_sync
+    name: Wait for todo sync after assign_task
+    context_id: '{{todo_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm assignment visible on app-node-2
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      task_assigned: result.output.0
+
+  - type: json_assert
+    name: assign_task set assigned_to on app-node-2
+    statements:
+      - 'json_subset({{task_assigned}}, {"assigned_to": "alice"})'
+
+  # ── Mutate: delete_task ────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise delete_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_ctx}}'
+    method: delete_task
+    args:
+      task_id: '{{created_task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for todo sync after delete_task
+    context_id: '{{todo_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm task list is empty after delete on app-node-2
+    node: app-node-2
+    context_id: '{{todo_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_after_delete: result.output
+
+  - type: json_assert
+    name: delete_task removed the task on app-node-2
+    statements:
+      - 'json_equal({{tasks_after_delete}}, [])'

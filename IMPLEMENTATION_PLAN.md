@@ -20,9 +20,9 @@ Summary: Shared task list where teams collaborate on what needs doing
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds
 - [ ] tsc --noEmit passes
-- [ ] Test story (team member): add a new task to the list
-- [ ] Test story (team member): mark a task as complete
-- [ ] Test story (anyone on the team): see all current tasks and their status at a glance
-- [ ] Test story (task creator): edit or delete my own task
-- [ ] Test story (team lead): assign a task to a specific teammate
-- [ ] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps
+- [x] Test story (team member): add a new task to the list
+- [x] Test story (team member): mark a task as complete
+- [x] Test story (anyone on the team): see all current tasks and their status at a glance
+- [x] Test story (task creator): edit or delete my own task
+- [x] Test story (team lead): assign a task to a specific teammate
+- [x] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps
