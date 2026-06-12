@@ -31,11 +31,11 @@ Summary: A Reddit-like decentralized forum where communities post, discuss, and 
 - [x] Implement mutate: [community] rename_community(new_name: String, new_topic: String) → app::Result<()>
 
 ## Frontend (app/)
-- [ ] Screen: HubView — Browse all communities — names, topics, member counts, and a create-community button
-- [ ] Screen: CommunityFeedView — Scrollable post feed sorted by votes or recency, with a new-post composer and moderation controls for founders/mods
-- [ ] Screen: PostDetailView — Full post with threaded comments, voting buttons, edit/delete for your own content, and remove buttons for moderators
-- [ ] Screen: CommunitySettingsView — Rename community, manage moderators — only visible to the community founder
-- [ ] Apply designTheme tokens
+- [x] Screen: HubView — Browse all communities — names, topics, member counts, and a create-community button
+- [x] Screen: CommunityFeedView — Scrollable post feed sorted by votes or recency, with a new-post composer and moderation controls for founders/mods
+- [x] Screen: PostDetailView — Full post with threaded comments, voting buttons, edit/delete for your own content, and remove buttons for moderators
+- [x] Screen: CommunitySettingsView — Rename community, manage moderators — only visible to the community founder
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

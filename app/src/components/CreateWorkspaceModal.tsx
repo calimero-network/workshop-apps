@@ -34,7 +34,7 @@ export default function CreateWorkspaceModal({ onCreate, onClose }: CreateWorksp
       }} onClick={(e) => e.stopPropagation()}>
         <h3 style={{ marginBottom: '1rem' }}>New Workspace</h3>
         <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '0.5rem' }}>
-          Name your workspace — you can invite teammates and create rooms after it's created.
+          Name your workspace — you can invite members and create communities after it's set up.
         </p>
         <input
           autoFocus

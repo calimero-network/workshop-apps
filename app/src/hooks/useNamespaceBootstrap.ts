@@ -9,7 +9,7 @@ import { SERVICE_NAME } from '../config';
  * CAN_INVITE_MEMBERS (2) — members can invite other users
  * MANAGE_MEMBERS     (8) — members can add users to per-instance subgroups
  */
-const DEFAULT_CAPABILITIES = 1 | 2 | 8; // = 11
+const DEFAULT_CAPABILITIES = 1 | 2 | 4 | 8; // = 15 (CAN_CREATE_CONTEXT | CAN_INVITE | CAN_JOIN_OPEN_CONTEXTS | MANAGE_MEMBERS)
 
 export interface NamespaceBootstrapResult {
   namespaceId: string;
