@@ -1,7 +1,7 @@
 {
   "appName": "decentra-forum",
-  "appVersion": "0.1.0",
-  "package": "com.calimero.decentra-forum",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.user123.decentra-forum",
   "metadata": {
     "name": "decentra-forum",
     "description": "A Reddit-like decentralized forum where communities post, discuss, and vote together — with founder and moderator controls to keep things civil",
