@@ -1,0 +1,51 @@
+# Implementation Plan
+
+App: decentra-forum
+Summary: A Reddit-like decentralized forum where communities post, discuss, and vote together — with founder and moderator controls to keep things civil
+
+## Backend (logic/src/lib.rs)
+- [ ] Define entity: [hub] CommunitySummary (id:String, name:String, topic:String, context_id:Option<String>, created_by:String, member_count:u64, created_at:u64)
+- [ ] Define entity: [community] CommunityMeta (id:LwwRegister<String>, name:LwwRegister<String>, topic:LwwRegister<String>, lobby_context_id:LwwRegister<Option<String>>)
+- [ ] Define entity: [community] Moderator (id:String, member_id:String, appointed_at:u64)
+- [ ] Define entity: [community] Post (id:String, author:String, title:String, body:String, vote_score:i64, comment_count:u64, created_at:u64)
+- [ ] Define entity: [community] Comment (id:String, post_id:String, parent_comment_id:Option<String>, author:String, body:String, vote_score:i64, created_at:u64)
+- [ ] Define entity: [community] Vote (id:String, target_id:String, target_type:String, author:String, value:i8)
+- [ ] Implement mutate: [hub] register_community(community_id: String, name: String, topic: String, context_id: String) → app::Result<CommunitySummary>
+- [ ] Implement view: [hub] get_communities() → app::Result<Vec<CommunitySummary>>
+- [ ] Implement mutate: [hub] update_community_stats(community_id: String, member_count: u64) → app::Result<()>
+- [ ] Implement mutate: [hub] delete_community(community_id: String) → app::Result<()>
+- [ ] Implement mutate: [community] create_post(title: String, body: String) → app::Result<String>
+- [ ] Implement view: [community] get_posts() → app::Result<Vec<Post>>
+- [ ] Implement mutate: [community] edit_post(post_id: String, new_title: String, new_body: String) → app::Result<()>
+- [ ] Implement mutate: [community] delete_post(post_id: String) → app::Result<()>
+- [ ] Implement mutate: [community] create_comment(post_id: String, body: String, parent_comment_id: Option<String>) → app::Result<String>
+- [ ] Implement view: [community] get_comments(post_id: String) → app::Result<Vec<Comment>>
+- [ ] Implement mutate: [community] edit_comment(comment_id: String, new_body: String) → app::Result<()>
+- [ ] Implement mutate: [community] delete_comment(comment_id: String) → app::Result<()>
+- [ ] Implement mutate: [community] cast_vote(target_id: String, target_type: String, value: i8) → app::Result<()>
+- [ ] Implement mutate: [community] appoint_moderator(member_id: String) → app::Result<String>
+- [ ] Implement mutate: [community] revoke_moderator(moderator_id: String) → app::Result<()>
+- [ ] Implement view: [community] get_moderators() → app::Result<Vec<Moderator>>
+- [ ] Implement mutate: [community] moderate_remove_post(post_id: String) → app::Result<()>
+- [ ] Implement mutate: [community] moderate_remove_comment(comment_id: String) → app::Result<()>
+- [ ] Implement mutate: [community] rename_community(new_name: String, new_topic: String) → app::Result<()>
+
+## Frontend (app/)
+- [ ] Screen: HubView — Browse all communities — names, topics, member counts, and a create-community button
+- [ ] Screen: CommunityFeedView — Scrollable post feed sorted by votes or recency, with a new-post composer and moderation controls for founders/mods
+- [ ] Screen: PostDetailView — Full post with threaded comments, voting buttons, edit/delete for your own content, and remove buttons for moderators
+- [ ] Screen: CommunitySettingsView — Rename community, manage moderators — only visible to the community founder
+- [ ] Apply designTheme tokens
+
+## Verification
+- [ ] cargo build --target wasm32-unknown-unknown succeeds
+- [ ] tsc --noEmit passes
+- [ ] Test story (community founder): create a new community with a name and topic
+- [ ] Test story (member): submit a post with a title and body to a community
+- [ ] Test story (member): comment on any post
+- [ ] Test story (member): upvote or downvote posts and comments
+- [ ] Test story (member): edit or delete my own posts and comments
+- [ ] Test story (community founder): appoint trusted members as moderators
+- [ ] Test story (community founder or moderator): remove any post or comment that breaks the rules
+- [ ] Test story (anyone in the hub): browse all available communities and see which are active
+- [ ] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps

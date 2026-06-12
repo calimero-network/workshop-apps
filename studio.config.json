@@ -1,0 +1,28 @@
+{
+  "appName": "decentra-forum",
+  "appVersion": "0.1.0",
+  "package": "com.calimero.decentra-forum",
+  "metadata": {
+    "name": "decentra-forum",
+    "description": "A Reddit-like decentralized forum where communities post, discuss, and vote together — with founder and moderator controls to keep things civil",
+    "author": "Calimero",
+    "route": "/decentra-forum"
+  },
+  "theme": {
+    "primaryColor": "#1E40AF",
+    "accentColor": "#F97316",
+    "style": "modern-clean"
+  },
+  "services": [
+    {
+      "id": "directory",
+      "name": "hub",
+      "crate": "decentra-forum-hub"
+    },
+    {
+      "id": "instance",
+      "name": "community",
+      "crate": "decentra-forum-community"
+    }
+  ]
+}
