@@ -1,0 +1,773 @@
+{
+  "schema_version": "wasm-abi/1",
+  "types": {
+    "Comment": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "post_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "parent_comment_id",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "vote_score",
+          "type": {
+            "kind": "i64"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "CommunityMeta": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "topic",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "lobby_context_id",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true
+        }
+      ]
+    },
+    "CommunityState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "metadata",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "shared_storage",
+            "inner_type": {
+              "kind": "record",
+              "fields": [],
+              "crdt_type": "lww_register",
+              "inner_type": {
+                "$ref": "CommunityMeta"
+              }
+            }
+          }
+        },
+        {
+          "name": "moderators",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Moderator"
+            },
+            "crdt_type": "unordered_map"
+          }
+        },
+        {
+          "name": "posts",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Post"
+            },
+            "crdt_type": "unordered_map"
+          }
+        },
+        {
+          "name": "comments",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Comment"
+            },
+            "crdt_type": "unordered_map"
+          }
+        },
+        {
+          "name": "votes",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Vote"
+            },
+            "crdt_type": "unordered_map"
+          }
+        }
+      ]
+    },
+    "Event_CommentCreated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "post_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_CommentDeleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_CommentEdited": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_CommentModerated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ModeratorAppointed": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "member_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ModeratorRevoked": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_PostCreated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_PostDeleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_PostEdited": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_PostModerated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_VoteCast": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "target_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "target_type",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Moderator": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "member_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "appointed_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Post": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "vote_score",
+          "type": {
+            "kind": "i64"
+          }
+        },
+        {
+          "name": "comment_count",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Vote": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "target_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "target_type",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "i32"
+          }
+        }
+      ]
+    }
+  },
+  "methods": [
+    {
+      "name": "init",
+      "params": [
+        {
+          "name": "community_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "topic",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "lobby_context_id",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "create_post",
+      "params": [
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "get_posts",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Post"
+        }
+      }
+    },
+    {
+      "name": "edit_post",
+      "params": [
+        {
+          "name": "post_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_body",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "delete_post",
+      "params": [
+        {
+          "name": "post_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "create_comment",
+      "params": [
+        {
+          "name": "post_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "parent_comment_id",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "get_comments",
+      "params": [
+        {
+          "name": "post_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Comment"
+        }
+      }
+    },
+    {
+      "name": "edit_comment",
+      "params": [
+        {
+          "name": "comment_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_body",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "delete_comment",
+      "params": [
+        {
+          "name": "comment_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "cast_vote",
+      "params": [
+        {
+          "name": "target_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "target_type",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "i32"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "appoint_moderator",
+      "params": [
+        {
+          "name": "member_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "revoke_moderator",
+      "params": [
+        {
+          "name": "moderator_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_moderators",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Moderator"
+        }
+      }
+    },
+    {
+      "name": "moderate_remove_post",
+      "params": [
+        {
+          "name": "post_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "moderate_remove_comment",
+      "params": [
+        {
+          "name": "comment_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "rename_community",
+      "params": [
+        {
+          "name": "new_name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_topic",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "PostCreated",
+      "payload": {
+        "$ref": "Event_PostCreated"
+      }
+    },
+    {
+      "name": "PostEdited",
+      "payload": {
+        "$ref": "Event_PostEdited"
+      }
+    },
+    {
+      "name": "PostDeleted",
+      "payload": {
+        "$ref": "Event_PostDeleted"
+      }
+    },
+    {
+      "name": "CommentCreated",
+      "payload": {
+        "$ref": "Event_CommentCreated"
+      }
+    },
+    {
+      "name": "CommentEdited",
+      "payload": {
+        "$ref": "Event_CommentEdited"
+      }
+    },
+    {
+      "name": "CommentDeleted",
+      "payload": {
+        "$ref": "Event_CommentDeleted"
+      }
+    },
+    {
+      "name": "VoteCast",
+      "payload": {
+        "$ref": "Event_VoteCast"
+      }
+    },
+    {
+      "name": "ModeratorAppointed",
+      "payload": {
+        "$ref": "Event_ModeratorAppointed"
+      }
+    },
+    {
+      "name": "ModeratorRevoked",
+      "payload": {
+        "$ref": "Event_ModeratorRevoked"
+      }
+    },
+    {
+      "name": "PostModerated",
+      "payload": {
+        "$ref": "Event_PostModerated"
+      }
+    },
+    {
+      "name": "CommentModerated",
+      "payload": {
+        "$ref": "Event_CommentModerated"
+      }
+    },
+    {
+      "name": "CommunityRenamed"
+    }
+  ],
+  "state_root": "CommunityState"
+}

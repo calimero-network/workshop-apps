@@ -11,10 +11,10 @@ pub enum ChatError {
     Invalid(String),
     #[error("forbidden: {0}")]
     Forbidden(String),
-    #[error("room already exists")]
-    RoomAlreadyExists,
-    #[error("message too long")]
-    MessageTooLong,
+    #[error("entity already exists")]
+    AlreadyExists,
+    #[error("content too long")]
+    ContentTooLong,
 }
 
 /// Player public key — 32-byte Ed25519 key with base58 encoding.
@@ -97,7 +97,7 @@ mod tests {
     fn chat_error_display() {
         let err = ChatError::NotFound("test".into());
         assert!(err.to_string().contains("test"));
-        assert!(ChatError::RoomAlreadyExists
+        assert!(ChatError::AlreadyExists
             .to_string()
             .contains("already exists"));
     }

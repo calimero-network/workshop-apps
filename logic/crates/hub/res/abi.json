@@ -1,18 +1,7 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "Event_RoomCreated": {
+    "CommunitySummary": {
       "kind": "record",
       "fields": [
         {
@@ -26,178 +15,9 @@
           "type": {
             "kind": "string"
           }
-        }
-      ]
-    },
-    "Event_RoomDeleted": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "LobbyState": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "created_ms",
-          "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
-            }
-          }
         },
         {
-          "name": "rooms",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "u64"
-              }
-            },
-            "crdt_type": "authored_map"
-          }
-        },
-        {
-          "name": "names",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "string"
-              }
-            },
-            "crdt_type": "authored_map"
-          }
-        }
-      ]
-    },
-    "NameEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "PresenceEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_seen_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomActivity": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomSummary": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "created_by",
+          "name": "topic",
           "type": {
             "kind": "string"
           }
@@ -210,15 +30,78 @@
           "nullable": true
         },
         {
+          "name": "created_by",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
           "name": "member_count",
           "type": {
             "kind": "u64"
           }
         },
         {
-          "name": "created_ms",
+          "name": "created_at",
           "type": {
             "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Event_CommunityDeleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_CommunityRegistered": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_CommunityStatsUpdated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "HubState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "communities",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "CommunitySummary"
+            },
+            "crdt_type": "unordered_map"
           }
         }
       ]
@@ -233,16 +116,22 @@
       }
     },
     {
-      "name": "register_room",
+      "name": "register_community",
       "params": [
         {
-          "name": "room_id",
+          "name": "community_id",
           "type": {
             "kind": "string"
           }
         },
         {
           "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "topic",
           "type": {
             "kind": "string"
           }
@@ -255,80 +144,30 @@
         }
       ],
       "returns": {
-        "$ref": "RoomSummary"
+        "$ref": "CommunitySummary"
       }
     },
     {
-      "name": "get_rooms",
+      "name": "get_communities",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "RoomSummary"
+          "$ref": "CommunitySummary"
         }
       }
     },
     {
-      "name": "get_room",
+      "name": "update_community_stats",
       "params": [
         {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
-      "params": [
-        {
-          "name": "room_id",
+          "name": "community_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
+          "name": "member_count",
           "type": {
             "kind": "u64"
           }
@@ -339,27 +178,10 @@
       }
     },
     {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
+      "name": "delete_community",
       "params": [
         {
-          "name": "name",
+          "name": "community_id",
           "type": {
             "kind": "string"
           }
@@ -367,41 +189,28 @@
       ],
       "returns": {
         "kind": "unit"
-      }
-    },
-    {
-      "name": "list_names",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "NameEntry"
-        }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "CommunityRegistered",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_CommunityRegistered"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "CommunityStatsUpdated",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_CommunityStatsUpdated"
       }
     },
     {
-      "name": "RoomListUpdated"
-    },
-    {
-      "name": "NameChanged",
+      "name": "CommunityDeleted",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_CommunityDeleted"
       }
     }
   ],
-  "state_root": "LobbyState"
+  "state_root": "HubState"
 }
