@@ -1,7 +1,7 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
+    "Cheer": {
       "kind": "record",
       "fields": [
         {
@@ -9,10 +9,28 @@
           "type": {
             "kind": "string"
           }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "workout_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
         }
       ]
     },
-    "Event_RoomCreated": {
+    "ClubSettings": {
       "kind": "record",
       "fields": [
         {
@@ -26,10 +44,86 @@
           "type": {
             "kind": "string"
           }
+        },
+        {
+          "name": "weekly_goal",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
         }
       ]
     },
-    "Event_RoomDeleted": {
+    "ClubState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "settings",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "shared_storage",
+            "inner_type": {
+              "kind": "record",
+              "fields": [],
+              "crdt_type": "lww_register",
+              "inner_type": {
+                "$ref": "ClubSettings"
+              }
+            }
+          }
+        },
+        {
+          "name": "workouts",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Workout"
+            },
+            "crdt_type": "authored_map"
+          }
+        },
+        {
+          "name": "cheers",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Cheer"
+            },
+            "crdt_type": "authored_map"
+          }
+        }
+      ]
+    },
+    "Event_CheerAdded": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "workout_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ClubInitialized": {
       "kind": "record",
       "fields": [
         {
@@ -40,183 +134,97 @@
         }
       ]
     },
-    "LobbyState": {
+    "Event_WeeklyGoalUpdated": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
+          "name": "goal",
           "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
-            }
+            "kind": "u32"
+          }
+        }
+      ]
+    },
+    "Event_WorkoutDeleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_WorkoutEdited": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_WorkoutLogged": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
           }
         },
         {
-          "name": "rooms",
+          "name": "author",
           "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Workout": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
           }
         },
         {
           "name": "activity",
           "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
+            "kind": "string"
           }
         },
         {
-          "name": "presence",
+          "name": "duration_minutes",
           "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "u64"
-              }
-            },
-            "crdt_type": "authored_map"
+            "kind": "u32"
           }
         },
         {
-          "name": "names",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "string"
-              }
-            },
-            "crdt_type": "authored_map"
-          }
-        }
-      ]
-    },
-    "NameEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
+          "name": "note",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "cheer_count",
           "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "PresenceEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
+            "kind": "u32"
           }
         },
         {
-          "name": "last_seen_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomActivity": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomSummary": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "created_by",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          },
-          "nullable": true
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "created_ms",
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
@@ -233,136 +241,33 @@
       }
     },
     {
-      "name": "register_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "get_rooms",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomSummary"
-        }
-      }
-    },
-    {
-      "name": "get_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
+      "name": "init_club",
       "params": [
         {
           "name": "name",
           "type": {
             "kind": "string"
           }
+        },
+        {
+          "name": "weekly_goal",
+          "type": {
+            "kind": "u32"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "set_weekly_goal",
+      "params": [
+        {
+          "name": "goal",
+          "type": {
+            "kind": "u32"
+          }
         }
       ],
       "returns": {
@@ -370,38 +275,163 @@
       }
     },
     {
-      "name": "list_names",
+      "name": "get_club_settings",
+      "params": [],
+      "returns": {
+        "$ref": "ClubSettings"
+      }
+    },
+    {
+      "name": "log_workout",
+      "params": [
+        {
+          "name": "activity",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "duration_minutes",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "note",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "edit_workout",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "activity",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "duration_minutes",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "note",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "delete_workout",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_workouts",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "Workout"
+        }
+      }
+    },
+    {
+      "name": "add_cheer",
+      "params": [
+        {
+          "name": "workout_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "get_cheers",
+      "params": [
+        {
+          "name": "workout_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Cheer"
         }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "ClubInitialized",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_ClubInitialized"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "WeeklyGoalUpdated",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_WeeklyGoalUpdated"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "WorkoutLogged",
+      "payload": {
+        "$ref": "Event_WorkoutLogged"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "WorkoutEdited",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_WorkoutEdited"
+      }
+    },
+    {
+      "name": "WorkoutDeleted",
+      "payload": {
+        "$ref": "Event_WorkoutDeleted"
+      }
+    },
+    {
+      "name": "CheerAdded",
+      "payload": {
+        "$ref": "Event_CheerAdded"
       }
     }
   ],
-  "state_root": "LobbyState"
+  "state_root": "ClubState"
 }
