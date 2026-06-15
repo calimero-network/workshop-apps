@@ -16,9 +16,9 @@ import { APP_DISPLAY_NAME, APP_DESCRIPTION, APP_ROUTE, THEME } from '../../confi
  */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: ‘\uD83C\uDFCB’, title: ‘Log every session’, body: ‘Record your activity, duration, and notes so the whole club can see you putting in the work.’ },
+  { icon: ‘\uD83D\uDCE3’, title: ‘Cheer each other on’, body: "React to a friend’s workout with a cheer \u2014 instant motivation that syncs to everyone in seconds." },
+  { icon: ‘\uD83C\uDFAF’, title: ‘Hit weekly goals together’, body: ‘The club creator sets a shared weekly target; a live progress bar keeps the whole group accountable.’ },
 ];
 
 export default function LandingPage() {
@@ -55,7 +55,7 @@ export default function LandingPage() {
         ))}
       </Features>
 
-      <Footer>Connect your Calimero node to get started — it takes seconds.</Footer>
+      <Footer>Connect your Calimero node, create a club, and invite your crew — it takes under a minute.</Footer>
     </Page>
   );
 }

@@ -9,6 +9,8 @@ import {
 import type { GroupMember } from '@calimero-network/mero-react';
 import { useNamespaceBootstrap } from './useNamespaceBootstrap';
 import { SERVICE_NAME, SELECTED_NAMESPACE_KEY, DEFAULT_WORKSPACE_NAME } from '../config';
+import { ClubClient } from '../api/club/ClubClient';
+import rawConfig from '../../studio.config.json';
 
 const SELECTED_NS_KEY = SELECTED_NAMESPACE_KEY;
 
@@ -28,7 +30,7 @@ export interface UseChatLobbyReturn {
   clearLobby: () => void;
   refetchLobbies: () => Promise<void>;
 
-  createLobby: (name?: string) => Promise<string | null>;
+  createLobby: (name?: string, weeklyGoal?: number) => Promise<string | null>;
   createLobbyLoading: boolean;
   createLobbyError: Error | null;
 
@@ -43,11 +45,7 @@ export interface UseChatLobbyReturn {
   isAdmin: boolean;
 
   lobbyJoined: boolean;
-  /** Executor identity for the lobby context. Per-room contexts use their
-   *  own identities, resolved by `useChatRoom` via `getContextIdentitiesOwned`. */
   executorPublicKey: string | null;
-  /** Alias for `executorPublicKey`, named to make the binding to the lobby
-   *  context explicit (used by `useLobbyDirectory`). */
   lobbyExecutorPublicKey: string | null;
   lobbyContextId: string | null;
 
@@ -82,6 +80,22 @@ function persistSelectedNamespaceId(nsId: string | null) {
 
 const ENV_APPLICATION_ID = import.meta.env.VITE_APPLICATION_ID?.trim() || null;
 
+/**
+ * Safely gets the directory service name for context resolution.
+ * Multi-service apps use SERVICE_NAME.directory; single-service apps (no
+ * 'directory' role declared) fall back to the first service's name.
+ */
+function safeDirectoryServiceName(): string | null {
+  try {
+    return SERVICE_NAME.directory;
+  } catch {
+    const raw = rawConfig as { services?: { name: string }[] };
+    return raw.services?.[0]?.name ?? null;
+  }
+}
+
+const DIRECTORY_SERVICE_NAME = safeDirectoryServiceName();
+
 export function useChatLobby(): UseChatLobbyReturn {
   const { applicationId: authApplicationId, mero, contextIdentity } = useMero();
   const applicationId = authApplicationId || ENV_APPLICATION_ID;
@@ -94,7 +108,6 @@ export function useChatLobby(): UseChatLobbyReturn {
     refetch: refetchNamespaces,
   } = useNamespacesForApplication(applicationId);
 
-  // --- Derive lobby context from namespace's root group contexts ---
   const [selectedNsId, setSelectedNsId] = useState<string | null>(loadSelectedNamespaceId);
   const namespaceId = namespaces.find((ns) => ns.namespaceId === selectedNsId)?.namespaceId ?? null;
   const groupId = namespaceId;
@@ -105,11 +118,12 @@ export function useChatLobby(): UseChatLobbyReturn {
     refetch: refetchGroupContexts,
   } = useGroupContexts(namespaceId);
 
-  // `useGroupContexts` returns only `{contextId, alias}` — no serviceName.
-  // The lobby is no longer guaranteed to be at index 0 once rooms (also
-  // contexts in the same namespace) are created, so we resolve each context's
-  // serviceName via `mero.admin.getContext(id)` and pick the one whose
-  // serviceName === 'lobby'. Returns null until the lookup completes.
+  // Resolve the lobby/club context id by serviceName.
+  // useGroupContexts returns only {contextId, alias} — no serviceName.
+  // We resolve each context via mero.admin.getContext and pick the one
+  // whose serviceName matches DIRECTORY_SERVICE_NAME.
+  // For single-service apps (namespacePerInstance), all contexts share the
+  // same service, so we fall back to the first context.
   const [lobbyContextId, setLobbyContextId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -129,8 +143,13 @@ export function useChatLobby(): UseChatLobbyReturn {
           ),
         );
         if (cancelled) return;
-        const lobby = details.find((d) => d.serviceName === SERVICE_NAME.directory)?.contextId ?? null;
-        setLobbyContextId(lobby);
+        let matched: string | null = null;
+        if (DIRECTORY_SERVICE_NAME) {
+          matched = details.find((d) => d.serviceName === DIRECTORY_SERVICE_NAME)?.contextId ?? null;
+        }
+        // Fallback: single-service app → first context is the club context
+        if (!matched) matched = details[0]?.contextId ?? null;
+        setLobbyContextId(matched);
       } catch {
         if (!cancelled) setLobbyContextId(null);
       }
@@ -154,7 +173,6 @@ export function useChatLobby(): UseChatLobbyReturn {
   // --- Members ---
   // Custom replacement for SDK's useGroupMembers because the SDK reads
   // `response.data` but the server returns `{members, selfIdentity}`.
-  // (Filed/to-file as upstream bug in @calimero-network/mero-react.)
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [selfIdentity, setSelfIdentity] = useState<string | null>(null);
   const [membersLoading, setMembersLoading] = useState(false);
@@ -171,11 +189,10 @@ export function useChatLobby(): UseChatLobbyReturn {
       const r = raw as unknown as { members?: GroupMember[]; selfIdentity?: string };
       const all = r.members ?? [];
       const self = r.selfIdentity ?? null;
-      // Match SDK semantics: members excludes self.
       setMembers(all.filter((m) => m.identity !== self));
       setSelfIdentity(self);
     } catch {
-      // leave previous state in place on transient errors
+      // keep previous state on transient errors
     } finally {
       setMembersLoading(false);
     }
@@ -223,7 +240,7 @@ export function useChatLobby(): UseChatLobbyReturn {
     setExecutorPublicKey(null);
   }, [selectedNsId]);
 
-  // Resolve executor identity
+  // Resolve executor identity for the lobby/club context
   useEffect(() => {
     if (!lobbyContextId || !mero) return;
     let cancelled = false;
@@ -272,18 +289,31 @@ export function useChatLobby(): UseChatLobbyReturn {
     persistSelectedNamespaceId(null);
   }, []);
 
-  const createLobby = useCallback(async (name?: string) => {
-    const result = await createNamespaceWithLobby(name || DEFAULT_WORKSPACE_NAME);
+  const createLobby = useCallback(async (name?: string, weeklyGoal = 3) => {
+    const clubName = name || DEFAULT_WORKSPACE_NAME;
+    const result = await createNamespaceWithLobby(clubName);
     if (result) {
       setExecutorPublicKey(result.memberPublicKey);
       setLobbyJoined(true);
       setSelectedNsId(result.namespaceId);
       persistSelectedNamespaceId(result.namespaceId);
+
+      // Initialize the club data (name + weekly goal) right after context creation.
+      // This is the first mutation on the freshly-created club context.
+      if (mero) {
+        try {
+          const client = new ClubClient(mero, result.lobbyContextId, result.memberPublicKey);
+          await client.initClub({ name: clubName, weekly_goal: weeklyGoal });
+        } catch (err) {
+          console.warn('init_club failed (club may need manual init):', err);
+        }
+      }
+
       await refetchNamespaces();
       return result.namespaceId;
     }
     return null;
-  }, [createNamespaceWithLobby, refetchNamespaces]);
+  }, [createNamespaceWithLobby, refetchNamespaces, mero]);
 
   const inviteUser = useCallback(async (_validForSeconds = 86400) => {
     if (!namespaceId) return null;
@@ -344,8 +374,8 @@ export function useChatLobby(): UseChatLobbyReturn {
     refetchLobbies: refetchNamespaces,
 
     createLobby,
-    createLobbyLoading: createLobbyLoading,
-    createLobbyError: createLobbyError,
+    createLobbyLoading,
+    createLobbyError,
 
     namespaceId,
     groupId,

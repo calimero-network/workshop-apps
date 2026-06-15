@@ -1,12 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import type { GroupMember } from '@calimero-network/mero-react';
-import { RoomSummary } from '../api/lobby/LobbyClient';
 import type { LobbyRecord } from '../hooks/useChatLobby';
 
 const MAX_NAME_LEN = 20;
 
 interface SidebarProps {
-  // Workspace selector
+  // Club (workspace) selector
   workspaces: LobbyRecord[];
   selectedNamespaceId: string | null;
   onSelectWorkspace: (nsId: string) => void;
@@ -20,12 +19,10 @@ interface SidebarProps {
   memberNames: Record<string, string>;
   onSetName: (name: string) => Promise<void>;
 
-  // Room list
-  rooms: RoomSummary[];
-  selectedRoomId: string | null;
-  onSelectRoom: (room: RoomSummary) => void;
-  onCreateRoom: () => void;
+  // Actions
   onInvite: () => void;
+  activeView: 'feed' | 'settings';
+  onSelectView: (v: 'feed' | 'settings') => void;
 }
 
 function shortenId(id: string): string {
@@ -43,32 +40,10 @@ export default function Sidebar({
   selfIdentity,
   onlineMembers,
   memberNames,
-  onSetName,
-  rooms,
-  selectedRoomId,
-  onSelectRoom,
-  onCreateRoom,
   onInvite,
+  activeView,
+  onSelectView,
 }: SidebarProps) {
-  // Editable display name for self. Names are author-owned, so the only
-  // source of `persistedName` change is our own committed write — sync the
-  // draft whenever the backend value changes. Don't gate this on a local
-  // `isEditing` flag; flipping it during commit re-fires the effect and
-  // reverts the optimistic value before the roundtrip lands.
-  const persistedName = (selfIdentity && memberNames[selfIdentity]) || '';
-  const [draftName, setDraftName] = useState(persistedName);
-
-  useEffect(() => {
-    setDraftName(persistedName);
-  }, [persistedName]);
-
-  const commitName = async () => {
-    const trimmed = draftName.trim().slice(0, MAX_NAME_LEN);
-    setDraftName(trimmed);
-    if (trimmed === persistedName) return;
-    try { await onSetName(trimmed); } catch { /* keep draft on failure */ }
-  };
-
   const renderMemberLabel = (identity: string, alias?: string) =>
     memberNames[identity] || alias || shortenId(identity);
 
@@ -79,32 +54,52 @@ export default function Sidebar({
       display: 'flex',
       flexDirection: 'column',
       background: '#0f172a',
+      flexShrink: 0,
     }}>
-      {/* Workspace header */}
-      <div style={{
-        padding: '1rem',
-        borderBottom: '1px solid #1e293b',
-      }}>
+      {/* Club header */}
+      <div style={{ padding: '1rem', borderBottom: '1px solid #1e293b' }}>
         <h2 style={{
-          fontSize: '1rem',
-          fontWeight: 700,
-          color: 'var(--color-primary, #3B82F6)',
+          fontSize: '1rem', fontWeight: 700,
+          color: 'var(--color-primary, #E11D48)',
           marginBottom: '0.2rem',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
-          {workspaceAlias || 'Chat'}
+          {workspaceAlias || 'Workout Club'}
         </h2>
         <span style={{ color: '#64748b', fontSize: '0.78rem' }}>
-          {members.length + (selfIdentity ? 1 : 0)} member{members.length === 0 && selfIdentity ? '' : 's'}
+          {members.length + (selfIdentity ? 1 : 0)} member{(members.length + (selfIdentity ? 1 : 0)) !== 1 ? 's' : ''}
         </span>
       </div>
 
-      {/* Workspace list (always visible — switching is just a transition) */}
+      {/* Navigation */}
+      <div style={{ padding: '0.5rem', borderBottom: '1px solid #1e293b' }}>
+        {[
+          { id: 'feed' as const, label: '🏋️  Activity Feed' },
+          { id: 'settings' as const, label: '⚙️  Club Settings' },
+        ].map((item) => (
+          <div
+            key={item.id}
+            onClick={() => onSelectView(item.id)}
+            style={{
+              padding: '0.4rem 0.6rem',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontSize: '0.84rem',
+              fontWeight: activeView === item.id ? 700 : 400,
+              background: activeView === item.id ? 'rgba(225,29,72,0.12)' : 'transparent',
+              color: activeView === item.id ? 'var(--color-primary, #E11D48)' : '#94a3b8',
+              marginBottom: 2,
+            }}
+          >
+            {item.label}
+          </div>
+        ))}
+      </div>
+
+      {/* Club list (always visible) */}
       <div style={{ padding: '0.5rem', borderBottom: '1px solid #1e293b' }}>
         <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.25rem', paddingLeft: '0.25rem' }}>
-          WORKSPACES
+          YOUR CLUBS
         </div>
         {workspaces.map((ws) => (
           <div
@@ -116,12 +111,10 @@ export default function Sidebar({
               cursor: 'pointer',
               fontSize: '0.82rem',
               background: ws.namespaceId === selectedNamespaceId
-                ? 'rgba(59,130,246,0.15)'
+                ? 'rgba(225,29,72,0.12)'
                 : 'transparent',
-              color: ws.namespaceId === selectedNamespaceId ? '#93c5fd' : '#94a3b8',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              color: ws.namespaceId === selectedNamespaceId ? 'var(--color-primary, #E11D48)' : '#94a3b8',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}
           >
             {ws.alias || shortenId(ws.namespaceId)}
@@ -137,19 +130,19 @@ export default function Sidebar({
             color: '#64748b',
             marginTop: workspaces.length > 0 ? 2 : 0,
           }}
-          title="Create a new workspace"
+          title="Create a new club"
         >
-          + New workspace
+          + New club
         </div>
       </div>
 
       {/* Members */}
-      <div style={{ padding: '0.5rem', borderBottom: '1px solid #1e293b' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem', borderBottom: '1px solid #1e293b' }}>
         <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.4rem', paddingLeft: '0.25rem' }}>
           MEMBERS
         </div>
 
-        {/* Self — editable display name */}
+        {/* Self */}
         {selfIdentity && (
           <div style={{
             padding: '0.35rem 0.6rem',
@@ -161,33 +154,13 @@ export default function Sidebar({
           }}>
             <span style={{
               width: 8, height: 8, borderRadius: '50%',
-              background: 'var(--color-accent, #10B981)',
+              background: 'var(--color-accent, #F59E0B)',
               flexShrink: 0,
             }} />
-            <input
-              value={draftName}
-              onChange={(e) => setDraftName(e.target.value)}
-              onBlur={commitName}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
-                if (e.key === 'Escape') {
-                  setDraftName(persistedName);
-                  (e.currentTarget as HTMLInputElement).blur();
-                }
-              }}
-              maxLength={MAX_NAME_LEN}
-              placeholder={shortenId(selfIdentity)}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                color: '#e2e8f0',
-                fontSize: '0.82rem',
-                padding: 0,
-              }}
-            />
+            <span style={{ color: '#e2e8f0', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {memberNames[selfIdentity] || shortenId(selfIdentity)}&nbsp;
+              <span style={{ color: '#475569', fontSize: '0.72rem' }}>(you)</span>
+            </span>
           </div>
         )}
 
@@ -211,7 +184,7 @@ export default function Sidebar({
             >
               <span style={{
                 width: 8, height: 8, borderRadius: '50%',
-                background: online ? 'var(--color-accent, #10B981)' : '#475569',
+                background: online ? 'var(--color-accent, #F59E0B)' : '#334155',
                 flexShrink: 0,
               }} />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -222,70 +195,24 @@ export default function Sidebar({
         })}
       </div>
 
-      {/* Room actions */}
-      <div style={{ padding: '0.5rem', display: 'flex', gap: '0.25rem' }}>
-        <button
-          onClick={onCreateRoom}
-          style={{
-            flex: 1,
-            padding: '0.4rem',
-            background: '#2563eb',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            cursor: 'pointer',
-            fontSize: '0.8rem',
-          }}
-        >
-          + Room
-        </button>
+      {/* Invite button */}
+      <div style={{ padding: '0.5rem' }}>
         <button
           onClick={onInvite}
           style={{
-            flex: 1,
-            padding: '0.4rem',
-            background: '#1e293b',
-            color: '#cbd5e1',
-            border: '1px solid #334155',
-            borderRadius: 4,
+            width: '100%',
+            padding: '0.45rem',
+            background: 'var(--color-accent, #F59E0B)',
+            color: '#0f172a',
+            border: 'none',
+            borderRadius: 6,
             cursor: 'pointer',
-            fontSize: '0.8rem',
+            fontSize: '0.82rem',
+            fontWeight: 700,
           }}
         >
-          Invite
+          Invite to Club
         </button>
-      </div>
-
-      {/* Room list */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0.25rem' }}>
-        <div style={{ fontSize: '0.7rem', color: '#64748b', margin: '0.25rem 0.5rem' }}>
-          ROOMS
-        </div>
-        {rooms.length === 0 && (
-          <div style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', textAlign: 'center' }}>
-            No rooms yet
-          </div>
-        )}
-        {rooms.map((room) => (
-          <div
-            key={room.room_id}
-            data-testid={`sidebar-room-${room.name}`}
-            onClick={() => onSelectRoom(room)}
-            style={{
-              padding: '0.55rem 0.7rem',
-              borderRadius: 6,
-              cursor: 'pointer',
-              background: room.room_id === selectedRoomId ? 'rgba(59,130,246,0.15)' : 'transparent',
-              color: room.room_id === selectedRoomId ? '#93c5fd' : '#cbd5e1',
-              marginBottom: 2,
-            }}
-          >
-            <div style={{ fontSize: '0.88rem' }}># {room.name}</div>
-            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-              {room.member_count} member{room.member_count !== 1 ? 's' : ''}
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
