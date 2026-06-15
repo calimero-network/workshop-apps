@@ -10,7 +10,7 @@ import type { GroupMember } from '@calimero-network/mero-react';
 import { useNamespaceBootstrap } from './useNamespaceBootstrap';
 import { SERVICE_NAME, SELECTED_NAMESPACE_KEY, DEFAULT_WORKSPACE_NAME } from '../config';
 import { ClubClient } from '../api/club/ClubClient';
-import rawConfig from '../../studio.config.json';
+import rawConfig from '../../../studio.config.json';
 
 const SELECTED_NS_KEY = SELECTED_NAMESPACE_KEY;
 

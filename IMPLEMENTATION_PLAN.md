@@ -18,13 +18,13 @@ Summary: A shared space where friends log workouts, cheer each other on, and hit
 - [x] Implement view: [club] get_cheers(workout_id: String) → app::Result<Vec<Cheer>>
 
 ## Frontend (app/)
-- [ ] Screen: ActivityFeed — Live feed of all members' workouts with cheer buttons, weekly goal progress bar, and log-workout CTA
-- [ ] Screen: ClubSettingsPage — Club name, weekly goal setting (creator only), and member list
-- [ ] Apply designTheme tokens
+- [x] Screen: ActivityFeed — Live feed of all members' workouts with cheer buttons, weekly goal progress bar, and log-workout CTA
+- [x] Screen: ClubSettingsPage — Club name, weekly goal setting (creator only), and member list
+- [x] Apply designTheme tokens
 
 ## Verification
 - [x] cargo build --target wasm32-unknown-unknown succeeds
-- [ ] tsc --noEmit passes
+- [x] tsc --noEmit passes
 - [ ] Test story (club creator): start a new workout club and invite my friends
 - [ ] Test story (club member): log my workouts with what I did and how long
 - [ ] Test story (club member): edit or delete my own workout entries

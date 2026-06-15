@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useMero } from '@calimero-network/mero-react';
 import { SERVICE_NAME } from '../config';
-import rawConfig from '../../studio.config.json';
+import rawConfig from '../../../studio.config.json';
 
 /**
  * Capability bits for the namespace.
