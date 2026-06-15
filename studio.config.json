@@ -1,7 +1,7 @@
 {
   "appName": "workout-accountability-club",
-  "appVersion": "0.1.0",
-  "package": "com.calimero.workout-accountability-club",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.user123.workout-accountability-club",
   "metadata": {
     "name": "workout-accountability-club",
     "description": "A shared space where friends log workouts, cheer each other on, and hit weekly goals together",
