@@ -1,0 +1,449 @@
+{
+  "schema_version": "wasm-abi/1",
+  "types": {
+    "Event_MessageDeleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_MessageEdited": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_MessageSent": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "sender",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "timestamp_ms",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Message": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "sender",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "timestamp_ms",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "edited",
+          "type": {
+            "kind": "bool"
+          }
+        }
+      ]
+    },
+    "RoomInfo": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "room_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "message_count",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "created_ms",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "RoomMetadata": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "room_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "lobby_context_id",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true
+        },
+        {
+          "name": "created_ms",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "created_by",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "RoomState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "metadata",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "shared_storage",
+            "inner_type": {
+              "kind": "record",
+              "fields": [],
+              "crdt_type": "lww_register",
+              "inner_type": {
+                "$ref": "RoomMetadata"
+              }
+            }
+          }
+        },
+        {
+          "name": "messages",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Message"
+            },
+            "crdt_type": "authored_map"
+          }
+        }
+      ]
+    }
+  },
+  "methods": [
+    {
+      "name": "init",
+      "params": [
+        {
+          "name": "room_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "lobby_context_id",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "send_message",
+      "params": [
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "edit_message",
+      "params": [
+        {
+          "name": "message_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_body",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "delete_message",
+      "params": [
+        {
+          "name": "message_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_messages",
+      "params": [
+        {
+          "name": "offset",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "limit",
+          "type": {
+            "kind": "u32"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Message"
+        }
+      }
+    },
+    {
+      "name": "get_recent_messages",
+      "params": [
+        {
+          "name": "count",
+          "type": {
+            "kind": "u32"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Message"
+        }
+      }
+    },
+    {
+      "name": "get_room_info",
+      "params": [],
+      "returns": {
+        "$ref": "RoomInfo"
+      }
+    },
+    {
+      "name": "get_message_count",
+      "params": [],
+      "returns": {
+        "kind": "u64"
+      }
+    },
+    {
+      "name": "rename_room",
+      "params": [
+        {
+          "name": "new_name",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "add_moderator",
+      "params": [
+        {
+          "name": "public_key",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "remove_moderator",
+      "params": [
+        {
+          "name": "public_key",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "delete_room",
+      "params": [],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "list_moderators",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "kind": "string"
+        }
+      }
+    },
+    {
+      "name": "save_draft",
+      "params": [
+        {
+          "name": "key",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "content",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_draft",
+      "params": [
+        {
+          "name": "key",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "delete_draft",
+      "params": [
+        {
+          "name": "key",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "MessageSent",
+      "payload": {
+        "$ref": "Event_MessageSent"
+      }
+    },
+    {
+      "name": "MessageEdited",
+      "payload": {
+        "$ref": "Event_MessageEdited"
+      }
+    },
+    {
+      "name": "MessageDeleted",
+      "payload": {
+        "$ref": "Event_MessageDeleted"
+      }
+    },
+    {
+      "name": "RoomUpdated"
+    },
+    {
+      "name": "ModeratorsRotated"
+    }
+  ],
+  "state_root": "RoomState"
+}
