@@ -9,8 +9,8 @@
     "route": "/workout-accountability-club"
   },
   "theme": {
-    "primaryColor": "#E11D48",
-    "accentColor": "#F59E0B",
+    "primaryColor": "#1D4ED8",
+    "accentColor": "#60A5FA",
     "style": "energetic-bold"
   },
   "services": [
