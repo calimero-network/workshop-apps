@@ -1,32 +1,35 @@
+/**
+ * AddTaskInput — text field + button to add a new task.
+ */
 import React, { useState, useCallback } from 'react';
 
-interface MessageInputProps {
-  onSend: (body: string) => Promise<void>;
+interface AddTaskInputProps {
+  onAdd: (description: string) => Promise<void>;
+  disabled?: boolean;
 }
 
-export default function MessageInput({ onSend }: MessageInputProps) {
+export default function AddTaskInput({ onAdd, disabled }: AddTaskInputProps) {
   const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
+  const [adding, setAdding] = useState(false);
 
-  const handleSend = useCallback(async () => {
-    const body = text.trim();
-    if (!body || sending) return;
-
-    setSending(true);
+  const handleAdd = useCallback(async () => {
+    const desc = text.trim();
+    if (!desc || adding || disabled) return;
+    setAdding(true);
     try {
-      await onSend(body);
+      await onAdd(desc);
       setText('');
     } catch (err) {
-      console.error('Failed to send message:', err);
+      console.error('Failed to add task:', err);
     } finally {
-      setSending(false);
+      setAdding(false);
     }
-  }, [text, sending, onSend]);
+  }, [text, adding, disabled, onAdd]);
 
   return (
     <div style={{
       padding: '0.75rem 1rem',
-      borderTop: '1px solid #2a2a2a',
+      borderTop: '1px solid #1e293b',
       display: 'flex',
       gap: '0.5rem',
     }}>
@@ -37,36 +40,39 @@ export default function MessageInput({ onSend }: MessageInputProps) {
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            handleSend();
+            void handleAdd();
           }
         }}
-        placeholder="Type a message..."
-        disabled={sending}
+        placeholder="Add a new task…"
+        disabled={adding || disabled}
+        data-testid="add-task-input"
         style={{
           flex: 1,
           padding: '0.6rem 0.75rem',
-          background: '#1a1a1a',
-          border: '1px solid #333',
+          background: '#0f172a',
+          border: '1px solid #334155',
           borderRadius: 8,
-          color: '#eee',
+          color: '#e2e8f0',
           fontSize: '0.9rem',
           outline: 'none',
         }}
       />
       <button
-        onClick={handleSend}
-        disabled={sending || !text.trim()}
+        onClick={() => void handleAdd()}
+        disabled={adding || !text.trim() || disabled}
+        data-testid="add-task-button"
         style={{
           padding: '0.6rem 1.2rem',
-          background: text.trim() ? '#2563eb' : '#333',
+          background: text.trim() && !disabled ? 'var(--color-primary, #2563EB)' : '#1e293b',
           color: '#fff',
           border: 'none',
           borderRadius: 8,
-          cursor: text.trim() ? 'pointer' : 'default',
+          cursor: text.trim() && !disabled ? 'pointer' : 'default',
           fontSize: '0.9rem',
+          whiteSpace: 'nowrap',
         }}
       >
-        Send
+        Add Task
       </button>
     </div>
   );

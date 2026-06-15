@@ -12,8 +12,8 @@ Summary: A shared todo list where teammates add, complete, and manage tasks toge
 - [x] Implement view: [todolist] list_tasks() → app::Result<Vec<Task>>
 
 ## Frontend (app/)
-- [ ] Screen: TaskListPage — Live task list with add-task input, toggle done, edit/delete controls, grouped by open vs. completed
-- [ ] Apply designTheme tokens
+- [x] Screen: TaskListPage — Live task list with add-task input, toggle done, edit/delete controls, grouped by open vs. completed
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

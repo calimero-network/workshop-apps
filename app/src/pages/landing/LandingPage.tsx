@@ -16,9 +16,9 @@ import { APP_DISPLAY_NAME, APP_DESCRIPTION, APP_ROUTE, THEME } from '../../confi
  */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '\u2705', title: 'One list, whole team', body: 'Create a shared workspace and invite teammates \u2014 everyone sees every task added, completed, or updated within seconds.' },
+  { icon: '\u270F\uFE0F', title: 'Edit what you own', body: 'Add tasks freely; you can edit or delete only the tasks you created, keeping the list honest and authorship clear.' },
+  { icon: '\uD83D\uDD12', title: 'Decentralized & private', body: 'Your tasks live in a Calimero context you control \u2014 no central server, no third-party access, just your team.' },
 ];
 
 export default function LandingPage() {

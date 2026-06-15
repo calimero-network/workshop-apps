@@ -1,80 +1,74 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useMero, useSubscription } from '@calimero-network/mero-react';
-import { RoomClient, Message } from '../api/room/RoomClient';
+/**
+ * useTodoList — per-context task state for team-todos.
+ *
+ * Re-exported as `useChatRoom` so the existing import in ChatPage continues to
+ * compile unchanged; the real name used internally is `useTodoList`.
+ */
 
-export interface UseChatRoomReturn {
-  messages: Message[];
+import { useCallback, useEffect, useState } from 'react';
+import { useMero, useSubscription } from '@calimero-network/mero-react';
+import { TodolistClient, Task } from '../api/todolist/TodolistClient';
+
+export interface UseTodoListReturn {
+  tasks: Task[];
   loading: boolean;
   error: Error | null;
-  sendMessage: (body: string) => Promise<void>;
-  editMessage: (messageId: string, newBody: string) => Promise<void>;
-  deleteMessage: (messageId: string) => Promise<void>;
-  refreshMessages: () => Promise<void>;
-  roomName: string | null;
-  messageCount: number;
-  roomExecutorKey: string | null;
-  deleteRoom: () => Promise<void>;
-  addModerator: (publicKey: string) => Promise<void>;
+  addTask: (description: string) => Promise<void>;
+  editTask: (taskId: string, newDescription: string) => Promise<void>;
+  toggleTaskDone: (taskId: string) => Promise<void>;
+  deleteTask: (taskId: string) => Promise<void>;
+  refreshTasks: () => Promise<void>;
+  /** Executor key resolved for this context (used to determine task ownership). */
+  executorKey: string | null;
 }
 
-export function useChatRoom(
+export function useTodoList(
   contextId: string | null,
   _lobbyExecutorPublicKey: string | null,
-): UseChatRoomReturn {
+): UseTodoListReturn {
   const { mero } = useMero();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [roomName, setRoomName] = useState<string | null>(null);
-  const [messageCount, setMessageCount] = useState(0);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  // Resolve the executor identity for THIS room's context (may differ from
-  // the lobby identity when the room lives in a subgroup).
-  const [roomExecutorKey, setRoomExecutorKey] = useState<string | null>(null);
+  // Resolve the executor identity for THIS context (may differ from the lobby
+  // identity once per-instance contexts have their own memberships).
+  const [executorKey, setExecutorKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (!mero || !contextId) {
-      setRoomExecutorKey(null);
+      setExecutorKey(null);
       return;
     }
     let cancelled = false;
-
     (async () => {
       try {
         const { identities } = await mero.admin.getContextIdentitiesOwned(contextId);
         if (!cancelled && identities.length > 0) {
-          setRoomExecutorKey(identities[0]);
+          setExecutorKey(identities[0]);
         }
       } catch {
-        // Context not yet joined or identity not available — fall back to lobby key
         if (!cancelled && _lobbyExecutorPublicKey) {
-          setRoomExecutorKey(_lobbyExecutorPublicKey);
+          setExecutorKey(_lobbyExecutorPublicKey);
         }
       }
     })();
-
     return () => { cancelled = true; };
   }, [mero, contextId, _lobbyExecutorPublicKey]);
 
-  const getClient = useCallback(() => {
-    if (!mero || !contextId || !roomExecutorKey) return null;
-    return new RoomClient(mero, contextId, roomExecutorKey);
-  }, [mero, contextId, roomExecutorKey]);
+  const getClient = useCallback((): TodolistClient | null => {
+    if (!mero || !contextId || !executorKey) return null;
+    return new TodolistClient(mero, contextId, executorKey);
+  }, [mero, contextId, executorKey]);
 
-  const refreshMessages = useCallback(async () => {
+  const refreshTasks = useCallback(async () => {
     const client = getClient();
     if (!client) return;
-
     setLoading(true);
     setError(null);
     try {
-      const [msgs, info] = await Promise.all([
-        client.getRecentMessages({ count: 100 }),
-        client.getRoomInfo(),
-      ]);
-      setMessages(msgs);
-      setRoomName(info.name);
-      setMessageCount(info.message_count);
+      const result = await client.listTasks();
+      setTasks(result ?? []);
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
@@ -82,61 +76,56 @@ export function useChatRoom(
     }
   }, [getClient]);
 
-  // Load messages on mount / context change
+  // Load tasks on mount / context change
   useEffect(() => {
-    refreshMessages();
-  }, [refreshMessages]);
+    void refreshTasks();
+  }, [refreshTasks]);
 
-  // React to any room state change (local or synced from other nodes)
+  // React to any context state change (local or synced from other nodes)
   useSubscription(contextId ? [contextId] : [], () => {
-    refreshMessages();
+    void refreshTasks();
   });
 
-  const sendMessage = useCallback(async (body: string) => {
+  const addTask = useCallback(async (description: string) => {
     const client = getClient();
     if (!client) return;
-    await client.sendMessage({ body });
-    await refreshMessages();
-  }, [getClient, refreshMessages]);
+    await client.addTask({ description });
+    await refreshTasks();
+  }, [getClient, refreshTasks]);
 
-  const editMessage = useCallback(async (messageId: string, newBody: string) => {
+  const editTask = useCallback(async (taskId: string, newDescription: string) => {
     const client = getClient();
     if (!client) return;
-    await client.editMessage({ message_id: messageId, new_body: newBody });
-    await refreshMessages();
-  }, [getClient, refreshMessages]);
+    await client.editTask({ task_id: taskId, new_description: newDescription });
+    await refreshTasks();
+  }, [getClient, refreshTasks]);
 
-  const deleteMessage = useCallback(async (messageId: string) => {
+  const toggleTaskDone = useCallback(async (taskId: string) => {
     const client = getClient();
     if (!client) return;
-    await client.deleteMessage({ message_id: messageId });
-    await refreshMessages();
-  }, [getClient, refreshMessages]);
+    await client.toggleTaskDone({ task_id: taskId });
+    await refreshTasks();
+  }, [getClient, refreshTasks]);
 
-  const deleteRoom = useCallback(async () => {
+  const deleteTask = useCallback(async (taskId: string) => {
     const client = getClient();
-    if (!client) throw new Error('Room client not ready');
-    await client.deleteRoom();
-  }, [getClient]);
-
-  const addModerator = useCallback(async (publicKey: string) => {
-    const client = getClient();
-    if (!client) throw new Error('Room client not ready');
-    await client.addModerator({ public_key: publicKey });
-  }, [getClient]);
+    if (!client) return;
+    await client.deleteTask({ task_id: taskId });
+    await refreshTasks();
+  }, [getClient, refreshTasks]);
 
   return {
-    messages,
+    tasks,
     loading,
     error,
-    sendMessage,
-    editMessage,
-    deleteMessage,
-    refreshMessages,
-    roomName,
-    messageCount,
-    roomExecutorKey,
-    deleteRoom,
-    addModerator,
+    addTask,
+    editTask,
+    toggleTaskDone,
+    deleteTask,
+    refreshTasks,
+    executorKey,
   };
 }
+
+// Re-export under the legacy name so the RoomView import in ChatPage still resolves.
+export { useTodoList as useChatRoom };

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import type { GroupMember } from '@calimero-network/mero-react';
-import { RoomSummary } from '../api/lobby/LobbyClient';
 import type { LobbyRecord } from '../hooks/useChatLobby';
 
 const MAX_NAME_LEN = 20;
@@ -20,11 +19,7 @@ interface SidebarProps {
   memberNames: Record<string, string>;
   onSetName: (name: string) => Promise<void>;
 
-  // Room list
-  rooms: RoomSummary[];
-  selectedRoomId: string | null;
-  onSelectRoom: (room: RoomSummary) => void;
-  onCreateRoom: () => void;
+  // Actions
   onInvite: () => void;
 }
 
@@ -44,17 +39,10 @@ export default function Sidebar({
   onlineMembers,
   memberNames,
   onSetName,
-  rooms,
-  selectedRoomId,
-  onSelectRoom,
-  onCreateRoom,
   onInvite,
 }: SidebarProps) {
-  // Editable display name for self. Names are author-owned, so the only
-  // source of `persistedName` change is our own committed write — sync the
-  // draft whenever the backend value changes. Don't gate this on a local
-  // `isEditing` flag; flipping it during commit re-fires the effect and
-  // reverts the optimistic value before the roundtrip lands.
+  // Editable display name for self. Names are author-owned, so the only source
+  // of `persistedName` change is our own committed write.
   const persistedName = (selfIdentity && memberNames[selfIdentity]) || '';
   const [draftName, setDraftName] = useState(persistedName);
 
@@ -72,6 +60,8 @@ export default function Sidebar({
   const renderMemberLabel = (identity: string, alias?: string) =>
     memberNames[identity] || alias || shortenId(identity);
 
+  const totalMembers = members.length + (selfIdentity ? 1 : 0);
+
   return (
     <div style={{
       width: 260,
@@ -79,25 +69,23 @@ export default function Sidebar({
       display: 'flex',
       flexDirection: 'column',
       background: '#0f172a',
+      flexShrink: 0,
     }}>
       {/* Workspace header */}
-      <div style={{
-        padding: '1rem',
-        borderBottom: '1px solid #1e293b',
-      }}>
+      <div style={{ padding: '1rem', borderBottom: '1px solid #1e293b' }}>
         <h2 style={{
           fontSize: '1rem',
           fontWeight: 700,
-          color: 'var(--color-primary, #3B82F6)',
+          color: 'var(--color-primary, #2563EB)',
           marginBottom: '0.2rem',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
         }}>
-          {workspaceAlias || 'Chat'}
+          {workspaceAlias || 'Team Todos'}
         </h2>
         <span style={{ color: '#64748b', fontSize: '0.78rem' }}>
-          {members.length + (selfIdentity ? 1 : 0)} member{members.length === 0 && selfIdentity ? '' : 's'}
+          {totalMembers} member{totalMembers !== 1 ? 's' : ''}
         </span>
       </div>
 
@@ -116,7 +104,7 @@ export default function Sidebar({
               cursor: 'pointer',
               fontSize: '0.82rem',
               background: ws.namespaceId === selectedNamespaceId
-                ? 'rgba(59,130,246,0.15)'
+                ? 'rgba(37,99,235,0.15)'
                 : 'transparent',
               color: ws.namespaceId === selectedNamespaceId ? '#93c5fd' : '#94a3b8',
               overflow: 'hidden',
@@ -144,7 +132,7 @@ export default function Sidebar({
       </div>
 
       {/* Members */}
-      <div style={{ padding: '0.5rem', borderBottom: '1px solid #1e293b' }}>
+      <div style={{ padding: '0.5rem', flex: 1, overflowY: 'auto', borderBottom: '1px solid #1e293b' }}>
         <div style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '0.4rem', paddingLeft: '0.25rem' }}>
           MEMBERS
         </div>
@@ -222,27 +210,12 @@ export default function Sidebar({
         })}
       </div>
 
-      {/* Room actions */}
-      <div style={{ padding: '0.5rem', display: 'flex', gap: '0.25rem' }}>
-        <button
-          onClick={onCreateRoom}
-          style={{
-            flex: 1,
-            padding: '0.4rem',
-            background: '#2563eb',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            cursor: 'pointer',
-            fontSize: '0.8rem',
-          }}
-        >
-          + Room
-        </button>
+      {/* Invite action */}
+      <div style={{ padding: '0.5rem' }}>
         <button
           onClick={onInvite}
           style={{
-            flex: 1,
+            width: '100%',
             padding: '0.4rem',
             background: '#1e293b',
             color: '#cbd5e1',
@@ -252,40 +225,8 @@ export default function Sidebar({
             fontSize: '0.8rem',
           }}
         >
-          Invite
+          Invite teammate
         </button>
-      </div>
-
-      {/* Room list */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0.25rem' }}>
-        <div style={{ fontSize: '0.7rem', color: '#64748b', margin: '0.25rem 0.5rem' }}>
-          ROOMS
-        </div>
-        {rooms.length === 0 && (
-          <div style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', textAlign: 'center' }}>
-            No rooms yet
-          </div>
-        )}
-        {rooms.map((room) => (
-          <div
-            key={room.room_id}
-            data-testid={`sidebar-room-${room.name}`}
-            onClick={() => onSelectRoom(room)}
-            style={{
-              padding: '0.55rem 0.7rem',
-              borderRadius: 6,
-              cursor: 'pointer',
-              background: room.room_id === selectedRoomId ? 'rgba(59,130,246,0.15)' : 'transparent',
-              color: room.room_id === selectedRoomId ? '#93c5fd' : '#cbd5e1',
-              marginBottom: 2,
-            }}
-          >
-            <div style={{ fontSize: '0.88rem' }}># {room.name}</div>
-            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-              {room.member_count} member{room.member_count !== 1 ? 's' : ''}
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
