@@ -18,7 +18,7 @@ import { APP_DISPLAY_NAME, APP_DESCRIPTION, APP_ROUTE, THEME } from '../../confi
 const FEATURES = [
   { icon: '🏋️', title: 'Log every session', body: 'Record your activity, duration, and notes so the whole club can see you putting in the work.' },
   { icon: '📣', title: 'Cheer each other on', body: "React to a friend's workout with a cheer — instant motivation that syncs to everyone in seconds." },
-  { icon: '🎯', title: 'Hit weekly goals together - edited', body: 'The club creator sets a shared weekly target; a live progress bar keeps the whole group accountable.' },
+  { icon: '🎯', title: 'Hit weekly goals together - XXXX', body: 'The club creator sets a shared weekly target; a live progress bar keeps the whole group accountable.' },
 ];
 
 export default function LandingPage() {
