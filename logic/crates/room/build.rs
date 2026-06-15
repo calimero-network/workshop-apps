@@ -28,7 +28,7 @@ fn main() {
 
     let res_dir = Path::new("res");
     if !res_dir.exists() {
-        fs::create_dir_all(res_dir).expect("Failed to create res directory");
+        fs::create_dir_all(res_dir).expect("Failed to create res directory- edited tested");
     }
 
     let abi_path = res_dir.join("abi.json");
