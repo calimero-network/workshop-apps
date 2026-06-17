@@ -4,19 +4,19 @@ App: trip-tracker
 Summary: Live group expense ledger, location sharing, and shared photo feed for group travel
 
 ## Backend (logic/src/lib.rs)
-- [x] Define entity: [trip] Trip (id:LwwRegister<String>, name:LwwRegister<String>, status:LwwRegister<String>, created_at:LwwRegister<u64>)
-- [x] Define entity: [trip] Location (id:String, author:String, description:String, posted_at:u64)
-- [x] Define entity: [trip] Expense (id:String, payer:String, description:String, amount_cents:u64, participants:Vec<String>, logged_at:u64)
-- [x] Define entity: [trip] Photo (id:String, author:String, url:String, uploaded_at:u64)
-- [x] Implement mutate: [trip] create_trip(name: String) → app::Result<String>
-- [x] Implement mutate: [trip] post_location(description: String) → app::Result<String>
-- [x] Implement mutate: [trip] log_expense(description: String, amount_cents: u64, participants: Vec<String>) → app::Result<String>
-- [x] Implement mutate: [trip] upload_photo(url: String) → app::Result<String>
-- [x] Implement view: [trip] get_locations() → app::Result<Vec<Location>>
-- [x] Implement view: [trip] get_expenses() → app::Result<Vec<Expense>>
-- [x] Implement view: [trip] get_photos() → app::Result<Vec<Photo>>
-- [x] Implement view: [trip] get_settlement() → app::Result<SettlementSummary>
-- [x] Implement mutate: [trip] finish_trip() → app::Result<()>
+- [ ] Define entity: [trip] Trip (id:LwwRegister<String>, name:LwwRegister<String>, status:LwwRegister<String>, created_at:LwwRegister<u64>)
+- [ ] Define entity: [trip] Location (id:String, author:String, description:String, posted_at:u64)
+- [ ] Define entity: [trip] Expense (id:String, payer:String, description:String, amount_cents:u64, participants:Vec<String>, logged_at:u64)
+- [ ] Define entity: [trip] Photo (id:String, author:String, url:String, uploaded_at:u64)
+- [ ] Implement mutate: [trip] create_trip(name: String) → app::Result<String>
+- [ ] Implement mutate: [trip] post_location(description: String) → app::Result<String>
+- [ ] Implement mutate: [trip] log_expense(description: String, amount_cents: u64, participants: Vec<String>) → app::Result<String>
+- [ ] Implement mutate: [trip] upload_photo(url: String) → app::Result<String>
+- [ ] Implement view: [trip] get_locations() → app::Result<Vec<Location>>
+- [ ] Implement view: [trip] get_expenses() → app::Result<Vec<Expense>>
+- [ ] Implement view: [trip] get_photos() → app::Result<Vec<Photo>>
+- [ ] Implement view: [trip] get_settlement() → app::Result<SettlementSummary>
+- [ ] Implement mutate: [trip] finish_trip() → app::Result<()>
 
 ## Frontend (app/)
 - [ ] Screen: FeedView — Timeline of locations + photos + expense log, newest first
