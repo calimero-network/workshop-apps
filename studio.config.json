@@ -1,7 +1,7 @@
 {
   "appName": "habit-streak-board",
-  "appVersion": "0.2.0",
-  "package": "com.calimero.habit-streak-board",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.user123.habit-streak-board",
   "metadata": {
     "name": "habit-streak-board",
     "description": "Track daily habits together with friends, build streaks, and cheer each other on",
