@@ -16,9 +16,9 @@ Summary: Track daily habits together with friends, build streaks, and cheer each
 - [x] Implement view: [streak_board] get_leaderboard() → app::Result<Vec<Habit>>
 
 ## Frontend (app/)
-- [ ] Screen: BoardPage — Grid of all members' habits with streak counts, check-in buttons for your own habits, and cheer buttons for friends' habits
-- [ ] Screen: LeaderboardPage — Ranked list of longest active streaks across all members
-- [ ] Apply designTheme tokens
+- [x] Screen: BoardPage — Grid of all members' habits with streak counts, check-in buttons for your own habits, and cheer buttons for friends' habits
+- [x] Screen: LeaderboardPage — Ranked list of longest active streaks across all members
+- [x] Apply designTheme tokens
 
 ## Verification
 - [x] cargo build --target wasm32-unknown-unknown succeeds
