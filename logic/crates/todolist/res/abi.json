@@ -1,7 +1,24 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
+    "Event_TaskAssigned": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "assignee",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TaskCompleted": {
       "kind": "record",
       "fields": [
         {
@@ -12,24 +29,7 @@
         }
       ]
     },
-    "Event_RoomCreated": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "Event_RoomDeleted": {
+    "Event_TaskCreated": {
       "kind": "record",
       "fields": [
         {
@@ -40,185 +40,95 @@
         }
       ]
     },
-    "LobbyState": {
+    "Event_TaskDeleted": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
-          "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
-            }
-          }
-        },
-        {
-          "name": "rooms",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "u64"
-              }
-            },
-            "crdt_type": "authored_map"
-          }
-        },
-        {
-          "name": "names",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "string"
-              }
-            },
-            "crdt_type": "authored_map"
-          }
-        }
-      ]
-    },
-    "NameEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         }
       ]
     },
-    "PresenceEntry": {
+    "Event_TaskEdited": {
       "kind": "record",
       "fields": [
         {
-          "name": "member",
+          "name": "id",
           "type": {
             "kind": "string"
-          }
-        },
-        {
-          "name": "last_seen_ms",
-          "type": {
-            "kind": "u64"
           }
         }
       ]
     },
-    "RoomActivity": {
+    "Event_TaskIncompleted": {
       "kind": "record",
       "fields": [
         {
-          "name": "room_id",
+          "name": "id",
           "type": {
             "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
           }
         }
       ]
     },
-    "RoomSummary": {
+    "Task": {
       "kind": "record",
       "fields": [
         {
-          "name": "room_id",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "title",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "created_by",
+          "name": "author",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "context_id",
+          "name": "assigned_to",
           "type": {
             "kind": "string"
           },
           "nullable": true
         },
         {
-          "name": "member_count",
+          "name": "completed",
           "type": {
-            "kind": "u64"
+            "kind": "bool"
           }
         },
         {
-          "name": "created_ms",
+          "name": "created_at",
           "type": {
             "kind": "u64"
+          }
+        }
+      ]
+    },
+    "TodoListState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "tasks",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Task"
+            },
+            "crdt_type": "authored_map"
           }
         }
       ]
@@ -233,66 +143,34 @@
       }
     },
     {
-      "name": "register_room",
+      "name": "create_task",
       "params": [
         {
-          "name": "room_id",
+          "name": "title",
           "type": {
             "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
           }
         }
       ],
       "returns": {
-        "$ref": "RoomSummary"
+        "kind": "string"
       }
     },
     {
-      "name": "get_rooms",
+      "name": "list_tasks",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "RoomSummary"
+          "$ref": "Task"
         }
       }
     },
     {
-      "name": "get_room",
+      "name": "mark_complete",
       "params": [
         {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
+          "name": "task_id",
           "type": {
             "kind": "string"
           }
@@ -303,69 +181,10 @@
       }
     },
     {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
+      "name": "mark_incomplete",
       "params": [
         {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
-      "params": [
-        {
-          "name": "name",
+          "name": "task_id",
           "type": {
             "kind": "string"
           }
@@ -376,39 +195,98 @@
       }
     },
     {
-      "name": "list_names",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "NameEntry"
+      "name": "edit_task",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_title",
+          "type": {
+            "kind": "string"
+          }
         }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "delete_task",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "assign_task",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "assignee",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "TaskCreated",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_TaskCreated"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "TaskCompleted",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_TaskCompleted"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "TaskIncompleted",
+      "payload": {
+        "$ref": "Event_TaskIncompleted"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "TaskEdited",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_TaskEdited"
+      }
+    },
+    {
+      "name": "TaskDeleted",
+      "payload": {
+        "$ref": "Event_TaskDeleted"
+      }
+    },
+    {
+      "name": "TaskAssigned",
+      "payload": {
+        "$ref": "Event_TaskAssigned"
       }
     }
   ],
-  "state_root": "LobbyState",
+  "state_root": "TodoListState",
   "state_version": 1
 }

@@ -1,11 +1,15 @@
 #[calimero_sdk::app::event]
 pub enum Event<'a> {
-    /// A new room was created in the lobby.
-    RoomCreated { id: &'a str, name: &'a str },
-    /// A room was deleted from the lobby.
-    RoomDeleted { id: &'a str },
-    /// The room list changed (created, deleted, or updated).
-    RoomListUpdated {},
-    /// A member set or changed their display name.
-    NameChanged { id: &'a str },
+    /// A new task was created.
+    TaskCreated { id: &'a str },
+    /// A task was marked complete.
+    TaskCompleted { id: &'a str },
+    /// A task was marked incomplete.
+    TaskIncompleted { id: &'a str },
+    /// A task's title was edited.
+    TaskEdited { id: &'a str },
+    /// A task was deleted.
+    TaskDeleted { id: &'a str },
+    /// A task was assigned to a member.
+    TaskAssigned { id: &'a str, assignee: &'a str },
 }
