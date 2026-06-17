@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useMero } from '@calimero-network/mero-react';
-import { SERVICE_NAME } from '../config';
+import { PRIMARY_SERVICE_NAME } from '../config';
 
 /**
  * Capability bits for the namespace.
@@ -54,11 +54,14 @@ export function useNamespaceBootstrap(
           defaultCapabilities: DEFAULT_CAPABILITIES,
         });
 
-        // 3. Create the lobby (workspace directory) context inside the namespace root group
+        // 3. Create the primary context inside the namespace root group.
+        // PRIMARY_SERVICE_NAME is the first (or only) service declared in
+        // studio.config.json — for single-service specs this avoids the
+        // SERVICE_NAME.directory throw when no role-id is present.
         const ctx = await mero.admin.createContext({
           applicationId,
           groupId: namespaceId,
-          serviceName: SERVICE_NAME.directory,
+          serviceName: PRIMARY_SERVICE_NAME,
           initializationParams: [],
         });
 

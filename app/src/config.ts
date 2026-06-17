@@ -69,6 +69,11 @@ export const SERVICE_NAME = {
   },
 };
 
+/** The primary (or only) service name for single-service specs where no
+ *  role-id is declared in studio.config.json. Use this instead of
+ *  SERVICE_NAME.directory when the spec doesn't split into directory/instance. */
+export const PRIMARY_SERVICE_NAME: string = config.services[0]?.name ?? '';
+
 /** localStorage key for persisting the selected namespace, scoped per-app. */
 export const SELECTED_NAMESPACE_KEY = `${APP_NAME}:selectedNamespaceId`;
 

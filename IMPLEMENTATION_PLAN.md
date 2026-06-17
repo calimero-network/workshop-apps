@@ -19,10 +19,10 @@ Summary: Live group expense ledger, location sharing, and shared photo feed for 
 - [x] Implement mutate: [trip] finish_trip() → app::Result<()>
 
 ## Frontend (app/)
-- [ ] Screen: FeedView — Timeline of locations + photos + expense log, newest first
-- [ ] Screen: LedgerView — Cost breakdown per person + settlement summary
-- [ ] Screen: TripSettingsView — Trip name, member list, finish/archive button
-- [ ] Apply designTheme tokens
+- [x] Screen: FeedView — Timeline of locations + photos + expense log, newest first
+- [x] Screen: LedgerView — Cost breakdown per person + settlement summary
+- [x] Screen: TripSettingsView — Trip name, member list, finish/archive button
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

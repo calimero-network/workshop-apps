@@ -32,9 +32,9 @@ export default function CreateWorkspaceModal({ onCreate, onClose }: CreateWorksp
         background: '#1a1a1a', borderRadius: 12, padding: '1.5rem',
         width: 380, border: '1px solid #333',
       }} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: '1rem' }}>New Workspace</h3>
+        <h3 style={{ marginBottom: '1rem' }}>✈️ Start New Trip</h3>
         <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '0.5rem' }}>
-          Name your workspace — you can invite teammates and create rooms after it's created.
+          Name your trip — invite travel companions after it's created.
         </p>
         <input
           autoFocus
@@ -42,7 +42,7 @@ export default function CreateWorkspaceModal({ onCreate, onClose }: CreateWorksp
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-          placeholder="Workspace name (e.g. Design Team)"
+          placeholder="Trip name (e.g. Europe 2026)"
           style={{
             width: '100%', padding: '0.5rem 0.75rem', background: '#222',
             border: '1px solid #444', borderRadius: 6, color: '#eee',

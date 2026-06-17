@@ -1,168 +1,113 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMero, useSubscription } from '@calimero-network/mero-react';
-import { useChatLobby } from '../../hooks/useChatLobby';
-import { useLobbyDirectory } from '../../hooks/useLobbyDirectory';
-import { LobbyClient, RoomSummary } from '../../api/lobby/LobbyClient';
-import { SERVICE_NAME } from '../../config';
+import { useMero } from '@calimero-network/mero-react';
+import { useTripWorkspace } from '../../hooks/useTripWorkspace';
+import { useTripData } from '../../hooks/useTripData';
 import Sidebar from '../../components/Sidebar';
-import RoomView from '../../components/RoomView';
-import CreateRoomModal from '../../components/CreateRoomModal';
+import FeedView from '../../components/FeedView';
+import LedgerView from '../../components/LedgerView';
+import TripSettingsView from '../../components/TripSettingsView';
 import CreateWorkspaceModal from '../../components/CreateWorkspaceModal';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
 
-// Mirror chat_types::generate_id (Rust): "room-{ts_ms}-{8-hex-nonce}"
-function generateRoomId(): string {
-  const ts = Date.now();
-  const nonce = crypto.getRandomValues(new Uint8Array(4));
-  const hex = Array.from(nonce).map((b) => b.toString(16).padStart(2, '0')).join('');
-  return `room-${ts}-${hex}`;
-}
+type TabId = 'feed' | 'ledger' | 'settings';
+
+// Presence/names are not provided by the trip service, so we use a
+// lightweight stub that tracks online members via subscription events.
+// Full presence would require a dedicated lobby/directory service.
+const EMPTY_ONLINE = new Set<string>();
+const EMPTY_NAMES: Record<string, string> = {};
 
 export default function ChatPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, mero } = useMero();
-  const lobby = useChatLobby();
-  const { onlineMembers, memberNames, setName } = useLobbyDirectory(
-    lobby.lobbyContextId,
-    lobby.lobbyExecutorPublicKey,
-  );
+  const { isAuthenticated } = useMero();
+  const workspace = useTripWorkspace();
 
-  const [rooms, setRooms] = useState<RoomSummary[]>([]);
-  const [selectedRoom, setSelectedRoom] = useState<{ id: string; contextId: string | null } | null>(null);
-  const [showCreateRoom, setShowCreateRoom] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabId>('feed');
+  const [tripStatus, setTripStatus] = useState<string | null>(null);
+
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/');
-    }
+    if (!isAuthenticated) navigate('/');
   }, [isAuthenticated, navigate]);
 
-  const fetchRooms = useCallback(async () => {
-    if (!mero || !lobby.lobbyContextId || !lobby.executorPublicKey) return;
-    try {
-      const client = new LobbyClient(mero, lobby.lobbyContextId, lobby.executorPublicKey);
-      const roomList = await client.getRooms();
-      setRooms(roomList);
-    } catch (err) {
-      console.error('Failed to fetch rooms:', err);
-    }
-  }, [mero, lobby.lobbyContextId, lobby.executorPublicKey]);
+  // Per-trip data hook driven by the resolved trip context
+  const trip = useTripData(workspace.tripContextId, workspace.executorPublicKey);
 
+  // Poll members while the page is open (no SSE for namespace membership)
   useEffect(() => {
-    if (lobby.lobbyJoined) {
-      fetchRooms();
-    }
-  }, [lobby.lobbyJoined, fetchRooms]);
+    if (!workspace.namespaceId) return;
+    const id = setInterval(() => { void workspace.refetchMembers(); }, 5_000);
+    return () => clearInterval(id);
+  }, [workspace.namespaceId, workspace.refetchMembers]);
 
-  // React to any lobby state change (local or synced from other nodes).
-  // Also refetch members because some membership changes coincide with lobby
-  // events.
-  useSubscription(
-    lobby.lobbyContextId ? [lobby.lobbyContextId] : [],
-    () => {
-      fetchRooms();
-      lobby.refetchMembers();
-    },
-  );
+  // tripStatus is maintained locally: the backend enforces the freeze,
+  // but we drive the UI flag ourselves since there's no get_trip_status view.
 
-  // Namespace membership has no SSE channel — peers joining via invitation
-  // never trigger a re-render. Poll while the chat page is open so the
-  // member count and CreateRoomModal pre-selection stay current.
-  useEffect(() => {
-    if (!lobby.namespaceId) return;
-    const interval = setInterval(() => { lobby.refetchMembers(); }, 5_000);
-    return () => clearInterval(interval);
-  }, [lobby.namespaceId, lobby.refetchMembers]);
+  const allMemberIdentities = [
+    ...(workspace.selfIdentity ? [workspace.selfIdentity] : []),
+    ...workspace.members.map((m) => m.identity),
+  ];
 
-  const handleCreateRoom = useCallback(async (name: string, selectedMembers: string[]) => {
-    if (!mero || !lobby.lobbyContextId || !lobby.executorPublicKey || !lobby.namespaceId) return;
+  const handleFinishTrip = useCallback(async () => {
+    await trip.finishTrip();
+    setTripStatus('finished');
+  }, [trip]);
 
-    const appId = lobby.selectedLobby?.applicationId;
-    if (!appId) return;
-
-    const client = new LobbyClient(mero, lobby.lobbyContextId, lobby.executorPublicKey);
-
-    // Single atomic lobby write: createContext first, then register_room with
-    // the resulting context_id. Avoids the propagation race where remote peers
-    // would see the room name with context_id == null between two writes.
-    const roomId = generateRoomId();
-
-    try {
-      const initParams = JSON.stringify({
-        room_id: roomId,
-        name,
-        lobby_context_id: lobby.lobbyContextId,
-      });
-      const initBytes = Array.from(new TextEncoder().encode(initParams));
-
-      // Create the per-instance context in the root namespace group.
-      // All namespace members can see and join it via auto_join.
-      const instanceServiceName = SERVICE_NAME.instance;
-      if (!instanceServiceName) {
-        throw new Error('No "instance" service declared in studio.config.json');
-      }
-      const { contextId } = await mero.admin.createContext({
-        applicationId: appId,
-        groupId: lobby.namespaceId,
-        serviceName: instanceServiceName,
-        initializationParams: initBytes,
-      });
-
-      await client.registerRoom({ room_id: roomId, name, context_id: contextId });
-      setShowCreateRoom(false);
-      await fetchRooms();
-    } catch (err) {
-      console.error('Failed to create room:', err);
-    }
-  }, [mero, lobby, fetchRooms]);
-
-  const handleSelectRoom = useCallback(async (room: RoomSummary) => {
-    if (!room.context_id || !mero) {
-      setSelectedRoom({ id: room.room_id, contextId: null });
-      return;
-    }
-
-    // Bound the join attempt so a hang doesn't freeze the UI. If we're
-    // already in the context the call returns quickly; if not, the join
-    // needs to complete before useChatRoom can read state from the context.
-    const joinTimeout = new Promise<void>((resolve) => setTimeout(resolve, 5_000));
-    await Promise.race([
-      mero.admin.joinContext(room.context_id).then(() => {}).catch(() => {}),
-      joinTimeout,
-    ]);
-
-    setSelectedRoom({ id: room.room_id, contextId: room.context_id });
-  }, [mero]);
-
-  // Show Welcome only when there are no workspaces at all. Don't gate on
-  // `!lobbyJoined` — that flips to false on every workspace switch and would
-  // flash the Welcome screen mid-transition. Switching is just a transition
-  // between contexts; keep the main layout mounted.
-  if (lobby.lobbies.length === 0 && !lobby.lobbiesLoading) {
+  // Welcome screen — only when no workspaces exist at all
+  if (workspace.workspaces.length === 0 && !workspace.workspacesLoading) {
     return (
       <div className="app-bg">
         <div className="page-shell" style={{ justifyContent: 'center', alignItems: 'center', gap: '1rem' }}>
-          <h2>No workspaces yet</h2>
-          <p style={{ color: '#888' }}>Create a new workspace or join one with an invitation.</p>
+          <div style={{ fontSize: '3rem' }}>✈️</div>
+          <h2 style={{ color: '#e2e8f0', fontWeight: 700 }}>No trips yet</h2>
+          <p style={{ color: '#64748b', maxWidth: 360, textAlign: 'center', lineHeight: 1.6 }}>
+            Start a new trip to begin tracking expenses, sharing locations, and posting photos with your group.
+          </p>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button onClick={() => setShowCreateWorkspace(true)}>Create Workspace</button>
-            <button onClick={() => setShowJoin(true)}>Join with Invitation</button>
+            <button
+              onClick={() => setShowCreateWorkspace(true)}
+              style={{
+                padding: '0.6rem 1.2rem',
+                background: 'var(--color-primary)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                cursor: 'pointer',
+                fontWeight: 600,
+              }}
+            >
+              Start a Trip
+            </button>
+            <button
+              onClick={() => setShowJoin(true)}
+              style={{
+                padding: '0.6rem 1.2rem',
+                background: '#1e293b',
+                color: '#94a3b8',
+                border: '1px solid #334155',
+                borderRadius: 8,
+                cursor: 'pointer',
+              }}
+            >
+              Join with Invitation
+            </button>
           </div>
+
           {showCreateWorkspace && (
             <CreateWorkspaceModal
-              onCreate={async (name) => { await lobby.createLobby(name); }}
+              onCreate={async (name) => { await workspace.createWorkspace(name); }}
               onClose={() => setShowCreateWorkspace(false)}
             />
           )}
           {showJoin && (
             <JoinModal
               onJoin={async (json) => {
-                await lobby.joinLobby(json);
+                await workspace.joinWorkspace(json);
                 setShowJoin(false);
               }}
               onClose={() => setShowJoin(false)}
@@ -177,73 +122,128 @@ export default function ChatPage() {
     <div className="app-bg">
       <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
         <Sidebar
-          workspaces={lobby.lobbies}
-          selectedNamespaceId={lobby.namespaceId}
-          onSelectWorkspace={lobby.selectLobby}
+          workspaces={workspace.workspaces}
+          selectedNamespaceId={workspace.namespaceId}
+          onSelectWorkspace={workspace.selectWorkspace}
           onCreateWorkspace={() => setShowCreateWorkspace(true)}
-          workspaceAlias={lobby.selectedLobby?.alias}
-          members={lobby.members}
-          selfIdentity={lobby.selfIdentity}
-          onlineMembers={onlineMembers}
-          memberNames={memberNames}
-          onSetName={setName}
-          rooms={rooms}
-          selectedRoomId={selectedRoom?.id ?? null}
-          onSelectRoom={handleSelectRoom}
-          onCreateRoom={() => setShowCreateRoom(true)}
+          members={workspace.members}
+          selfIdentity={workspace.selfIdentity}
+          onlineMembers={EMPTY_ONLINE}
+          memberNames={EMPTY_NAMES}
+          onSetName={async (_name) => { /* presence/names not in trip service */ }}
           onInvite={() => setShowInvite(true)}
         />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {selectedRoom?.contextId ? (
-            <RoomView
-              contextId={selectedRoom.contextId}
-              executorPublicKey={lobby.executorPublicKey}
-              onRoomDeleted={() => {
-                setSelectedRoom(null);
-                fetchRooms();
-              }}
-            />
-          ) : (
+
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Tab bar */}
+          <div style={{
+            display: 'flex',
+            gap: 0,
+            borderBottom: '1px solid #1e293b',
+            background: '#0a0f1a',
+            padding: '0 1rem',
+          }}>
+            {(['feed', 'ledger', 'settings'] as TabId[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: '0.7rem 1rem',
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: `2px solid ${activeTab === tab ? 'var(--color-primary)' : 'transparent'}`,
+                  color: activeTab === tab ? 'var(--color-primary)' : '#64748b',
+                  cursor: 'pointer',
+                  fontSize: '0.84rem',
+                  fontWeight: activeTab === tab ? 600 : 400,
+                  textTransform: 'capitalize',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {tab === 'feed' ? '🗺️ Feed' : tab === 'ledger' ? '💰 Ledger' : '⚙️ Settings'}
+              </button>
+            ))}
+          </div>
+
+          {/* No trip context yet */}
+          {!workspace.tripContextId && (
             <div style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#666',
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#64748b', flexDirection: 'column', gap: '0.5rem',
             }}>
-              Select a room or create a new one
+              <div style={{ fontSize: '2rem' }}>⏳</div>
+              <div>Loading trip data…</div>
+            </div>
+          )}
+
+          {/* Tab content */}
+          {workspace.tripContextId && activeTab === 'feed' && (
+            <FeedView
+              locations={trip.locations}
+              expenses={trip.expenses}
+              photos={trip.photos}
+              tripStatus={tripStatus}
+              memberNames={EMPTY_NAMES}
+              selfIdentity={workspace.selfIdentity}
+              loading={trip.loading}
+              onPostLocation={trip.postLocation}
+              onLogExpense={trip.logExpense}
+              onUploadPhoto={trip.uploadPhoto}
+              allMemberIdentities={allMemberIdentities}
+            />
+          )}
+
+          {workspace.tripContextId && activeTab === 'ledger' && (
+            <LedgerView
+              expenses={trip.expenses}
+              settlement={trip.settlement}
+              memberNames={EMPTY_NAMES}
+              loading={trip.loading}
+            />
+          )}
+
+          {workspace.tripContextId && activeTab === 'settings' && (
+            <TripSettingsView
+              tripAlias={workspace.selectedWorkspace?.alias}
+              tripStatus={tripStatus}
+              members={workspace.members}
+              selfIdentity={workspace.selfIdentity}
+              onlineMembers={EMPTY_ONLINE}
+              memberNames={EMPTY_NAMES}
+              onFinishTrip={handleFinishTrip}
+              onInvite={() => setShowInvite(true)}
+            />
+          )}
+
+          {/* Error banner */}
+          {trip.error && (
+            <div style={{
+              position: 'fixed', bottom: '1rem', left: '50%', transform: 'translateX(-50%)',
+              background: '#7f1d1d', color: '#fca5a5', padding: '0.5rem 1rem',
+              borderRadius: 6, fontSize: '0.82rem', zIndex: 200,
+            }}>
+              {trip.error.message}
             </div>
           )}
         </div>
       </div>
 
-      {showCreateRoom && (
-        <CreateRoomModal
-          members={lobby.members.map((m) => ({
-            identity: m.identity,
-            alias: m.alias,
-            isSelf: m.identity === lobby.selfIdentity,
-          }))}
-          onSubmit={handleCreateRoom}
-          onClose={() => setShowCreateRoom(false)}
-        />
-      )}
       {showInvite && (
         <InviteModal
-          onInvite={lobby.inviteUser}
+          onInvite={workspace.inviteUser}
           onClose={() => setShowInvite(false)}
         />
       )}
       {showCreateWorkspace && (
         <CreateWorkspaceModal
-          onCreate={async (name) => { await lobby.createLobby(name); }}
+          onCreate={async (name) => { await workspace.createWorkspace(name); setShowCreateWorkspace(false); }}
           onClose={() => setShowCreateWorkspace(false)}
         />
       )}
       {showJoin && (
         <JoinModal
           onJoin={async (json) => {
-            await lobby.joinLobby(json);
+            await workspace.joinWorkspace(json);
             setShowJoin(false);
           }}
           onClose={() => setShowJoin(false)}
