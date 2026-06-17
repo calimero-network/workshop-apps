@@ -1,0 +1,22 @@
+{
+  "appName": "habit-streak-board",
+  "appVersion": "0.2.0",
+  "package": "com.calimero.habit-streak-board",
+  "metadata": {
+    "name": "habit-streak-board",
+    "description": "Track daily habits together with friends, build streaks, and cheer each other on",
+    "author": "Calimero",
+    "route": "/habit-streak-board"
+  },
+  "theme": {
+    "primaryColor": "#F59E0B",
+    "accentColor": "#8B5CF6",
+    "style": "modern-playful"
+  },
+  "services": [
+    {
+      "name": "streak-board",
+      "crate": "habit-streak-board-streak-board"
+    }
+  ]
+}
