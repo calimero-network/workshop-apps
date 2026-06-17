@@ -7,8 +7,9 @@
 import raw from '../../studio.config.json';
 
 interface ServiceEntry {
-  /** Stable role: e.g. "directory" (workspace-level) or "instance" (per-context). */
-  id: string;
+  /** Stable role: e.g. "directory" (workspace-level) or "instance" (per-context).
+   *  Single-service apps may omit this field; the first service is treated as "directory". */
+  id?: string;
   /** Wire name passed to `mero.admin.createContext({ serviceName })` and the
    *  bundle manifest service entry. Must match the Cargo crate's domain
    *  identity (typically the directory name under `logic/crates/`). */
@@ -49,14 +50,17 @@ export const THEME = config.theme;
 const byId = (id: string) => config.services.find((s) => s.id === id);
 
 /** Maps service-role id → wire name (`serviceName` for createContext etc.).
- *  Throws at startup if a referenced role isn't declared, so a misconfigured
- *  studio.config.json fails loudly instead of silently producing `undefined`. */
+ *  Falls back to the first service for the "directory" role when no id-tagged
+ *  entry exists (single-service apps omit the id field). Throws for unknown
+ *  roles so misconfigured configs fail loudly rather than silently. */
 function requireService(id: string): string {
   const svc = byId(id);
-  if (!svc) {
-    throw new Error(`studio.config.json: services[] missing entry for id="${id}"`);
+  if (svc) return svc.name;
+  // Single-service fallback: treat the only declared service as the directory.
+  if (id === 'directory' && config.services.length >= 1) {
+    return config.services[0].name;
   }
-  return svc.name;
+  throw new Error(`studio.config.json: services[] missing entry for id="${id}"`);
 }
 
 export const SERVICE_NAME = {

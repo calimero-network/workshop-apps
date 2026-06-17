@@ -14,8 +14,8 @@ Summary: Shared task list where team members add, assign, and track progress tog
 - [x] Implement mutate: [todolist] assign_task(task_id: String, assignee: String) → app::Result<()>
 
 ## Frontend (app/)
-- [ ] Screen: TodoListView — Open tasks + completed tasks sections + add-task composer + assign modal
-- [ ] Apply designTheme tokens
+- [x] Screen: TodoListView — Open tasks + completed tasks sections + add-task composer + assign modal
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds
