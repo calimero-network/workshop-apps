@@ -1,0 +1,22 @@
+{
+  "appName": "two-person-chat",
+  "appVersion": "0.2.0",
+  "package": "com.calimero.two-person-chat",
+  "metadata": {
+    "name": "two-person-chat",
+    "description": "Real-time one-on-one messaging between two users",
+    "author": "Calimero",
+    "route": "/two-person-chat"
+  },
+  "theme": {
+    "primaryColor": "#3B82F6",
+    "accentColor": "#10B981",
+    "style": "clean-minimal"
+  },
+  "services": [
+    {
+      "name": "chat",
+      "crate": "two-person-chat-chat"
+    }
+  ]
+}
