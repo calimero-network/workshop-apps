@@ -213,32 +213,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
-name = "chat-lobby"
-version = "0.1.0"
-dependencies = [
- "bs58 0.4.0",
- "calimero-sdk",
- "calimero-storage",
- "calimero-storage-macros",
- "calimero-wasm-abi",
- "chat-types",
- "serde_json",
-]
-
-[[package]]
-name = "chat-room"
-version = "0.1.0"
-dependencies = [
- "bs58 0.4.0",
- "calimero-sdk",
- "calimero-storage",
- "calimero-storage-macros",
- "calimero-wasm-abi",
- "chat-types",
- "serde_json",
-]
-
-[[package]]
 name = "chat-types"
 version = "0.1.0"
 dependencies = [
@@ -447,6 +421,19 @@ dependencies = [
  "cfg-if",
  "libc",
  "wasi",
+]
+
+[[package]]
+name = "habit-streak-board-streak-board"
+version = "0.1.0"
+dependencies = [
+ "bs58 0.4.0",
+ "calimero-sdk",
+ "calimero-storage",
+ "calimero-storage-macros",
+ "calimero-wasm-abi",
+ "chat-types",
+ "serde_json",
 ]
 
 [[package]]

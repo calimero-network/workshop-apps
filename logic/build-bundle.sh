@@ -73,7 +73,7 @@ else
   LATEST=$(curl -fsS -m 15 "$REGISTRY_URL/api/v2/bundles?package=$APP_PACKAGE" 2>/dev/null \
     | jq -r '[ .[].appVersion // empty
                | split(".") | map(gsub("[^0-9]";"") | if . == "" then 0 else tonumber end) ]
-             | sort | last | map(tostring) | join(".")' 2>/dev/null)
+             | sort | last | map(tostring) | join(".")' 2>/dev/null) || LATEST=""
   if [[ -n "$LATEST" && "$LATEST" != "null" ]]; then
     IFS='.' read -r MA MI PA <<< "$LATEST"
     APP_VERSION="${MA:-0}.${MI:-0}.$(( ${PA:-0} + 1 ))"

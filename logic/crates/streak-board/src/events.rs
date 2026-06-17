@@ -1,11 +1,9 @@
 #[calimero_sdk::app::event]
 pub enum Event<'a> {
-    /// A new room was created in the lobby.
-    RoomCreated { id: &'a str, name: &'a str },
-    /// A room was deleted from the lobby.
-    RoomDeleted { id: &'a str },
-    /// The room list changed (created, deleted, or updated).
-    RoomListUpdated {},
-    /// A member set or changed their display name.
-    NameChanged { id: &'a str },
+    /// A new habit was created by a member.
+    HabitCreated { id: &'a str },
+    /// A member checked in on a habit, incrementing their streak.
+    CheckedIn { id: &'a str, habit_id: &'a str },
+    /// A member sent a cheer to another member's habit streak.
+    CheerSent { id: &'a str, habit_id: &'a str },
 }

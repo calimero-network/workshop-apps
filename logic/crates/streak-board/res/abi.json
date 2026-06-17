@@ -1,7 +1,111 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
+    "CheckIn": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "habit_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "date",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "timestamp",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Cheer": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "habit_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "message",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Event_CheckedIn": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "habit_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_CheerSent": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "habit_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_HabitCreated": {
       "kind": "record",
       "fields": [
         {
@@ -12,7 +116,7 @@
         }
       ]
     },
-    "Event_RoomCreated": {
+    "Habit": {
       "kind": "record",
       "fields": [
         {
@@ -22,66 +126,48 @@
           }
         },
         {
-          "name": "name",
+          "name": "author",
           "type": {
             "kind": "string"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "current_streak",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "longest_streak",
+          "type": {
+            "kind": "u32"
+          }
+        },
+        {
+          "name": "last_check_in_date",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
           }
         }
       ]
     },
-    "Event_RoomDeleted": {
+    "StreakBoardState": {
       "kind": "record",
       "fields": [
         {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "LobbyState": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "created_ms",
-          "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
-            }
-          }
-        },
-        {
-          "name": "rooms",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
+          "name": "habits",
           "type": {
             "kind": "map",
             "key": {
@@ -92,14 +178,14 @@
               "fields": [],
               "crdt_type": "lww_register",
               "inner_type": {
-                "kind": "u64"
+                "$ref": "Habit"
               }
             },
             "crdt_type": "authored_map"
           }
         },
         {
-          "name": "names",
+          "name": "check_ins",
           "type": {
             "kind": "map",
             "key": {
@@ -110,115 +196,28 @@
               "fields": [],
               "crdt_type": "lww_register",
               "inner_type": {
-                "kind": "string"
+                "$ref": "CheckIn"
               }
             },
             "crdt_type": "authored_map"
           }
-        }
-      ]
-    },
-    "NameEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
         },
         {
-          "name": "name",
+          "name": "cheers",
           "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "PresenceEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_seen_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomActivity": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomSummary": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "created_by",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          },
-          "nullable": true
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "created_ms",
-          "type": {
-            "kind": "u64"
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "kind": "record",
+              "fields": [],
+              "crdt_type": "lww_register",
+              "inner_type": {
+                "$ref": "Cheer"
+              }
+            },
+            "crdt_type": "authored_map"
           }
         }
       ]
@@ -233,182 +232,134 @@
       }
     },
     {
-      "name": "register_room",
+      "name": "create_habit",
       "params": [
         {
-          "name": "room_id",
+          "name": "title",
           "type": {
             "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
           }
         }
       ],
       "returns": {
-        "$ref": "RoomSummary"
+        "kind": "string"
       }
     },
     {
-      "name": "get_rooms",
+      "name": "list_habits",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "RoomSummary"
+          "$ref": "Habit"
         }
       }
     },
     {
-      "name": "get_room",
+      "name": "check_in",
       "params": [
         {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
-      "params": [
-        {
-          "name": "room_id",
+          "name": "habit_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
+          "name": "date",
           "type": {
             "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
           }
         }
       ],
       "returns": {
-        "kind": "unit"
+        "kind": "string"
       }
     },
     {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
+      "name": "get_check_ins",
       "params": [
         {
-          "name": "name",
+          "name": "habit_id",
           "type": {
             "kind": "string"
           }
         }
       ],
       "returns": {
-        "kind": "unit"
+        "kind": "list",
+        "items": {
+          "$ref": "CheckIn"
+        }
       }
     },
     {
-      "name": "list_names",
+      "name": "send_cheer",
+      "params": [
+        {
+          "name": "habit_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "message",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "get_cheers",
+      "params": [
+        {
+          "name": "habit_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Cheer"
+        }
+      }
+    },
+    {
+      "name": "get_leaderboard",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "Habit"
         }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "HabitCreated",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_HabitCreated"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "CheckedIn",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_CheckedIn"
       }
     },
     {
-      "name": "RoomListUpdated"
-    },
-    {
-      "name": "NameChanged",
+      "name": "CheerSent",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_CheerSent"
       }
     }
   ],
-  "state_root": "LobbyState",
+  "state_root": "StreakBoardState",
   "state_version": 1
 }
