@@ -53,10 +53,13 @@ const byId = (id: string) => config.services.find((s) => s.id === id);
  *  studio.config.json fails loudly instead of silently producing `undefined`. */
 function requireService(id: string): string {
   const svc = byId(id);
-  if (!svc) {
-    throw new Error(`studio.config.json: services[] missing entry for id="${id}"`);
+  if (svc) return svc.name;
+  // Fallback for single-service apps where services[] entries lack an `id`
+  // field: treat the first service as the 'directory' (workspace) service.
+  if (id === 'directory' && config.services.length > 0) {
+    return config.services[0].name;
   }
-  return svc.name;
+  throw new Error(`studio.config.json: services[] missing entry for id="${id}"`);
 }
 
 export const SERVICE_NAME = {

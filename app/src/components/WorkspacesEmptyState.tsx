@@ -56,11 +56,11 @@ export default function WorkspacesEmptyState({ onCreateWorkspace, onJoin }: Prop
               <path d="M8 14h5" />
             </svg>
           </IconBadge>
-          <h1>No workspaces yet</h1>
-          <p>Create your first workspace to start collaborating, or join an existing one with an invitation link.</p>
+          <h1>No habit boards yet</h1>
+          <p>Create your first habit board and invite friends, or join an existing board with an invitation link.</p>
 
           <Actions>
-            <PrimaryBtn onClick={onCreateWorkspace}>Create workspace</PrimaryBtn>
+            <PrimaryBtn onClick={onCreateWorkspace}>Create a Board</PrimaryBtn>
             <SecondaryBtn onClick={onJoin}>Join with invitation</SecondaryBtn>
           </Actions>
 

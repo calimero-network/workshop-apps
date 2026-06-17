@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: "\uD83D\uDD25", title: "Shared streak tracking", body: "Every check-in updates instantly for all board members \u2014 streaks grow together, in real time, with no central server." },
+  { icon: "\uD83C\uDFC6", title: "Live leaderboard", body: "A ranked leaderboard of the longest active streaks refreshes automatically as friends check in, keeping the competition fair and motivating." },
+  { icon: "\uD83D\uDCE3", title: "Cheer each other on", body: "Send a cheer to any streak \u2014 friends see it instantly. Pure peer-to-peer encouragement, stored forever on your own node." },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ["What is a node?", "A node (merod) is the runtime that stores your habit data and runs the board logic. You run your own \u2014 locally or in the cloud \u2014 so your streaks and check-ins never leave your control."],
+  ["Where are my streaks stored?", "On your own node, as conflict-free CRDT state that merges across all board members automatically. No central server holds your data \u2014 not even Calimero."],
+  ["How do friends join my board?", "Connect your node, create a habit board, then share the invitation link. Friends who connect their nodes join in seconds and can start tracking habits immediately."],
+  ["Can I lose my streak?", "Streak state is on your node. As long as your node is online and you check in before midnight each day, your streak is safe. Re-syncing after a brief outage preserves everything."],
+  ["Do I need an account or wallet?", "No. You authenticate with a node identity \u2014 no email, no wallet, no gas. Just your node and the people you invite to your board."],
+  ["What happens if a friend goes offline?", "Their last known state stays visible. When they come back online, both nodes sync instantly and everyone sees the updated streaks."],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -106,34 +106,51 @@ const STEPS = [
   { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: habit streaks ticking up across peers ──────────── */
+type HabitRow = { id: number; who: string; habit: string; streak: number; cheered?: boolean };
+const HABIT_SCRIPT: HabitRow[] = [
+  { id: 1, who: "A", habit: "Morning run", streak: 12 },
+  { id: 2, who: "M", habit: "Read 20 pages", streak: 7 },
+  { id: 3, who: "J", habit: "Meditate", streak: 3 },
 ];
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [rows, setRows] = useState<HabitRow[]>([]);
   const [pulse, setPulse] = useState(false);
+  const [checkedIn, setCheckedIn] = useState<number | null>(null);
+  const [cheered, setCheered] = useState<number | null>(null);
 
   useEffect(() => {
     const timers: number[] = [];
     const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
     const run = () => {
-      setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
-          setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
-        });
+      setRows([]);
+      setCheckedIn(null);
+      setCheered(null);
+      // Step 1: show all habits
+      at(400, () => setRows(HABIT_SCRIPT));
+      // Step 2: A checks in (streak 12 → 13)
+      at(1600, () => {
+        setCheckedIn(1);
+        setPulse(true);
+        setRows((r) => r.map((h) => h.id === 1 ? { ...h, streak: 13 } : h));
+        at(1900, () => { setPulse(false); setCheckedIn(null); });
+      });
+      // Step 3: M checks in (streak 7 → 8)
+      at(3200, () => {
+        setCheckedIn(2);
+        setPulse(true);
+        setRows((r) => r.map((h) => h.id === 2 ? { ...h, streak: 8 } : h));
+        at(3500, () => { setPulse(false); setCheckedIn(null); });
+      });
+      // Step 4: someone cheers A
+      at(4800, () => {
+        setCheered(1);
+        setRows((r) => r.map((h) => h.id === 1 ? { ...h, cheered: true } : h));
       });
     };
     run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
+    const loop = window.setInterval(run, 7200);
     return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
   }, []);
 
@@ -151,10 +168,16 @@ function LivePreview() {
           <i>A</i><i>M</i><i>J</i><b>+ you</b>
         </div>
         <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+          {rows.map((h) => (
+            <div key={h.id} className={`row habit-row ${checkedIn === h.id ? 'checking' : ''}`}>
+              <span className="av">{h.who}</span>
+              <div className="habit-card">
+                <span className="habit-title">{h.habit}</span>
+                <span className={`streak-count ${checkedIn === h.id ? 'bump' : ''}`}>
+                  🔥 {h.streak}
+                </span>
+                {h.cheered && <span className="cheer-badge">🎉 cheered</span>}
+              </div>
             </div>
           ))}
         </div>
@@ -293,8 +316,9 @@ export default function LandingPage() {
       {/* ── final CTA ──────────────────────────────────────────── */}
       <CtaBand>
         <R v="zoom">
-          <h2>Connect your node to get started.</h2>
-          <p>It takes seconds — your data never leaves your control.</p>
+          <h2>Start building streaks with your friends.</h2>
+          <p>Connect your node, create a board, and invite your crew. Your data never leaves your control.</p>
+
           <div className="btn"><ConnectButton /></div>
         </R>
       </CtaBand>
@@ -342,6 +366,8 @@ const drift = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform
 const travel = keyframes`0%{left:0;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{left:100%;opacity:0;}`;
 const rowIn = keyframes`from{opacity:0;transform:translateY(8px) scale(0.97);}to{opacity:1;transform:none;}`;
 const rowInMe = keyframes`from{opacity:0;transform:translateY(8px) translateX(8px) scale(0.97);}to{opacity:1;transform:none;}`;
+const bump = keyframes`0%{transform:scale(1);}40%{transform:scale(1.25);}100%{transform:scale(1);}`;
+const fadeInBadge = keyframes`from{opacity:0;transform:scale(0.7);}to{opacity:1;transform:scale(1);}`;
 
 /* ════════════════════════ layout ════════════════════════ */
 const Root = styled.div`
@@ -544,9 +570,13 @@ const Preview = styled.div`
   .peers i:first-child { margin-left: 0; }
   .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
   .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
+  .row { display: flex; align-items: center; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .row .av { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, ${C.green}, #cde88a); color: ${C.ink}; font-size: 10px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
+  .habit-card { flex: 1; display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 8px 12px; border-radius: 10px; }
+  .habit-title { font-size: 12px; color: #dfe7db; flex: 1; }
+  .streak-count { font-size: 13px; font-weight: 700; color: #F59E0B; flex-shrink: 0; }
+  .streak-count.bump { animation: ${bump} 0.4s cubic-bezier(0.22,1,0.36,1) both; }
+  .cheer-badge { font-size: 10px; color: ${C.green}; background: rgba(164,255,17,0.15); border: 1px solid rgba(164,255,17,0.3); padding: 2px 7px; border-radius: 999px; flex-shrink: 0; animation: ${fadeInBadge} 0.3s ease both; }
   .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
   .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
 `;

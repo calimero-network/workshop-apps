@@ -46,11 +46,11 @@ export default function CreateWorkspaceModal({ onCreate, onClose }: CreateWorksp
           </svg>
         </IconBadge>
 
-        <h3 id="cw-title">New workspace</h3>
-        <p className="sub">Name your workspace — you can invite teammates and create rooms after it's created.</p>
+        <h3 id="cw-title">Create a Habit Board</h3>
+        <p className="sub">Name your board — you can invite friends and add habits after it's created.</p>
 
         <Field>
-          <label htmlFor="cw-name">Workspace name</label>
+          <label htmlFor="cw-name">Board name</label>
           <input
             id="cw-name"
             autoFocus
@@ -58,7 +58,7 @@ export default function CreateWorkspaceModal({ onCreate, onClose }: CreateWorksp
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-            placeholder="e.g. Design Team"
+            placeholder="e.g. Morning Crew, Book Club..."
             disabled={creating}
           />
         </Field>
@@ -66,7 +66,7 @@ export default function CreateWorkspaceModal({ onCreate, onClose }: CreateWorksp
         <Actions>
           <SecondaryBtn onClick={onClose} disabled={creating}>Cancel</SecondaryBtn>
           <PrimaryBtn onClick={handleCreate} disabled={creating}>
-            {creating ? <Spin /> : 'Create workspace'}
+            {creating ? <Spin /> : 'Create Board'}
           </PrimaryBtn>
         </Actions>
       </Dialog>
