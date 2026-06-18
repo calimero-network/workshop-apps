@@ -1,6 +1,6 @@
 {
   "appName": "task-tracker",
-  "appVersion": "0.1.1",
+  "appVersion": "0.1.2",
   "package": "com.calimero-studio.userf.task-tracker",
   "metadata": {
     "name": "Task Tracker",

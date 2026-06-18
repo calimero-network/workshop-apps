@@ -24,6 +24,53 @@
         }
       ]
     },
+    "BoardState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "settings",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "shared_storage",
+            "inner_type": {
+              "kind": "record",
+              "fields": [],
+              "crdt_type": "lww_register",
+              "inner_type": {
+                "$ref": "BoardSettings"
+              }
+            }
+          }
+        },
+        {
+          "name": "tasks",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Task"
+            },
+            "crdt_type": "unordered_map"
+          }
+        },
+        {
+          "name": "comments",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Comment"
+            },
+            "crdt_type": "authored_map"
+          }
+        }
+      ]
+    },
     "Comment": {
       "kind": "record",
       "fields": [
@@ -447,5 +494,7 @@
         "$ref": "Event_CommentDeleted"
       }
     }
-  ]
+  ],
+  "state_root": "BoardState",
+  "state_version": 1
 }
