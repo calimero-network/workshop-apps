@@ -115,13 +115,14 @@ impl TodosState {
             ..task
         };
 
-        // Insert with an existing key is an upsert for UnorderedMap — no remove needed.
-        // Calling remove first creates a CRDT tombstone that propagates to peers and
-        // can cause the entry to appear deleted on other nodes before the re-insert
-        // arrives, breaking cross-node sync.
+        // The key already exists — use update(), not insert().
+        // insert() on a pre-existing UnorderedMap key "succeeds" locally but the
+        // updated value does not propagate through the CRDT to peers, which is
+        // exactly the sync failure observed in CI (toggle visible on node-1 but
+        // not on node-2 after convergence).
         self.tasks
-            .insert(task_id.clone(), updated)
-            .map_err(|e| AppError::msg(format!("tasks.insert(toggle): {e}")))?;
+            .update(&task_id, updated)
+            .map_err(|e| AppError::msg(format!("tasks.update(toggle): {e}")))?;
 
         app::emit!(Event::TaskToggled { id: &task_id });
         Ok(())
@@ -153,10 +154,10 @@ impl TodosState {
             ..task
         };
 
-        // Insert with an existing key is an upsert for UnorderedMap — no remove needed.
+        // The key already exists — use update(), not insert() (same reason as toggle_task).
         self.tasks
-            .insert(task_id.clone(), updated)
-            .map_err(|e| AppError::msg(format!("tasks.insert(edit): {e}")))?;
+            .update(&task_id, updated)
+            .map_err(|e| AppError::msg(format!("tasks.update(edit): {e}")))?;
 
         app::emit!(Event::TaskEdited { id: &task_id });
         Ok(())
