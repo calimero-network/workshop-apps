@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "logic:build": "bash logic/build-bundle.sh",
+    "logic:build": "bash logic/build-dev.sh",
     "logic:build:release": "bash logic/build-bundle.sh --release",
     "app:dev": "pnpm --filter ./app dev",
     "app:build": "pnpm --filter ./app build",
