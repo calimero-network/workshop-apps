@@ -23,13 +23,126 @@ test.describe(`task creator: edit or delete tasks I added`, () => {
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`a member can only edit or delete tasks they created; attempts on other members' tasks are rejected`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`a member can only edit or delete tasks they created; attempts on other members' tasks are rejected`, async ({ browser }) => {
+    // Multi-actor: task creator (node 0) adds a task; node 1 must NOT see Edit/Delete
+    // buttons for that task (the UI withholds them for non-owners).
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      // Creator (node 0) logs in, ensures workspace.
+      await loginViaHash(pageA, 0);
+      const hasWorkspace = await pageA.getByText('Team Tasks').isVisible();
+      if (!hasWorkspace) {
+        await pageA.getByRole('button', { name: 'Create workspace' }).click();
+        await pageA.getByRole('dialog').getByRole('button', { name: 'Create workspace' }).click();
+        await expect(pageA.getByText('Team Tasks')).toBeVisible({ timeout: 15_000 });
+      }
+
+      // Invite node 1.
+      await pageA.getByRole('button', { name: 'Invite teammate' }).click();
+      await pageA.getByRole('button', { name: 'Generate invite code' }).click();
+      const inviteCode = await pageA.getByRole('dialog').locator('textarea').inputValue({ timeout: 10_000 });
+      await pageA.getByLabel('Close').click();
+
+      // Creator adds a task.
+      const taskText = `Ownership task ${Date.now()}`;
+      await expect(pageA.getByLabel('New task description')).toBeEnabled({ timeout: 10_000 });
+      await pageA.getByLabel('New task description').fill(taskText);
+      await pageA.getByRole('button', { name: '+ Add' }).click();
+      await expect(pageA.getByText(taskText)).toBeVisible({ timeout: 5_000 });
+
+      // Node 0 can see the Edit button after hovering the task row.
+      // Use filter({ visible: true }) to avoid strict-mode violations when multiple
+      // task rows (from prior test runs in the same Playwright session) are present.
+      await pageA.getByText(taskText).hover();
+      await expect(pageA.getByLabel('Edit').filter({ visible: true })).toBeVisible({ timeout: 3_000 });
+
+      // Node 1 (non-owner) joins the workspace.
+      await loginViaHash(pageB, 1);
+      const nodeBHasWorkspace = await pageB.getByText('Team Tasks').isVisible();
+      if (!nodeBHasWorkspace) {
+        await pageB.getByRole('button', { name: 'Join with invitation' }).click();
+        await pageB.getByLabel('Invite code').fill(inviteCode);
+        await pageB.getByRole('button', { name: 'Join workspace' }).click();
+        await expect(pageB.getByText('Team Tasks')).toBeVisible({ timeout: 10_000 });
+      }
+
+      // Node 1 sees the task but the Edit/Delete buttons do NOT exist in the DOM.
+      await expect(pageB.getByText(taskText)).toBeVisible({ timeout: 5_000 });
+      await pageB.getByText(taskText).hover();
+      // [Verifier] NOTE: rejection = buttons absent from DOM for non-owners (isOwner guard in TaskRow).
+      await expect(pageB.getByLabel('Edit')).toHaveCount(0);
+      await expect(pageB.getByLabel('Delete')).toHaveCount(0);
+    } finally {
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 
-  test.skip(`after a task is edited or deleted, the change is reflected for all team members within 5s`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`after a task is edited or deleted, the change is reflected for all team members within 5s`, async ({ browser }) => {
+    // Multi-actor: creator (node 0) edits then deletes a task; node 1 sees both changes within 5s.
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      // Creator (node 0) logs in, ensures workspace.
+      await loginViaHash(pageA, 0);
+      const hasWorkspace = await pageA.getByText('Team Tasks').isVisible();
+      if (!hasWorkspace) {
+        await pageA.getByRole('button', { name: 'Create workspace' }).click();
+        await pageA.getByRole('dialog').getByRole('button', { name: 'Create workspace' }).click();
+        await expect(pageA.getByText('Team Tasks')).toBeVisible({ timeout: 15_000 });
+      }
+
+      // Invite node 1.
+      await pageA.getByRole('button', { name: 'Invite teammate' }).click();
+      await pageA.getByRole('button', { name: 'Generate invite code' }).click();
+      const inviteCode = await pageA.getByRole('dialog').locator('textarea').inputValue({ timeout: 10_000 });
+      await pageA.getByLabel('Close').click();
+
+      // Creator adds a task.
+      const originalText = `Edit me ${Date.now()}`;
+      const updatedText = `${originalText} (edited)`;
+      await expect(pageA.getByLabel('New task description')).toBeEnabled({ timeout: 10_000 });
+      await pageA.getByLabel('New task description').fill(originalText);
+      await pageA.getByRole('button', { name: '+ Add' }).click();
+      await expect(pageA.getByText(originalText)).toBeVisible({ timeout: 5_000 });
+
+      // Node 1 joins.
+      await loginViaHash(pageB, 1);
+      const nodeBHasWorkspace = await pageB.getByText('Team Tasks').isVisible();
+      if (!nodeBHasWorkspace) {
+        await pageB.getByRole('button', { name: 'Join with invitation' }).click();
+        await pageB.getByLabel('Invite code').fill(inviteCode);
+        await pageB.getByRole('button', { name: 'Join workspace' }).click();
+        await expect(pageB.getByText('Team Tasks')).toBeVisible({ timeout: 10_000 });
+      }
+      await expect(pageB.getByText(originalText)).toBeVisible({ timeout: 5_000 });
+
+      // Creator edits the task: hover to reveal Edit button, then click it.
+      // filter({ visible: true }) avoids strict-mode when multiple rows share aria-label="Edit".
+      await pageA.getByText(originalText).hover();
+      await pageA.getByLabel('Edit').filter({ visible: true }).click();
+      await pageA.getByLabel('Edit task').fill(updatedText);
+      await pageA.getByLabel('Edit task').press('Enter');
+      await expect(pageA.getByText(updatedText)).toBeVisible({ timeout: 5_000 });
+
+      // Criterion part 1: edited description reaches node 1 within 5s.
+      await expect(pageB.getByText(updatedText)).toBeVisible({ timeout: 5_000 });
+
+      // Creator deletes the task: hover to reveal Delete button, click it.
+      await pageA.getByText(updatedText).hover();
+      await pageA.getByLabel('Delete').filter({ visible: true }).click();
+      await expect(pageA.getByText(updatedText)).not.toBeVisible({ timeout: 5_000 });
+
+      // Criterion part 2: deletion reaches node 1 within 5s.
+      await expect(pageB.getByText(updatedText)).not.toBeVisible({ timeout: 5_000 });
+    } finally {
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 });

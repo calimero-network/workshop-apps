@@ -18,9 +18,9 @@ Summary: A shared todo list where teammates add, complete, and manage tasks toge
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds
 - [ ] tsc --noEmit passes
-- [ ] Test story (team lead): create a new list and invite my teammates
-- [ ] Test story (team member): add a task with a short description
-- [ ] Test story (team member): mark a task as done or reopen it
-- [ ] Test story (task creator): edit or delete tasks I added
-- [ ] Test story (anyone on the team): see all tasks at a glance — open ones first, done ones below
-- [ ] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps
+- [x] Test story (team lead): create a new list and invite my teammates
+- [x] Test story (team member): add a task with a short description
+- [x] Test story (team member): mark a task as done or reopen it
+- [x] Test story (task creator): edit or delete tasks I added
+- [x] Test story (anyone on the team): see all tasks at a glance — open ones first, done ones below
+- [x] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps

@@ -23,8 +23,50 @@ test.describe(`anyone on the team: see all tasks at a glance — open ones first
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`the task list always displays all tasks grouped by status, with open tasks above completed ones, updating live as changes occur`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`the task list always displays all tasks grouped by status, with open tasks above completed ones, updating live as changes occur`, async ({ page }) => {
+    // Single-node test: add two tasks, mark one done, then verify the Open group label
+    // appears above the Done group label in the DOM (open tasks shown first).
+
+    // Ensure a workspace exists so we land on the task list.
+    const hasWorkspace = await page.getByText('Team Tasks').isVisible();
+    if (!hasWorkspace) {
+      await page.getByRole('button', { name: 'Create workspace' }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Create workspace' }).click();
+      await expect(page.getByText('Team Tasks')).toBeVisible({ timeout: 15_000 });
+    }
+
+    // Wait for the add-task input to be enabled (lobby ready).
+    await expect(page.getByLabel('New task description')).toBeEnabled({ timeout: 10_000 });
+
+    // Add an open task and a task we'll mark done — use timestamps to isolate from other runs.
+    const stamp = Date.now();
+    const openLabel = `Stay-open ${stamp}`;
+    const doneLabel = `Mark-done ${stamp}`;
+
+    await page.getByLabel('New task description').fill(openLabel);
+    await page.getByRole('button', { name: '+ Add' }).click();
+    await expect(page.getByText(openLabel)).toBeVisible({ timeout: 5_000 });
+
+    await page.getByLabel('New task description').fill(doneLabel);
+    await page.getByRole('button', { name: '+ Add' }).click();
+    await expect(page.getByText(doneLabel)).toBeVisible({ timeout: 5_000 });
+
+    // Toggle the doneLabel task to done.  The hook sorts newest-first within open,
+    // so doneLabel (added second) is first in the list → its checkbox is first().
+    await page.getByRole('checkbox', { name: 'Complete task' }).first().click();
+    // After toggle, that checkbox becomes "Reopen task" — confirming it moved to done.
+    await expect(page.getByRole('checkbox', { name: 'Reopen task' })).toBeVisible({ timeout: 5_000 });
+
+    // Both open and done tasks must be visible (live update after toggle).
+    await expect(page.getByText(openLabel)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('checkbox', { name: 'Reopen task' })).toBeVisible();
+
+    // Assert ordering: open task text appears ABOVE the done-task's checkbox in the DOM.
+    // Open tasks are rendered first (smaller Y coordinate) — done ones are below.
+    const openTaskBB = await page.getByText(openLabel).boundingBox();
+    const doneCheckBB = await page.getByRole('checkbox', { name: 'Reopen task' }).boundingBox();
+    expect(openTaskBB).not.toBeNull();
+    expect(doneCheckBB).not.toBeNull();
+    expect(openTaskBB!.y).toBeLessThan(doneCheckBB!.y);
   });
 });

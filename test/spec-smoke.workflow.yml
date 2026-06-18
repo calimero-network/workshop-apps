@@ -1,0 +1,217 @@
+# Spec-smoke test for team-todos.
+#
+# Exercises every todos service mutate method across two nodes and asserts
+# that CRDT state replicates correctly:
+#   - add_task  → list_tasks shows the new task on both nodes
+#   - toggle_task → done flag flips and syncs
+#   - edit_task  → updated description syncs
+#   - delete_task → task disappears on both nodes
+#
+# Usage (from the project root, after building the bundle):
+#   merobox bootstrap run test/spec-smoke.workflow.yml
+#
+# Pre-flight: bash logic/build-bundle.sh must have produced
+#   logic/res/team-todos-0.2.0.mpk
+
+name: team-todos spec smoke
+description: Verify todos service CRDT replication across two nodes.
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 12428
+  base_rpc_port: 12528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # ── Bootstrap: install bundle, namespace, todos context ──────────────────────
+
+  - type: install_application
+    name: Install todos bundle on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/team-todos-0.2.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install todos bundle on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/team-todos-0.2.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create todos context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: todos
+    outputs:
+      todos_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation from app-node-1
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: join_context
+    name: app-node-2 joins todos context
+    node: app-node-2
+    context_id: '{{todos_ctx}}'
+
+  # ── Floor: empty list on a fresh context ─────────────────────────────────────
+
+  - type: call
+    name: list_tasks — fresh context is empty (app-node-1)
+    node: app-node-1
+    context_id: '{{todos_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      empty_tasks: result.output
+
+  - type: json_assert
+    name: Fresh todos context has no tasks
+    statements:
+      - 'json_equal({{empty_tasks}}, [])'
+
+  # ── add_task ──────────────────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise add_task on app-node-1
+    node: app-node-1
+    context_id: '{{todos_ctx}}'
+    method: add_task
+    args:
+      description: "Write onboarding docs"
+    outputs:
+      task_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for todos sync after add_task
+    context_id: '{{todos_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm task visible on app-node-2 after add_task
+    node: app-node-2
+    context_id: '{{todos_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      task_0: result.output.0
+
+  - type: json_assert
+    name: add_task produced a visible Task with correct fields on app-node-2
+    statements:
+      - 'json_subset({{task_0}}, {"description": "Write onboarding docs", "done": false})'
+
+  # ── toggle_task ───────────────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise toggle_task on app-node-1
+    node: app-node-1
+    context_id: '{{todos_ctx}}'
+    method: toggle_task
+    args:
+      task_id: '{{task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for todos sync after toggle_task
+    context_id: '{{todos_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm toggled status on app-node-2 after toggle_task
+    node: app-node-2
+    context_id: '{{todos_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      toggled_task_0: result.output.0
+
+  - type: json_assert
+    name: toggle_task flipped done to true on app-node-2
+    statements:
+      - 'json_subset({{toggled_task_0}}, {"done": true})'
+
+  # ── edit_task ─────────────────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise edit_task on app-node-1
+    node: app-node-1
+    context_id: '{{todos_ctx}}'
+    method: edit_task
+    args:
+      task_id: '{{task_id}}'
+      new_description: "Write onboarding guide v2"
+
+  - type: wait_for_sync
+    name: Wait for todos sync after edit_task
+    context_id: '{{todos_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm edited description on app-node-2 after edit_task
+    node: app-node-2
+    context_id: '{{todos_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      edited_task_0: result.output.0
+
+  - type: json_assert
+    name: edit_task updated the description on app-node-2
+    statements:
+      - 'json_subset({{edited_task_0}}, {"description": "Write onboarding guide v2"})'
+
+  # ── delete_task ───────────────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise delete_task on app-node-1
+    node: app-node-1
+    context_id: '{{todos_ctx}}'
+    method: delete_task
+    args:
+      task_id: '{{task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for todos sync after delete_task
+    context_id: '{{todos_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm task deleted on app-node-2 after delete_task
+    node: app-node-2
+    context_id: '{{todos_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_after_delete: result.output
+
+  - type: json_assert
+    name: delete_task removed the task — list is empty on app-node-2
+    statements:
+      - 'json_equal({{tasks_after_delete}}, [])'

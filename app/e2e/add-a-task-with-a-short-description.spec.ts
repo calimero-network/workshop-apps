@@ -23,8 +23,50 @@ test.describe(`team member: add a task with a short description`, () => {
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`after a member adds a task, every other team member sees it appear on the list within 5s`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`after a member adds a task, every other team member sees it appear on the list within 5s`, async ({ browser }) => {
+    // Multi-actor: member A (node 0) adds a task; member B (node 1) must see it within 5s.
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      // Member A logs in; ensure a workspace exists.
+      await loginViaHash(pageA, 0);
+      const hasWorkspace = await pageA.getByText('Team Tasks').isVisible();
+      if (!hasWorkspace) {
+        await pageA.getByRole('button', { name: 'Create workspace' }).click();
+        await pageA.getByRole('dialog').getByRole('button', { name: 'Create workspace' }).click();
+        await expect(pageA.getByText('Team Tasks')).toBeVisible({ timeout: 15_000 });
+      }
+
+      // Invite member B and read the generated invite code.
+      await pageA.getByRole('button', { name: 'Invite teammate' }).click();
+      await pageA.getByRole('button', { name: 'Generate invite code' }).click();
+      const inviteCode = await pageA.getByRole('dialog').locator('textarea').inputValue({ timeout: 10_000 });
+      await pageA.getByLabel('Close').click();
+
+      // Member B logs in and joins the workspace.
+      await loginViaHash(pageB, 1);
+      const nodeBHasWorkspace = await pageB.getByText('Team Tasks').isVisible();
+      if (!nodeBHasWorkspace) {
+        await pageB.getByRole('button', { name: 'Join with invitation' }).click();
+        await pageB.getByLabel('Invite code').fill(inviteCode);
+        await pageB.getByRole('button', { name: 'Join workspace' }).click();
+        await expect(pageB.getByText('Team Tasks')).toBeVisible({ timeout: 10_000 });
+      }
+
+      // Member A adds a task (unique text to avoid interference from other test runs).
+      const taskText = `Shared task ${Date.now()}`;
+      await expect(pageA.getByLabel('New task description')).toBeEnabled({ timeout: 10_000 });
+      await pageA.getByLabel('New task description').fill(taskText);
+      await pageA.getByRole('button', { name: '+ Add' }).click();
+      await expect(pageA.getByText(taskText)).toBeVisible({ timeout: 5_000 });
+
+      // Criterion: every other team member (node 1) sees the task within 5s.
+      await expect(pageB.getByText(taskText)).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 });

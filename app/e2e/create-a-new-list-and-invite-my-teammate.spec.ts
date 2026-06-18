@@ -23,8 +23,42 @@ test.describe(`team lead: create a new list and invite my teammates`, () => {
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`after the team lead creates the list and invites a teammate, the teammate sees the shared list appear within 5s`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`after the team lead creates the list and invites a teammate, the teammate sees the shared list appear within 5s`, async ({ browser }) => {
+    // Multi-actor: team lead (node 0) creates a workspace and invites a teammate;
+    // teammate (node 1) joins and must see "Team Tasks" within 5s.
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      // Team lead logs in.
+      await loginViaHash(pageA, 0);
+
+      // Create a workspace if one doesn't exist yet.
+      const hasWorkspace = await pageA.getByText('Team Tasks').isVisible();
+      if (!hasWorkspace) {
+        await pageA.getByRole('button', { name: 'Create workspace' }).click();
+        await pageA.getByRole('dialog').getByRole('button', { name: 'Create workspace' }).click();
+        await expect(pageA.getByText('Team Tasks')).toBeVisible({ timeout: 15_000 });
+      }
+
+      // Open invite modal, generate an invite code, read it from the textarea.
+      await pageA.getByRole('button', { name: 'Invite teammate' }).click();
+      await pageA.getByRole('button', { name: 'Generate invite code' }).click();
+      const inviteCode = await pageA.getByRole('dialog').locator('textarea').inputValue({ timeout: 10_000 });
+      await pageA.getByLabel('Close').click();
+
+      // Teammate (node 1) logs in and joins with the invite code.
+      await loginViaHash(pageB, 1);
+      await pageB.getByRole('button', { name: 'Join with invitation' }).click();
+      await pageB.getByLabel('Invite code').fill(inviteCode);
+      await pageB.getByRole('button', { name: 'Join workspace' }).click();
+
+      // Criterion: teammate sees the shared list appear within 5s.
+      await expect(pageB.getByText('Team Tasks')).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 });
