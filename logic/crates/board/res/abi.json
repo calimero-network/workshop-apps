@@ -1,18 +1,7 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "Event_RoomCreated": {
+    "BoardSettings": {
       "kind": "record",
       "fields": [
         {
@@ -26,103 +15,102 @@
           "type": {
             "kind": "string"
           }
-        }
-      ]
-    },
-    "Event_RoomDeleted": {
-      "kind": "record",
-      "fields": [
+        },
         {
-          "name": "id",
+          "name": "created_at",
           "type": {
-            "kind": "string"
+            "kind": "u64"
           }
         }
       ]
     },
-    "LobbyState": {
+    "BoardState": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
+          "name": "settings",
           "type": {
             "kind": "record",
             "fields": [],
-            "crdt_type": "lww_register",
+            "crdt_type": "shared_storage",
             "inner_type": {
-              "kind": "u64"
+              "kind": "record",
+              "fields": [],
+              "crdt_type": "lww_register",
+              "inner_type": {
+                "$ref": "BoardSettings"
+              }
             }
           }
         },
         {
-          "name": "rooms",
+          "name": "tasks",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "$ref": "RoomSummary"
+              "$ref": "Task"
             },
             "crdt_type": "unordered_map"
           }
         },
         {
-          "name": "activity",
+          "name": "comments",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "u64"
-              }
-            },
-            "crdt_type": "authored_map"
-          }
-        },
-        {
-          "name": "names",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "string"
-              }
+              "$ref": "Comment"
             },
             "crdt_type": "authored_map"
           }
         }
       ]
     },
-    "NameEntry": {
+    "Comment": {
       "kind": "record",
       "fields": [
         {
-          "name": "member",
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "Event_BoardInitialized": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
           "type": {
             "kind": "string"
           }
@@ -135,66 +123,135 @@
         }
       ]
     },
-    "PresenceEntry": {
+    "Event_CommentAdded": {
       "kind": "record",
       "fields": [
         {
-          "name": "member",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "last_seen_ms",
+          "name": "task_id",
           "type": {
-            "kind": "u64"
+            "kind": "string"
           }
         }
       ]
     },
-    "RoomActivity": {
+    "Event_CommentDeleted": {
       "kind": "record",
       "fields": [
         {
-          "name": "room_id",
+          "name": "id",
           "type": {
             "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
           }
         }
       ]
     },
-    "RoomSummary": {
+    "Event_CommentEdited": {
       "kind": "record",
       "fields": [
         {
-          "name": "room_id",
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TaskAssigned": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "assignee",
           "type": {
             "kind": "string"
           }
+        }
+      ]
+    },
+    "Event_TaskCreated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TaskStatusUpdated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Task": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "priority",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "assignee",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true
         },
         {
           "name": "created_by",
@@ -203,20 +260,13 @@
           }
         },
         {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          },
-          "nullable": true
-        },
-        {
-          "name": "member_count",
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
         },
         {
-          "name": "created_ms",
+          "name": "updated_at",
           "type": {
             "kind": "u64"
           }
@@ -233,136 +283,7 @@
       }
     },
     {
-      "name": "register_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "get_rooms",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomSummary"
-        }
-      }
-    },
-    {
-      "name": "get_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
+      "name": "init_board",
       "params": [
         {
           "name": "name",
@@ -372,43 +293,201 @@
         }
       ],
       "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "create_task",
+      "params": [
+        {
+          "name": "title",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "priority",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "update_task_status",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_status",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
         "kind": "unit"
       }
     },
     {
-      "name": "list_names",
+      "name": "assign_task",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "assignee",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_tasks",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "Task"
+        }
+      }
+    },
+    {
+      "name": "add_comment",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "edit_comment",
+      "params": [
+        {
+          "name": "comment_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "new_body",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "delete_comment",
+      "params": [
+        {
+          "name": "comment_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_comments",
+      "params": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Comment"
         }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "BoardInitialized",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_BoardInitialized"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "TaskCreated",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_TaskCreated"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "TaskStatusUpdated",
+      "payload": {
+        "$ref": "Event_TaskStatusUpdated"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "TaskAssigned",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_TaskAssigned"
+      }
+    },
+    {
+      "name": "CommentAdded",
+      "payload": {
+        "$ref": "Event_CommentAdded"
+      }
+    },
+    {
+      "name": "CommentEdited",
+      "payload": {
+        "$ref": "Event_CommentEdited"
+      }
+    },
+    {
+      "name": "CommentDeleted",
+      "payload": {
+        "$ref": "Event_CommentDeleted"
       }
     }
   ],
-  "state_root": "LobbyState",
+  "state_root": "BoardState",
   "state_version": 1
 }

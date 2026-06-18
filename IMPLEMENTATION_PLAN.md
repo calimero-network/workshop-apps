@@ -4,18 +4,18 @@ App: task-tracker
 Summary: A shared Jira-style task board where teams create, assign, and move tasks through status columns together
 
 ## Backend (logic/src/lib.rs)
-- [ ] Define entity: [board] BoardSettings (id:LwwRegister<String>, name:LwwRegister<String>, created_at:LwwRegister<u64>)
-- [ ] Define entity: [board] Task (id:String, title:String, description:String, status:String, priority:String, assignee:Option<String>, created_by:String, created_at:u64)
-- [ ] Define entity: [board] Comment (id:String, task_id:String, author:String, body:String, created_at:u64)
-- [ ] Implement mutate: [board] init_board(name: String) → app::Result<String>
-- [ ] Implement mutate: [board] create_task(title: String, description: String, priority: String) → app::Result<String>
-- [ ] Implement mutate: [board] update_task_status(task_id: String, new_status: String) → app::Result<()>
-- [ ] Implement mutate: [board] assign_task(task_id: String, assignee: String) → app::Result<()>
-- [ ] Implement view: [board] get_tasks() → app::Result<Vec<Task>>
-- [ ] Implement mutate: [board] add_comment(task_id: String, body: String) → app::Result<String>
-- [ ] Implement mutate: [board] edit_comment(comment_id: String, new_body: String) → app::Result<()>
-- [ ] Implement mutate: [board] delete_comment(comment_id: String) → app::Result<()>
-- [ ] Implement view: [board] get_comments(task_id: String) → app::Result<Vec<Comment>>
+- [x] Define entity: [board] BoardSettings (id:LwwRegister<String>, name:LwwRegister<String>, created_at:LwwRegister<u64>)
+- [x] Define entity: [board] Task (id:String, title:String, description:String, status:String, priority:String, assignee:Option<String>, created_by:String, created_at:u64)
+- [x] Define entity: [board] Comment (id:String, task_id:String, author:String, body:String, created_at:u64)
+- [x] Implement mutate: [board] init_board(name: String) → app::Result<String>
+- [x] Implement mutate: [board] create_task(title: String, description: String, priority: String) → app::Result<String>
+- [x] Implement mutate: [board] update_task_status(task_id: String, new_status: String) → app::Result<()>
+- [x] Implement mutate: [board] assign_task(task_id: String, assignee: String) → app::Result<()>
+- [x] Implement view: [board] get_tasks() → app::Result<Vec<Task>>
+- [x] Implement mutate: [board] add_comment(task_id: String, body: String) → app::Result<String>
+- [x] Implement mutate: [board] edit_comment(comment_id: String, new_body: String) → app::Result<()>
+- [x] Implement mutate: [board] delete_comment(comment_id: String) → app::Result<()>
+- [x] Implement view: [board] get_comments(task_id: String) → app::Result<Vec<Comment>>
 
 ## Frontend (app/)
 - [ ] Screen: BoardView — Kanban-style board with three columns (To Do, In Progress, Done), task cards showing title/priority/assignee, and filter controls

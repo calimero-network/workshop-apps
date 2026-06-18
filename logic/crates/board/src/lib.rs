@@ -1,355 +1,433 @@
-//! Lobby service — room directory and membership tracking.
+//! Board service — shared Jira-style task board with tasks and comments.
 
-use chat_types::{ChatError, PublicKey};
+use std::collections::BTreeSet;
+
+use chat_types::{generate_id, ChatError};
 use calimero_sdk::app;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
+use calimero_sdk::PublicKey;
 use calimero_storage::collections::crdt_meta::MergeError;
-use calimero_storage::collections::{AuthoredMap, LwwRegister, Mergeable, UnorderedMap};
+use calimero_storage::collections::{
+    AuthoredMap, LwwRegister, Mergeable, SharedStorage, UnorderedMap,
+};
 use calimero_storage::env as storage_env;
 
 pub mod events;
 use events::Event;
 
-const MAX_NAME_LEN: usize = 20;
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const VALID_STATUSES: &[&str] = &["todo", "in_progress", "done"];
 
 // ---------------------------------------------------------------------------
 // Data models
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+/// Governed board metadata — only the creator (writer set) can change the name.
+#[derive(Debug, Default, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct RoomSummary {
-    pub room_id: String,
+pub struct BoardSettings {
+    pub id: String,
     pub name: String,
-    pub created_by: String,
-    pub context_id: Option<String>,
-    pub member_count: u64,
-    pub created_ms: u64,
+    pub created_at: u64,
 }
 
-impl Mergeable for RoomSummary {
-    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        if self.context_id.is_none() && other.context_id.is_some() {
-            self.context_id = other.context_id.clone();
-        }
-        if other.member_count > self.member_count {
-            self.member_count = other.member_count;
-        }
-        Ok(())
-    }
-}
-
+/// A shared task that any team member can update.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct RoomActivity {
-    pub room_id: String,
-    pub room_name: String,
-    pub last_message_ms: u64,
-    pub message_count: u64,
+pub struct Task {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    /// One of: "todo", "in_progress", "done"
+    pub status: String,
+    /// One of: "low", "medium", "high"
+    pub priority: String,
+    pub assignee: Option<String>,
+    pub created_by: String,
+    pub created_at: u64,
+    /// Monotonically updated on each mutation; used for LWW merge.
+    pub updated_at: u64,
 }
 
-impl Mergeable for RoomActivity {
+impl Mergeable for Task {
+    /// Last-writer-wins based on `updated_at` timestamp.
     fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        // Keep the most recent activity.
-        if other.last_message_ms > self.last_message_ms {
+        if other.updated_at > self.updated_at {
             *self = other.clone();
         }
         Ok(())
     }
 }
 
+/// An authored comment — only the author can edit or delete.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct PresenceEntry {
-    pub member: String,
-    pub last_seen_ms: u64,
+pub struct Comment {
+    pub id: String,
+    pub task_id: String,
+    pub author: String,
+    pub body: String,
+    pub created_at: u64,
 }
 
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
-#[borsh(crate = "calimero_sdk::borsh")]
-#[serde(crate = "calimero_sdk::serde")]
-pub struct NameEntry {
-    pub member: String,
-    pub name: String,
+impl Mergeable for Comment {
+    /// For authored entries the author is the sole writer; tiebreak on body length.
+    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
+        if other.body.len() > self.body.len() {
+            self.body = other.body.clone();
+        }
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn from_executor_id() -> Result<PublicKey, ChatError> {
-    PublicKey::from_raw_bytes(&calimero_sdk::env::executor_id())
+fn executor_pubkey() -> PublicKey {
+    calimero_sdk::env::executor_id().into()
+}
+
+fn executor_b58() -> String {
+    bs58::encode(calimero_sdk::env::executor_id()).into_string()
+}
+
+/// Map SharedStorage `ActionNotAllowed` to a domain `Forbidden` error.
+fn map_shared_error(
+    action: &'static str,
+) -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
+    move |e| {
+        let s = e.to_string();
+        if s.contains("ActionNotAllowed") {
+            AppError::from(ChatError::Forbidden(format!(
+                "{action}: caller is not the board creator"
+            )))
+        } else {
+            AppError::msg(format!("settings.{action}: {s}"))
+        }
+    }
+}
+
+/// Map AuthoredMap `ActionNotAllowed` to a domain `Forbidden` error.
+fn map_authored_error(
+    action: &'static str,
+) -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
+    move |e| {
+        let s = e.to_string();
+        if s.contains("ActionNotAllowed") {
+            AppError::from(ChatError::Forbidden(format!(
+                "can only {action} your own comments"
+            )))
+        } else {
+            AppError::msg(format!("comments.{action}: {s}"))
+        }
+    }
+}
+
+fn generate_task_id(now_ms: u64) -> String {
+    let mut nonce = [0u8; 4];
+    calimero_sdk::env::random_bytes(&mut nonce);
+    generate_id("task", now_ms, &nonce)
+}
+
+fn generate_comment_id(now_ms: u64) -> String {
+    let mut nonce = [0u8; 4];
+    calimero_sdk::env::random_bytes(&mut nonce);
+    generate_id("cmt", now_ms, &nonce)
+}
+
+fn generate_board_id(now_ms: u64) -> String {
+    let mut nonce = [0u8; 4];
+    calimero_sdk::env::random_bytes(&mut nonce);
+    generate_id("board", now_ms, &nonce)
 }
 
 // ---------------------------------------------------------------------------
-// Lobby state
+// Board state
 // ---------------------------------------------------------------------------
 
-// `#[app::state]` injects the borsh derives + `#[borsh(crate = ...)]` itself
-// (SDK 0.11+); a manual derive here would collide.
 #[app::state(emits = for<'a> Event<'a>)]
-pub struct LobbyState {
-    created_ms: LwwRegister<u64>,
-    rooms: UnorderedMap<String, RoomSummary>,
-    activity: UnorderedMap<String, RoomActivity>,
-    /// Per-author presence: only the entry's own author can update or remove
-    /// their `last_seen_ms`. Spoofing is rejected at merge time by `AuthoredMap`.
-    /// Values are wrapped in `LwwRegister` so the entry type is `Mergeable`
-    /// (required by `#[app::state]` in SDK 0.11+).
-    presence: AuthoredMap<String, LwwRegister<u64>>,
-    /// Per-author display name: each member owns and edits only their own
-    /// entry. Truncated to `MAX_NAME_LEN` Unicode scalars at write time.
-    names: AuthoredMap<String, LwwRegister<String>>,
+pub struct BoardState {
+    /// Governed board metadata: writer set = [creator].
+    settings: SharedStorage<LwwRegister<BoardSettings>>,
+    /// Shared tasks: any member can create, update status, or assign.
+    tasks: UnorderedMap<String, Task>,
+    /// Authored comments: only the comment author can edit/delete.
+    comments: AuthoredMap<String, Comment>,
 }
 
 #[app::logic]
-impl LobbyState {
+impl BoardState {
+    /// Called by the Calimero runtime when the context is first created.
+    /// Seeds the SharedStorage writer set with the creator's public key so
+    /// `init_board` can subsequently write governed settings.
     #[app::init]
-    pub fn init() -> LobbyState {
-        LobbyState {
-            created_ms: LwwRegister::new(storage_env::time_now()),
-            rooms: UnorderedMap::new_with_field_name("lobby:rooms"),
-            activity: UnorderedMap::new_with_field_name("lobby:activity"),
-            presence: AuthoredMap::new_with_field_name("lobby:presence"),
-            names: AuthoredMap::new_with_field_name("lobby:names"),
+    pub fn init() -> BoardState {
+        let creator = executor_pubkey();
+        let mut writers = BTreeSet::new();
+        let _ = writers.insert(creator);
+
+        BoardState {
+            settings: SharedStorage::new_with_field_name("board:settings", writers, false),
+            tasks: UnorderedMap::new_with_field_name("board:tasks"),
+            comments: AuthoredMap::new_with_field_name("board:comments"),
         }
     }
 
-    // ---- Lobby API ----
+    // -------------------------------------------------------------------------
+    // Board management
+    // -------------------------------------------------------------------------
 
-    /// Atomically register a new room. The client creates the room context
-    /// first (via admin createContext), then calls this with the resulting
-    /// context_id. This avoids the propagation race where a separate
-    /// `create_room` then `set_room_context_id` would expose a window with
-    /// `context_id == null` to remote peers.
-    ///
-    /// Idempotent on collision: if `room_id` already exists with the same
-    /// `name`, `created_by`, and `context_id`, returns the existing summary.
-    pub fn register_room(
-        &mut self,
-        room_id: String,
-        name: String,
-        context_id: String,
-        member_count: u64,
-    ) -> app::Result<RoomSummary> {
-        let caller = from_executor_id().map_err(|e| AppError::msg(e.to_string()))?;
-        let caller_b58 = caller.to_base58();
-
-        if name.is_empty() || name.len() > 64 {
-            app::bail!(ChatError::Invalid(
-                "room name must be 1-64 characters".into()
-            ));
-        }
-        if !room_id.starts_with("room-") || room_id.len() < 16 || room_id.len() > 64 {
-            app::bail!(ChatError::Invalid(
-                "room_id must match room-{timestamp}-{nonce}".into()
-            ));
-        }
-        if context_id.is_empty() {
-            app::bail!(ChatError::Invalid("context_id must not be empty".into()));
+    /// Initialize the board with a name. Returns the generated board ID.
+    /// Caller must be the context creator (the SharedStorage writer).
+    pub fn init_board(&mut self, name: String) -> app::Result<String> {
+        if name.is_empty() {
+            app::bail!(ChatError::Invalid("board name cannot be empty".into()));
         }
 
-        if let Some(existing) = self
-            .rooms
-            .get(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.get: {e}")))?
-        {
-            if existing.name == name
-                && existing.created_by == caller_b58
-                && existing.context_id.as_deref() == Some(context_id.as_str())
-            {
-                // `get` now hands back a `ValueRef` guard; clone out an owned copy.
-                return Ok(existing.clone());
-            }
-            app::bail!(ChatError::RoomAlreadyExists);
-        }
+        let now_ms = storage_env::time_now() / 1_000_000;
+        let board_id = generate_board_id(now_ms);
 
-        let summary = RoomSummary {
-            room_id: room_id.clone(),
+        let board_settings = BoardSettings {
+            id: board_id.clone(),
             name: name.clone(),
-            created_by: caller_b58,
-            context_id: Some(context_id),
-            // Initial member count supplied by the creator (creator + invited
-            // members). The directory tracks this at creation; live join/leave
-            // counts aren't reported back, so treat it as the starting size.
-            member_count,
-            created_ms: storage_env::time_now(),
+            created_at: now_ms,
         };
 
-        self.rooms
-            .insert(room_id.clone(), summary.clone())
-            .map_err(|e| AppError::msg(format!("rooms.insert: {e}")))?;
+        self.settings
+            .insert(LwwRegister::new(board_settings))
+            .map_err(map_shared_error("init_board"))?;
 
-        app::emit!(Event::RoomCreated {
-            id: &room_id,
+        app::emit!(Event::BoardInitialized {
+            id: &board_id,
             name: &name,
         });
-        app::emit!(Event::RoomListUpdated {});
-        Ok(summary)
+
+        Ok(board_id)
     }
 
-    pub fn get_rooms(&self) -> app::Result<Vec<RoomSummary>> {
-        let entries = self
-            .rooms
-            .entries()
-            .map_err(|e| AppError::msg(format!("rooms.entries: {e}")))?;
-        Ok(entries.map(|(_, v)| v).collect())
-    }
+    // -------------------------------------------------------------------------
+    // Task management
+    // -------------------------------------------------------------------------
 
-    pub fn get_room(&self, room_id: String) -> app::Result<Option<RoomSummary>> {
-        Ok(self
-            .rooms
-            .get(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.get: {e}")))?
-            .map(|v| v.clone()))
-    }
-
-    pub fn delete_room(&mut self, room_id: String) -> app::Result<()> {
-        let exists = self
-            .rooms
-            .contains(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.contains: {e}")))?;
-        if !exists {
-            app::bail!(ChatError::NotFound(room_id));
-        }
-
-        self.rooms
-            .remove(&room_id)
-            .map_err(|e| AppError::msg(format!("rooms.remove: {e}")))?;
-        let _ = self.activity.remove(&room_id);
-
-        app::emit!(Event::RoomDeleted { id: &room_id });
-        app::emit!(Event::RoomListUpdated {});
-        Ok(())
-    }
-
-    pub fn get_activity(&self) -> app::Result<Vec<RoomActivity>> {
-        let entries = self
-            .activity
-            .entries()
-            .map_err(|e| AppError::msg(format!("activity.entries: {e}")))?;
-        Ok(entries.map(|(_, v)| v).collect())
-    }
-
-    /// Called via xcall from the room service when a message is sent.
-    pub fn on_room_message(
+    /// Create a new task in the "todo" column. Returns the new task ID.
+    pub fn create_task(
         &mut self,
-        room_id: String,
-        room_name: String,
-        message_count: u64,
-        timestamp_ms: u64,
-    ) -> app::Result<()> {
-        let activity = RoomActivity {
-            room_id: room_id.clone(),
-            room_name,
-            last_message_ms: timestamp_ms,
-            message_count,
-        };
-        self.activity
-            .insert(room_id, activity)
-            .map_err(|e| AppError::msg(format!("activity.insert: {e}")))?;
+        title: String,
+        description: String,
+        priority: String,
+    ) -> app::Result<String> {
+        if title.is_empty() {
+            app::bail!(ChatError::Invalid("task title cannot be empty".into()));
+        }
+        if !["low", "medium", "high"].contains(&priority.as_str()) {
+            app::bail!(ChatError::Invalid(
+                "priority must be one of: low, medium, high".into()
+            ));
+        }
 
-        app::emit!(Event::RoomListUpdated {});
-        Ok(())
-    }
-
-    // ---- Presence ----
-
-    /// Record that the caller is currently online. First call inserts;
-    /// subsequent calls update the caller's own entry. AuthoredMap rejects
-    /// updates by anyone other than the original author at merge time, so a
-    /// peer cannot spoof anyone else's last_seen.
-    ///
-    /// `storage_env::time_now()` returns nanoseconds since epoch; we convert
-    /// to ms so the value lines up with `Date.now()` on the frontend.
-    /// Heartbeat emits no event — at 15s cadence it would spam the bus.
-    pub fn heartbeat(&mut self) -> app::Result<()> {
-        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
+        let caller = executor_b58();
         let now_ms = storage_env::time_now() / 1_000_000;
-        let exists = self
-            .presence
-            .contains(&caller)
-            .map_err(|e| AppError::msg(format!("presence.contains: {e}")))?;
-        if exists {
-            self.presence
-                .update(&caller, LwwRegister::new(now_ms))
-                .map_err(|e| AppError::msg(format!("presence.update: {e}")))?;
-        } else {
-            self.presence
-                .insert(caller, LwwRegister::new(now_ms))
-                .map_err(|e| AppError::msg(format!("presence.insert: {e}")))?;
+        let task_id = generate_task_id(now_ms);
+
+        let task = Task {
+            id: task_id.clone(),
+            title: title.clone(),
+            description,
+            status: "todo".to_string(),
+            priority,
+            assignee: None,
+            created_by: caller,
+            created_at: now_ms,
+            updated_at: now_ms,
+        };
+
+        self.tasks
+            .insert(task_id.clone(), task)
+            .map_err(|e| AppError::msg(format!("tasks.insert: {e}")))?;
+
+        app::emit!(Event::TaskCreated {
+            id: &task_id,
+            title: &title,
+        });
+
+        Ok(task_id)
+    }
+
+    /// Move a task to a different status column.
+    pub fn update_task_status(
+        &mut self,
+        task_id: String,
+        new_status: String,
+    ) -> app::Result<()> {
+        if !VALID_STATUSES.contains(&new_status.as_str()) {
+            app::bail!(ChatError::Invalid(
+                "status must be one of: todo, in_progress, done".into()
+            ));
         }
+
+        let mut task = self
+            .tasks
+            .get(&task_id)
+            .map_err(|e| AppError::msg(format!("tasks.get: {e}")))?
+            .ok_or_else(|| AppError::from(ChatError::NotFound(task_id.clone())))?
+            .clone();
+
+        task.status = new_status.clone();
+        task.updated_at = storage_env::time_now() / 1_000_000;
+
+        self.tasks
+            .insert(task_id.clone(), task)
+            .map_err(|e| AppError::msg(format!("tasks.insert: {e}")))?;
+
+        app::emit!(Event::TaskStatusUpdated {
+            id: &task_id,
+            status: &new_status,
+        });
+
         Ok(())
     }
 
-    /// Return one PresenceEntry per member who has ever heartbeated. Clients
-    /// filter by recency (typically `now - last_seen_ms <= 35_000`) to derive
-    /// the online set.
-    pub fn list_presence(&self) -> app::Result<Vec<PresenceEntry>> {
-        let entries = self
-            .presence
-            .entries()
-            .map_err(|e| AppError::msg(format!("presence.entries: {e}")))?;
-        Ok(entries
-            .map(|(member, last_seen)| PresenceEntry {
-                member,
-                last_seen_ms: last_seen.into_inner(),
-            })
-            .collect())
-    }
+    /// Assign a task to a team member (any member can assign/reassign).
+    pub fn assign_task(&mut self, task_id: String, assignee: String) -> app::Result<()> {
+        let mut task = self
+            .tasks
+            .get(&task_id)
+            .map_err(|e| AppError::msg(format!("tasks.get: {e}")))?
+            .ok_or_else(|| AppError::from(ChatError::NotFound(task_id.clone())))?
+            .clone();
 
-    // ---- Display names ----
+        task.assignee = Some(assignee.clone());
+        task.updated_at = storage_env::time_now() / 1_000_000;
 
-    /// Set the caller's display name. Truncated to `MAX_NAME_LEN` Unicode
-    /// scalar values (`chars().take(...)`) so multi-byte codepoints are not
-    /// split in the middle. AuthoredMap enforces author-only edits.
-    pub fn set_name(&mut self, name: String) -> app::Result<()> {
-        let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
-        let truncated: String = name.chars().take(MAX_NAME_LEN).collect();
-        let exists = self
-            .names
-            .contains(&caller)
-            .map_err(|e| AppError::msg(format!("names.contains: {e}")))?;
-        if exists {
-            self.names
-                .update(&caller, LwwRegister::new(truncated))
-                .map_err(|e| AppError::msg(format!("names.update: {e}")))?;
-        } else {
-            self.names
-                .insert(caller.clone(), LwwRegister::new(truncated))
-                .map_err(|e| AppError::msg(format!("names.insert: {e}")))?;
-        }
-        app::emit!(Event::NameChanged { id: &caller });
+        self.tasks
+            .insert(task_id.clone(), task)
+            .map_err(|e| AppError::msg(format!("tasks.insert: {e}")))?;
+
+        app::emit!(Event::TaskAssigned {
+            id: &task_id,
+            assignee: &assignee,
+        });
+
         Ok(())
     }
 
-    /// Return one NameEntry per member who has set a display name.
-    pub fn list_names(&self) -> app::Result<Vec<NameEntry>> {
+    /// Return all tasks. Clients filter by assignee, priority, or status on the frontend.
+    pub fn get_tasks(&self) -> app::Result<Vec<Task>> {
         let entries = self
-            .names
+            .tasks
             .entries()
-            .map_err(|e| AppError::msg(format!("names.entries: {e}")))?;
-        Ok(entries
-            .map(|(member, name)| NameEntry {
-                member,
-                name: name.into_inner(),
-            })
-            .collect())
+            .map_err(|e| AppError::msg(format!("tasks.entries: {e}")))?;
+        let mut tasks: Vec<Task> = entries.map(|(_, v)| v).collect();
+        // Sort by creation time for a stable default order.
+        tasks.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        Ok(tasks)
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+    // -------------------------------------------------------------------------
+    // Comment management
+    // -------------------------------------------------------------------------
 
-    #[test]
-    fn init_populates_created_ms() {
-        let state = LobbyState::init();
-        assert!(*state.created_ms.get() > 0);
+    /// Add a comment to a task. Returns the new comment ID.
+    pub fn add_comment(&mut self, task_id: String, body: String) -> app::Result<String> {
+        if body.is_empty() {
+            app::bail!(ChatError::Invalid("comment body cannot be empty".into()));
+        }
+        // Ensure the task exists.
+        let task_exists = self
+            .tasks
+            .contains(&task_id)
+            .map_err(|e| AppError::msg(format!("tasks.contains: {e}")))?;
+        if !task_exists {
+            app::bail!(ChatError::NotFound(task_id));
+        }
+
+        let author = executor_b58();
+        let now_ms = storage_env::time_now() / 1_000_000;
+        let comment_id = generate_comment_id(now_ms);
+
+        let comment = Comment {
+            id: comment_id.clone(),
+            task_id: task_id.clone(),
+            author,
+            body,
+            created_at: now_ms,
+        };
+
+        self.comments
+            .insert(comment_id.clone(), comment)
+            .map_err(|e| AppError::msg(format!("comments.insert: {e}")))?;
+
+        app::emit!(Event::CommentAdded {
+            id: &comment_id,
+            task_id: &task_id,
+        });
+
+        Ok(comment_id)
+    }
+
+    /// Edit the body of an existing comment. Only the original author may do this.
+    pub fn edit_comment(&mut self, comment_id: String, new_body: String) -> app::Result<()> {
+        if new_body.is_empty() {
+            app::bail!(ChatError::Invalid("comment body cannot be empty".into()));
+        }
+
+        let mut comment = self
+            .comments
+            .get(&comment_id)
+            .map_err(|e| AppError::msg(format!("comments.get: {e}")))?
+            .ok_or_else(|| AppError::from(ChatError::NotFound(comment_id.clone())))?
+            .clone();
+
+        comment.body = new_body;
+
+        // AuthoredMap::update rejects non-authors with ActionNotAllowed.
+        self.comments
+            .update(&comment_id, comment)
+            .map_err(map_authored_error("edit"))?;
+
+        app::emit!(Event::CommentEdited { id: &comment_id });
+
+        Ok(())
+    }
+
+    /// Delete a comment. Only the original author may do this.
+    pub fn delete_comment(&mut self, comment_id: String) -> app::Result<()> {
+        let removed = self
+            .comments
+            .remove(&comment_id)
+            .map_err(map_authored_error("delete"))?;
+
+        if removed.is_none() {
+            app::bail!(ChatError::NotFound(comment_id));
+        }
+
+        app::emit!(Event::CommentDeleted { id: &comment_id });
+
+        Ok(())
+    }
+
+    /// Return all comments for a given task, sorted by creation time.
+    pub fn get_comments(&self, task_id: String) -> app::Result<Vec<Comment>> {
+        let entries = self
+            .comments
+            .entries()
+            .map_err(|e| AppError::msg(format!("comments.entries: {e}")))?;
+
+        let mut comments: Vec<Comment> = entries
+            .map(|(_, v)| v)
+            .filter(|c| c.task_id == task_id)
+            .collect();
+
+        comments.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        Ok(comments)
     }
 }
