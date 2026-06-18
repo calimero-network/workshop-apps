@@ -78,7 +78,9 @@ impl TodosState {
 
         let caller = bs58::encode(calimero_sdk::env::executor_id()).into_string();
         let now_ms = storage_env::time_now() / 1_000_000;
-        let id = format!("task-{}", now_ms);
+        let mut nonce = [0u8; 4];
+        calimero_sdk::env::random_bytes(&mut nonce);
+        let id = format!("task-{}-{}", now_ms, bs58::encode(&nonce).into_string());
 
         let task = Task {
             id: id.clone(),
@@ -113,10 +115,10 @@ impl TodosState {
             ..task
         };
 
-        // UnorderedMap has no `update` — remove then re-insert is the upsert pattern.
-        self.tasks
-            .remove(&task_id)
-            .map_err(|e| AppError::msg(format!("tasks.remove(toggle): {e}")))?;
+        // Insert with an existing key is an upsert for UnorderedMap — no remove needed.
+        // Calling remove first creates a CRDT tombstone that propagates to peers and
+        // can cause the entry to appear deleted on other nodes before the re-insert
+        // arrives, breaking cross-node sync.
         self.tasks
             .insert(task_id.clone(), updated)
             .map_err(|e| AppError::msg(format!("tasks.insert(toggle): {e}")))?;
@@ -151,10 +153,7 @@ impl TodosState {
             ..task
         };
 
-        // UnorderedMap has no `update` — remove then re-insert is the upsert pattern.
-        self.tasks
-            .remove(&task_id)
-            .map_err(|e| AppError::msg(format!("tasks.remove(edit): {e}")))?;
+        // Insert with an existing key is an upsert for UnorderedMap — no remove needed.
         self.tasks
             .insert(task_id.clone(), updated)
             .map_err(|e| AppError::msg(format!("tasks.insert(edit): {e}")))?;
