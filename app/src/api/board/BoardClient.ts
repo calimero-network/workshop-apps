@@ -13,6 +13,7 @@ export interface Task {
   assignee: string | null;
   created_by: string;
   created_at: number;
+  updated_at: number;
 }
 
 export interface Comment {
