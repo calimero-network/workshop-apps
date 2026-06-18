@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '🔒', title: 'Fully private boards', body: 'Your task data lives on a node you control. No SaaS vendor, no surveillance, no lock-in.' },
+  { icon: '⚡', title: 'Live Kanban sync', body: 'Every status change, assignment, and comment syncs to all peers in real time via Calimero CRDT.' },
+  { icon: '💬', title: 'Contextual comments', body: 'Discuss work in context — comment threads live on each task, owned by the author, visible to all teammates.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['What is a node?', 'A node (merod) is the runtime that stores your board data and runs the app logic. You host your own — locally or on your own server — so your tasks and keys never leave your control.'],
+  ['Where does my board data live?', 'On your own node, as CRDT collections that merge conflict-free across teammates\' nodes. No central database, no Jira servers, no SaaS vendor.'],
+  ['What is a board context?', 'A board context is a shared, encrypted space where your team\'s tasks live. Everyone invited sees the same Kanban state in real time, synced directly between nodes.'],
+  ['How do teammates join?', 'Connect your node, create a board, then share an invitation link. Teammates join instantly — no accounts, no email verification, no onboarding friction.'],
+  ['Can I filter tasks?', 'Yes. Filter by assignee or priority using the filter bar above the board. Clearing filters restores the full task list immediately.'],
+  ['Is it really decentralized?', 'Yes. Task data is peer-to-peer CRDT state on the nodes in the board context. Take your node offline and your data goes with it; bring it back and it re-syncs automatically.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -106,36 +106,55 @@ const STEPS = [
   { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: kanban cards moving across columns ──────────────── */
+type KanbanCard = { id: number; title: string; priority: 'high' | 'medium' | 'low'; col: number; assignee: string };
+
+const INITIAL_CARDS: KanbanCard[] = [
+  { id: 1, title: 'Design landing page', priority: 'medium', col: 2, assignee: 'A' },
+  { id: 2, title: 'Fix login bug', priority: 'high', col: 0, assignee: 'M' },
+  { id: 3, title: 'Write API docs', priority: 'low', col: 1, assignee: 'J' },
+];
+
+const PRIORITY_COLOR: Record<string, string> = {
+  high: '#dc2626', medium: '#d97706', low: '#2563eb',
+};
+const PRIORITY_BG: Record<string, string> = {
+  high: 'rgba(239,68,68,0.18)', medium: 'rgba(245,158,11,0.18)', low: 'rgba(59,130,246,0.18)',
+};
+
+const ANIM_STEPS: Array<{ cardId: number; toCol: number; delay: number }> = [
+  { cardId: 2, toCol: 1, delay: 1200 },
+  { cardId: 1, toCol: 2, delay: 2800 },
+  { cardId: 3, toCol: 2, delay: 4200 },
 ];
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [cards, setCards] = useState<KanbanCard[]>(INITIAL_CARDS);
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
     const timers: number[] = [];
     const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
     const run = () => {
-      setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
+      setCards(INITIAL_CARDS.map((c) => ({ ...c })));
+      ANIM_STEPS.forEach(({ cardId, toCol, delay }) => {
+        at(delay, () => {
+          setCards((prev) => prev.map((c) => c.id === cardId ? { ...c, col: toCol } : c));
           setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
+          at(delay + 380, () => setPulse(false));
         });
       });
     };
     run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
+    const loop = window.setInterval(run, 6200);
     return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
   }, []);
+
+  const cols = [
+    { label: 'To Do', color: 'rgba(59,130,246,0.25)' },
+    { label: 'In Progress', color: 'rgba(245,158,11,0.25)' },
+    { label: 'Done', color: 'rgba(164,255,17,0.25)' },
+  ];
 
   return (
     <Preview aria-hidden="true">
@@ -150,11 +169,21 @@ function LivePreview() {
         <div className="peers">
           <i>A</i><i>M</i><i>J</i><b>+ you</b>
         </div>
-        <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+        <div className="board">
+          {cols.map((col, ci) => (
+            <div key={col.label} className="col">
+              <div className="col-hd" style={{ background: col.color }}>{col.label}</div>
+              <div className="col-body">
+                {cards.filter((c) => c.col === ci).map((card) => (
+                  <div key={card.id} className="card">
+                    <span className="badge" style={{ background: PRIORITY_BG[card.priority], color: PRIORITY_COLOR[card.priority] }}>
+                      {card.priority}
+                    </span>
+                    <div className="card-title">{card.title}</div>
+                    <div className="card-av">{card.assignee}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
@@ -222,9 +251,9 @@ export default function LandingPage() {
             </GhostBtn>
           </Cta>
           <TrustRow>
-            <span>Private by design</span><i />
+            <span>Sovereign data</span><i />
             <span>Real-time sync</span><i />
-            <span>Peer-to-peer</span>
+            <span>No SaaS required</span>
           </TrustRow>
         </HeroInner>
         <PreviewWrap><LivePreview /></PreviewWrap>
@@ -236,7 +265,7 @@ export default function LandingPage() {
           <R v="up">
             <Kicker>How it works</Kicker>
             <H2>From your node to a shared app — in four moves</H2>
-            <Sub>No accounts, no servers, no setup friction. Connect a node and you’re collaborating.</Sub>
+            <Sub>No accounts, no servers, no setup friction. Connect a node and you're collaborating.</Sub>
           </R>
           <Pipeline>
             <span className="track" />
@@ -258,7 +287,7 @@ export default function LandingPage() {
       <Section id="features">
         <Inner>
           <R v="up">
-            <Kicker>Why it’s different</Kicker>
+            <Kicker>Why it's different</Kicker>
             <H2>Built on the Calimero network</H2>
           </R>
           <Cards>
@@ -531,24 +560,41 @@ const Preview = styled.div`
     }
     em.on { color: ${C.green}; }
   }
-  .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
+  .body { padding: 14px; min-height: 230px; display: flex; flex-direction: column; gap: 12px; }
   .peers { display: flex; align-items: center; gap: 0; }
   .peers i {
-    width: 22px; height: 22px; border-radius: 50%;
+    width: 20px; height: 20px; border-radius: 50%;
     display: grid; place-items: center;
-    font-size: 10px; font-weight: 700; color: ${C.ink};
+    font-size: 9px; font-weight: 700; color: ${C.ink};
     background: linear-gradient(135deg, ${C.green}, #cde88a);
     border: 1.5px solid ${C.ink};
-    margin-left: -6px;
+    margin-left: -5px;
   }
   .peers i:first-child { margin-left: 0; }
   .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
-  .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+  /* Kanban board */
+  .board { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; flex: 1; }
+  .col { display: flex; flex-direction: column; background: rgba(255,255,255,0.04); border-radius: 9px; overflow: hidden; }
+  .col-hd {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 5px 8px; color: rgba(255,255,255,0.7);
+  }
+  .col-body { display: flex; flex-direction: column; gap: 5px; padding: 6px 6px 8px; flex: 1; }
+  .card {
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 7px; padding: 7px 8px; transition: transform 0.35s ease, opacity 0.35s ease;
+    animation: ${rowIn} 0.35s cubic-bezier(0.22,1,0.36,1) both;
+  }
+  .badge {
+    display: inline-block; font-size: 8.5px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; padding: 1px 6px; border-radius: 999px; margin-bottom: 4px;
+  }
+  .card-title { font-size: 10.5px; color: rgba(255,255,255,0.85); font-weight: 600; line-height: 1.3; }
+  .card-av {
+    width: 16px; height: 16px; border-radius: 50%; margin-top: 5px;
+    display: grid; place-items: center; font-size: 8px; font-weight: 700; color: ${C.ink};
+    background: linear-gradient(135deg, ${C.green}, #cde88a);
+  }
 `;
 
 /* sections */

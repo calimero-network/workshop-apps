@@ -66,12 +66,16 @@ export function useNamespaceBootstrap(
           }
         }
 
-        // 3. Create the lobby (workspace directory) context inside the namespace root group
+        // 3. Create the board context inside the namespace root group.
+        // Pass the board name via initializationParams so init_board receives it.
+        const boardName = alias?.trim() || 'Board';
+        const initJson = JSON.stringify({ name: boardName });
+        const initBytes = Array.from(new TextEncoder().encode(initJson));
         const ctx = await mero.admin.createContext({
           applicationId,
           groupId: namespaceId,
-          serviceName: SERVICE_NAME.directory,
-          initializationParams: [],
+          serviceName: SERVICE_NAME.board,
+          initializationParams: initBytes,
         });
 
         return {

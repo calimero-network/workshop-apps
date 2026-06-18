@@ -8,10 +8,10 @@ export default function LoginPage() {
   return (
     <div className="app-bg">
       <div className="page-shell" style={{ justifyContent: 'center', alignItems: 'center', gap: '2rem' }}>
-        <h1 style={{ fontSize: '2.5rem', fontWeight: 700 }}>Calimero Chat</h1>
+        <h1 style={{ fontSize: '2.5rem', fontWeight: 700 }}>task-tracker</h1>
         <p style={{ color: '#888', maxWidth: 400, textAlign: 'center' }}>
-          Decentralized multi-room chat powered by Calimero. Create rooms,
-          invite friends, and chat with end-to-end privacy.
+          Decentralized Jira-style task boards powered by Calimero. Create boards,
+          invite your team, and track work with full data sovereignty.
         </p>
         <ConnectButton />
         <Button

@@ -47,6 +47,7 @@ export const APP_DESCRIPTION = config.metadata.description;
 export const THEME = config.theme;
 
 const byId = (id: string) => config.services.find((s) => s.id === id);
+const byName = (name: string) => config.services.find((s) => s.name === name);
 
 /** Maps service-role id → wire name (`serviceName` for createContext etc.).
  *  Throws at startup if a referenced role isn't declared, so a misconfigured
@@ -59,6 +60,14 @@ function requireService(id: string): string {
   return svc.name;
 }
 
+function requireServiceByName(name: string): string {
+  const svc = byName(name);
+  if (!svc) {
+    throw new Error(`studio.config.json: services[] missing entry for name="${name}"`);
+  }
+  return svc.name;
+}
+
 export const SERVICE_NAME = {
   /** Workspace-level service (lobby in chat): names, presence, directory listing. */
   get directory(): string { return requireService('directory'); },
@@ -67,6 +76,8 @@ export const SERVICE_NAME = {
     const svc = byId('instance');
     return svc ? svc.name : null;
   },
+  /** Board service (task-tracker): the single per-namespace board context. */
+  get board(): string { return requireServiceByName('board'); },
 };
 
 /** localStorage key for persisting the selected namespace, scoped per-app. */
