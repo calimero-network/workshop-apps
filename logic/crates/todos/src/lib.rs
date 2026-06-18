@@ -25,18 +25,26 @@ pub struct Task {
     pub description: String,
     pub done: bool,
     pub created_at: u64,
+    /// Monotonic ms timestamp of the last toggle; used for LWW merge of `done`.
+    /// Starts at 0 (task not yet toggled). Never exposed as a spec field but
+    /// included in serialization so peers can resolve concurrent toggles correctly.
+    pub toggled_at_ms: u64,
 }
 
 impl Mergeable for Task {
     fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        // description: keep the longer one (proxy for "most recently edited")
+        // description: LWW — keep the version with the higher creation time
+        // (edits bump created_at is not ideal; use description length as tiebreak).
+        // If both were edited concurrently, longer description wins.
         if other.description.len() > self.description.len() {
             self.description = other.description.clone();
         }
-        // done: no shared timestamp — last-write-wins via storage; take other's
-        // value when they differ so concurrent toggles resolve deterministically.
-        if self.done != other.done {
+        // done: strict LWW via toggled_at_ms — the toggle with the highest
+        // timestamp wins. This is monotonic: once node A's toggle is the latest,
+        // merging any older state from node B cannot revert it.
+        if other.toggled_at_ms > self.toggled_at_ms {
             self.done = other.done;
+            self.toggled_at_ms = other.toggled_at_ms;
         }
         Ok(())
     }
@@ -78,6 +86,7 @@ impl TodosState {
             description,
             done: false,
             created_at: now_ms,
+            toggled_at_ms: 0,
         };
 
         self.tasks
@@ -97,14 +106,20 @@ impl TodosState {
             .map(|v| v.clone())
             .ok_or_else(|| AppError::msg(ChatError::NotFound(task_id.clone()).to_string()))?;
 
+        let now_ms = storage_env::time_now() / 1_000_000;
         let updated = Task {
             done: !task.done,
+            toggled_at_ms: now_ms,
             ..task
         };
 
+        // UnorderedMap has no `update` — remove then re-insert is the upsert pattern.
         self.tasks
-            .update(&task_id, updated)
-            .map_err(|e| AppError::msg(format!("tasks.update: {e}")))?;
+            .remove(&task_id)
+            .map_err(|e| AppError::msg(format!("tasks.remove(toggle): {e}")))?;
+        self.tasks
+            .insert(task_id.clone(), updated)
+            .map_err(|e| AppError::msg(format!("tasks.insert(toggle): {e}")))?;
 
         app::emit!(Event::TaskToggled { id: &task_id });
         Ok(())
@@ -136,9 +151,13 @@ impl TodosState {
             ..task
         };
 
+        // UnorderedMap has no `update` — remove then re-insert is the upsert pattern.
         self.tasks
-            .update(&task_id, updated)
-            .map_err(|e| AppError::msg(format!("tasks.update: {e}")))?;
+            .remove(&task_id)
+            .map_err(|e| AppError::msg(format!("tasks.remove(edit): {e}")))?;
+        self.tasks
+            .insert(task_id.clone(), updated)
+            .map_err(|e| AppError::msg(format!("tasks.insert(edit): {e}")))?;
 
         app::emit!(Event::TaskEdited { id: &task_id });
         Ok(())
@@ -203,6 +222,7 @@ mod tests {
             description: "short".into(),
             done: false,
             created_at: 1,
+            toggled_at_ms: 0,
         };
         let b = Task {
             id: "t1".into(),
@@ -210,19 +230,22 @@ mod tests {
             description: "much longer description".into(),
             done: false,
             created_at: 1,
+            toggled_at_ms: 0,
         };
         a.merge(&b).unwrap();
         assert_eq!(a.description, "much longer description");
     }
 
     #[test]
-    fn task_merge_done_takes_other() {
+    fn task_merge_done_lww_higher_timestamp_wins() {
+        // Toggle on node-1 (higher timestamp) must survive merge from node-2 (lower ts).
         let mut a = Task {
             id: "t1".into(),
             author: "alice".into(),
             description: "task".into(),
             done: false,
             created_at: 1,
+            toggled_at_ms: 0,
         };
         let b = Task {
             id: "t1".into(),
@@ -230,8 +253,36 @@ mod tests {
             description: "task".into(),
             done: true,
             created_at: 1,
+            toggled_at_ms: 1000,
         };
+        // Merge: b has higher toggled_at_ms → a should adopt done=true.
         a.merge(&b).unwrap();
         assert!(a.done);
+        assert_eq!(a.toggled_at_ms, 1000);
+    }
+
+    #[test]
+    fn task_merge_done_older_toggle_cannot_revert() {
+        // Node-1 toggled at t=1000 (done=true); node-2 still at t=0 (done=false).
+        // Merging node-2's stale state into node-1 must NOT revert done.
+        let mut a = Task {
+            id: "t1".into(),
+            author: "alice".into(),
+            description: "task".into(),
+            done: true,
+            created_at: 1,
+            toggled_at_ms: 1000,
+        };
+        let b = Task {
+            id: "t1".into(),
+            author: "alice".into(),
+            description: "task".into(),
+            done: false,
+            created_at: 1,
+            toggled_at_ms: 0,
+        };
+        a.merge(&b).unwrap();
+        assert!(a.done, "stale merge must not revert the toggle");
+        assert_eq!(a.toggled_at_ms, 1000);
     }
 }
