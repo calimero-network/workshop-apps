@@ -4,12 +4,12 @@ App: team-todos
 Summary: A shared todo list where teammates add, complete, and manage tasks together in real time
 
 ## Backend (logic/src/lib.rs)
-- [ ] Define entity: [todos] Task (id:String, author:String, description:String, done:bool, created_at:u64)
-- [ ] Implement mutate: [todos] add_task(description: String) → app::Result<String>
-- [ ] Implement mutate: [todos] toggle_task(task_id: String) → app::Result<()>
-- [ ] Implement mutate: [todos] edit_task(task_id: String, new_description: String) → app::Result<()>
-- [ ] Implement mutate: [todos] delete_task(task_id: String) → app::Result<()>
-- [ ] Implement view: [todos] list_tasks() → app::Result<Vec<Task>>
+- [x] Define entity: [todos] Task (id:String, author:String, description:String, done:bool, created_at:u64)
+- [x] Implement mutate: [todos] add_task(description: String) → app::Result<String>
+- [x] Implement mutate: [todos] toggle_task(task_id: String) → app::Result<()>
+- [x] Implement mutate: [todos] edit_task(task_id: String, new_description: String) → app::Result<()>
+- [x] Implement mutate: [todos] delete_task(task_id: String) → app::Result<()>
+- [x] Implement view: [todos] list_tasks() → app::Result<Vec<Task>>
 
 ## Frontend (app/)
 - [ ] Screen: TaskListPage — Shared task list with add-task input, toggleable checkboxes, edit/delete controls, grouped by open vs. done
