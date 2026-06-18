@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '✅', title: 'Shared task list', body: 'Every teammate sees the same task board — open tasks first, completed ones below. Changes propagate in seconds.' },
+  { icon: '🔒', title: 'Private by design', body: 'Your task list lives in a decentralized context on your own node. No SaaS, no subscriptions, no data leaks.' },
+  { icon: '✏️', title: 'Authored ownership', body: 'Only you can edit or delete tasks you created. Everyone can toggle tasks done — no permission headaches.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['What is a node?', 'A node (merod) is the runtime that stores your tasks and runs the app logic. You run your own — locally or on your own server — so your task data never touches a third-party service.'],
+  ['Where do my tasks live?', 'On your own node, as CRDT state that merges conflict-free across teammates\' nodes. There is no central database — nothing is stored on a server you don\'t control.'],
+  ['How do teammates join the list?', 'Create a workspace, then share an invitation code. Anyone you invite joins instantly and sees the same live task board — no accounts, no sign-up forms.'],
+  ['Who can edit or delete a task?', 'Only the person who created a task can edit or delete it. Every teammate can mark any task done or reopen it. The contract enforces this — it\'s not just a UI rule.'],
+  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and your teammates.'],
+  ['Is it really decentralized?', 'Yes. Tasks are CRDT data stored on the nodes of everyone in the workspace. Take your node offline and your data is safe; bring it back and it re-syncs with the team.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -106,17 +106,36 @@ const STEPS = [
   { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: tasks appear and get checked off in a shared list ─ */
+type TaskItem = { id: number; text: string; done: boolean; author: string; mine?: boolean };
+
+const TASK_SCRIPT: TaskItem[] = [
+  { id: 1, text: 'Write onboarding guide', done: false, author: 'A' },
+  { id: 2, text: 'Review pull requests', done: false, author: 'M' },
+  { id: 3, text: 'Set up CI pipeline', done: false, author: 'you', mine: true },
+  { id: 4, text: 'Update release notes', done: false, author: 'J' },
 ];
 
+// Animation frames: tasks appear one by one, then first two get checked off
+type TaskFrame =
+  | { type: 'add'; taskId: number }
+  | { type: 'check'; taskId: number }
+  | { type: 'pulse' };
+
+const TASK_FRAMES: { ms: number; frame: TaskFrame }[] = [
+  { ms: 400,  frame: { type: 'add',   taskId: 1 } },
+  { ms: 1000, frame: { type: 'add',   taskId: 2 } },
+  { ms: 1600, frame: { type: 'add',   taskId: 3 } },
+  { ms: 2200, frame: { type: 'add',   taskId: 4 } },
+  { ms: 3000, frame: { type: 'pulse' } },
+  { ms: 3400, frame: { type: 'check', taskId: 1 } },
+  { ms: 4000, frame: { type: 'check', taskId: 2 } },
+];
+const LOOP_MS = 5800;
+
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [shown, setShown] = useState<TaskItem[]>([]);
+  const [checked, setChecked] = useState<Set<number>>(new Set());
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
@@ -124,18 +143,35 @@ function LivePreview() {
     const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
     const run = () => {
       setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
-          setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
-        });
+      setChecked(new Set());
+      setPulse(false);
+      TASK_FRAMES.forEach(({ ms, frame }) => {
+        if (frame.type === 'add') {
+          const task = TASK_SCRIPT.find((t) => t.id === frame.taskId)!;
+          at(ms, () => {
+            setShown((p) => [...p, task]);
+            setPulse(true);
+            at(ms + 350, () => setPulse(false));
+          });
+        } else if (frame.type === 'check') {
+          const id = frame.taskId;
+          at(ms, () => {
+            setChecked((s) => new Set(s).add(id));
+            setPulse(true);
+            at(ms + 350, () => setPulse(false));
+          });
+        } else {
+          at(ms, () => { setPulse(true); at(ms + 350, () => setPulse(false)); });
+        }
       });
     };
     run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
+    const loop = window.setInterval(run, LOOP_MS + 1200);
     return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
   }, []);
+
+  const open = shown.filter((t) => !checked.has(t.id));
+  const done = shown.filter((t) => checked.has(t.id));
 
   return (
     <Preview aria-hidden="true">
@@ -150,11 +186,25 @@ function LivePreview() {
         <div className="peers">
           <i>A</i><i>M</i><i>J</i><b>+ you</b>
         </div>
-        <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+        <div className="tasklist">
+          {open.length > 0 && (
+            <div className="group-label">Open — {open.length}</div>
+          )}
+          {open.map((t) => (
+            <div key={t.id} className={`trow${t.mine ? ' mine' : ''}`}>
+              <span className="chk" />
+              <span className="tdesc">{t.text}</span>
+              <span className="tauthor">{t.author}</span>
+            </div>
+          ))}
+          {done.length > 0 && (
+            <div className="group-label muted">Done — {done.length}</div>
+          )}
+          {done.map((t) => (
+            <div key={t.id} className="trow done">
+              <span className="chk checked" />
+              <span className="tdesc">{t.text}</span>
+              <span className="tauthor">{t.author}</span>
             </div>
           ))}
         </div>
@@ -235,8 +285,8 @@ export default function LandingPage() {
         <Inner>
           <R v="up">
             <Kicker>How it works</Kicker>
-            <H2>From your node to a shared app — in four moves</H2>
-            <Sub>No accounts, no servers, no setup friction. Connect a node and you’re collaborating.</Sub>
+            <H2>From your node to a shared task board — in four moves</H2>
+            <Sub>No accounts, no SaaS subscription, no setup friction. Connect a node and your team is collaborating.</Sub>
           </R>
           <Pipeline>
             <span className="track" />
@@ -258,8 +308,8 @@ export default function LandingPage() {
       <Section id="features">
         <Inner>
           <R v="up">
-            <Kicker>Why it’s different</Kicker>
-            <H2>Built on the Calimero network</H2>
+            <Kicker>Why it's different</Kicker>
+            <H2>Teamwork without a server in the middle</H2>
           </R>
           <Cards>
             {FEATURES.map((f, i) => (
@@ -280,7 +330,7 @@ export default function LandingPage() {
         <Inner style={{ maxWidth: 760 }}>
           <R v="up">
             <Kicker>FAQ</Kicker>
-            <H2>Nodes, contexts &amp; your data</H2>
+            <H2>Nodes, tasks &amp; your data</H2>
           </R>
           <FaqList>
             {FAQS.map(([q, a], i) => (
@@ -293,8 +343,8 @@ export default function LandingPage() {
       {/* ── final CTA ──────────────────────────────────────────── */}
       <CtaBand>
         <R v="zoom">
-          <h2>Connect your node to get started.</h2>
-          <p>It takes seconds — your data never leaves your control.</p>
+          <h2>Start your team's shared task board today.</h2>
+          <p>Connect your node and invite your teammates — tasks sync in seconds, your data stays yours.</p>
           <div className="btn"><ConnectButton /></div>
         </R>
       </CtaBand>
@@ -304,7 +354,7 @@ export default function LandingPage() {
         <div className="top">
           <div className="brand">
             <span className="wm"><span className="mk"><CalimeroLogo size={20} color={C.green} /></span> {APP_DISPLAY_NAME}</span>
-            <p>Private. Real-time. Yours.</p>
+            <p>Tasks for teams — private, real-time, yours.</p>
           </div>
           <div className="cols">
             <div>
@@ -504,6 +554,8 @@ const Preview = styled.div`
   background: ${C.ink};
   box-shadow: 0 30px 70px -30px rgba(14, 20, 15, 0.5);
   overflow: hidden;
+  min-width: 300px;
+
   .bar {
     display: flex;
     align-items: center;
@@ -531,7 +583,15 @@ const Preview = styled.div`
     }
     em.on { color: ${C.green}; }
   }
-  .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
+
+  .body {
+    padding: 14px 14px 16px;
+    min-height: 230px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
   .peers { display: flex; align-items: center; gap: 0; }
   .peers i {
     width: 22px; height: 22px; border-radius: 50%;
@@ -543,12 +603,47 @@ const Preview = styled.div`
   }
   .peers i:first-child { margin-left: 0; }
   .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
-  .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+
+  /* task list */
+  .tasklist { display: flex; flex-direction: column; gap: 5px; }
+  .group-label {
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+    color: ${C.mutedSoft}; margin: 4px 0 2px;
+  }
+  .group-label.muted { opacity: 0.6; margin-top: 10px; }
+
+  .trow {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 9px; border-radius: 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+    transition: background 0.2s;
+  }
+  .trow.mine { border-color: rgba(164,255,17,0.25); background: rgba(164,255,17,0.06); }
+  .trow.done { opacity: 0.55; }
+
+  .chk {
+    width: 14px; height: 14px; flex-shrink: 0; border-radius: 4px;
+    border: 1.5px solid rgba(255,255,255,0.22);
+    background: transparent; display: grid; place-items: center;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .chk.checked {
+    border-color: #10B981; background: #10B981;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='2 6 5 9 10 3'/%3E%3C/svg%3E");
+    background-size: 10px; background-repeat: no-repeat; background-position: center;
+  }
+
+  .tdesc {
+    flex: 1; font-size: 11.5px; color: #dfe7db; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .trow.done .tdesc { text-decoration: line-through; color: ${C.mutedSoft}; }
+  .tauthor {
+    font-size: 9.5px; font-weight: 700; color: ${C.green}; opacity: 0.7;
+    width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(164,255,17,0.35);
+    display: grid; place-items: center; flex-shrink: 0;
+  }
 `;
 
 /* sections */

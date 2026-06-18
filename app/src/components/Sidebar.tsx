@@ -1,15 +1,19 @@
+/**
+ * Sidebar — workspace selector + member list for team-todos.
+ *
+ * Rooms and room-specific props from the chat scaffold have been removed;
+ * only workspace selection, member directory, invite, and nav actions remain.
+ */
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { C, useTheme, MoonIcon } from '../theme';
 import { useMero, CalimeroLogo, type GroupMember } from '@calimero-network/mero-react';
-import { RoomSummary } from '../api/lobby/LobbyClient';
 import type { LobbyRecord } from '../hooks/useChatLobby';
 import MemberPopup from './MemberPopup';
 
 const MAX_NAME_LEN = 20;
 const DOCS_URL = 'https://docs.calimero.network';
-
 
 interface SidebarProps {
   // Workspace selector
@@ -26,14 +30,10 @@ interface SidebarProps {
   memberNames: Record<string, string>;
   onSetName: (name: string) => Promise<void>;
 
-  // Room list
-  rooms: RoomSummary[];
-  selectedRoomId: string | null;
-  onSelectRoom: (room: RoomSummary) => void;
-  onCreateRoom: () => void;
+  // Invite
   onInvite: () => void;
 
-  // Admin actions (workspace role mgmt). Gated on viewerIsAdmin inside the popup.
+  // Admin actions
   viewerIsAdmin: boolean;
   onSetMemberRole: (identity: string, role: 'Admin' | 'Member') => Promise<void>;
   onRemoveMember: (identity: string) => Promise<void>;
@@ -64,10 +64,6 @@ export default function Sidebar({
   onlineMembers,
   memberNames,
   onSetName,
-  rooms,
-  selectedRoomId,
-  onSelectRoom,
-  onCreateRoom,
   onInvite,
   viewerIsAdmin,
   onSetMemberRole,
@@ -79,15 +75,9 @@ export default function Sidebar({
   const { logout } = useMero();
   const { theme, toggle: toggleTheme } = useTheme();
 
-  // Editable display name for self. Names are author-owned, so the only
-  // source of `persistedName` change is our own committed write — sync the
-  // draft whenever the backend value changes. Don't gate this on a local
-  // `isEditing` flag; flipping it during commit re-fires the effect and
-  // reverts the optimistic value before the roundtrip lands.
   const persistedName = (selfIdentity && memberNames[selfIdentity]) || '';
   const [draftName, setDraftName] = useState(persistedName);
 
-  // Member whose identity popup is open (key + copy).
   const [popupMember, setPopupMember] = useState<
     { identity: string; alias?: string; role?: string; online: boolean; isSelf: boolean } | null
   >(null);
@@ -108,13 +98,10 @@ export default function Sidebar({
 
   const memberCount = members.length + (selfIdentity ? 1 : 0);
 
-  // Authed users can't view the landing (route guard redirects them back), so
-  // both "back to landing" and "log out" sign out first, then return to the
-  // landing page (and stop there).
   const backToLanding = () => { logout(); navigate('/', { replace: true }); };
   const openDocs = () => window.open(DOCS_URL, '_blank', 'noopener,noreferrer');
 
-  /* Collapsed rail — a slim icon strip so the chat takes the full width. */
+  /* Collapsed rail */
   if (collapsed) {
     return (
       <Rail>
@@ -122,7 +109,7 @@ export default function Sidebar({
           <Chevron dir="right" />
         </RailBtn>
         <span className="logo"><CalimeroLogo size={22} color={C.greenInk} /></span>
-        <RailBtn onClick={onCreateRoom} title="New room" aria-label="New room"><PlusIcon /></RailBtn>
+        <RailBtn onClick={onInvite} title="Invite teammate" aria-label="Invite teammate"><InviteIcon /></RailBtn>
         <div className="spacer" />
         <RailBtn onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme"><MoonIcon filled={theme === 'dark'} /></RailBtn>
         <RailBtn onClick={openDocs} title="Docs" aria-label="Docs"><BookIcon /></RailBtn>
@@ -136,7 +123,7 @@ export default function Sidebar({
       {/* Workspace header */}
       <Header>
         <div className="info">
-          <h2 title={workspaceAlias || 'Chat'}>{workspaceAlias || 'Chat'}</h2>
+          <h2 title={workspaceAlias || 'Team Todos'}>{workspaceAlias || 'Team Todos'}</h2>
           <span className="count">{memberCount} member{memberCount === 1 ? '' : 's'}</span>
         </div>
         <IconBtn onClick={onToggleCollapse} title="Collapse sidebar" aria-label="Collapse sidebar">
@@ -145,7 +132,7 @@ export default function Sidebar({
       </Header>
 
       <Scroll>
-        {/* Workspace list (always visible — switching is just a transition) */}
+        {/* Workspace list */}
         <Block>
           <Label>Workspaces</Label>
           {workspaces.map((ws) => (
@@ -165,7 +152,6 @@ export default function Sidebar({
         <Block>
           <Label>Members</Label>
 
-          {/* Self — editable display name */}
           {selfIdentity && (
             <MemberRow>
               <Avatar
@@ -195,7 +181,6 @@ export default function Sidebar({
             </MemberRow>
           )}
 
-          {/* Other members */}
           {members.map((m) => {
             const online = onlineMembers.has(m.identity);
             const label = renderMemberLabel(m.identity, m.name);
@@ -215,33 +200,13 @@ export default function Sidebar({
           })}
         </Block>
 
-        {/* Room actions */}
+        {/* Invite action */}
         <ActionBar>
-          <PrimaryBtn onClick={onCreateRoom}>+ Room</PrimaryBtn>
-          <SecondaryBtn onClick={onInvite}>Invite</SecondaryBtn>
+          <PrimaryBtn onClick={onInvite}>Invite teammate</PrimaryBtn>
         </ActionBar>
-
-        {/* Room list */}
-        <RoomList>
-          <Label style={{ margin: '4px 8px 6px' }}>Rooms</Label>
-          {rooms.length === 0 && <Empty>No rooms yet</Empty>}
-          {rooms.map((room) => (
-            <RoomRow
-              key={room.room_id}
-              data-testid={`sidebar-room-${room.name}`}
-              $active={room.room_id === selectedRoomId}
-              onClick={() => onSelectRoom(room)}
-            >
-              <div className="name"># {room.name}</div>
-              {/* Rooms auto-join every workspace member, so a room's membership
-                  is the workspace membership (live count, not the stored one). */}
-              <div className="meta">{memberCount} member{memberCount !== 1 ? 's' : ''}</div>
-            </RoomRow>
-          ))}
-        </RoomList>
       </Scroll>
 
-      {/* Footer — links + logout */}
+      {/* Footer */}
       <Footer>
         <div className="links">
           <a href={DOCS_URL} target="_blank" rel="noreferrer">Docs ↗</a>
@@ -278,8 +243,12 @@ function Chevron({ dir }: { dir: 'left' | 'right' }) {
     </svg>
   );
 }
-const PlusIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M12 5v14M5 12h14" /></svg>
+const InviteIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M19 8v6M22 11h-6" />
+  </svg>
 );
 const BookIcon = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
@@ -417,35 +386,13 @@ const NameInput = styled.input`
   &:focus { background: ${C.paper2}; box-shadow: inset 0 0 0 1px ${C.line}; }
 `;
 const ActionBar = styled.div`
-  padding: 10px 12px; display: flex; gap: 8px; border-bottom: 1px solid ${C.line};
-`;
-const baseBtn = `
-  flex: 1; padding: 9px 10px; font-size: 13px; font-weight: 600; border-radius: 10px; cursor: pointer;
-  transition: background 0.16s, box-shadow 0.18s, transform 0.14s, border-color 0.16s;
+  padding: 10px 12px; display: flex; gap: 8px;
 `;
 const PrimaryBtn = styled.button`
-  ${baseBtn}
+  flex: 1; padding: 9px 10px; font-size: 13px; font-weight: 600; border-radius: 10px; cursor: pointer;
   color: ${C.onAccent}; background: ${C.green}; border: 1px solid #93e60c;
+  transition: background 0.16s, box-shadow 0.18s, transform 0.14s;
   &:hover { background: ${C.greenHover}; box-shadow: 0 8px 22px rgba(164,255,17,0.4); transform: translateY(-1px); }
-`;
-const SecondaryBtn = styled.button`
-  ${baseBtn}
-  color: ${C.ink}; background: ${C.paper}; border: 1px solid ${C.line};
-  &:hover { background: ${C.paper2}; border-color: ${C.lineDark}; }
-`;
-const RoomList = styled.div`
-  flex: 1; padding: 8px 8px 12px;
-`;
-const Empty = styled.div`
-  padding: 18px 12px; text-align: center; font-size: 12.5px; color: ${C.mutedSoft};
-`;
-const RoomRow = styled.div<{ $active?: boolean }>`
-  padding: 9px 11px; border-radius: 10px; cursor: pointer; margin-bottom: 2px;
-  background: ${(p) => (p.$active ? 'rgba(164,255,17,0.16)' : 'transparent')};
-  transition: background 0.14s;
-  &:hover { background: ${(p) => (p.$active ? 'rgba(164,255,17,0.2)' : C.paper2)}; }
-  .name { font-size: 13.5px; font-weight: ${(p) => (p.$active ? 700 : 600)}; color: ${(p) => (p.$active ? C.greenInk : C.ink)}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .meta { font-size: 11.5px; color: ${C.mutedSoft}; margin-top: 1px; }
 `;
 const Footer = styled.div`
   flex-shrink: 0;
