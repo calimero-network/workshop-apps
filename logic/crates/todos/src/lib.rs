@@ -103,11 +103,8 @@ impl TodosState {
         };
 
         self.tasks
-            .remove(&task_id)
-            .map_err(|e| AppError::msg(format!("tasks.remove: {e}")))?;
-        self.tasks
-            .insert(task_id.clone(), updated)
-            .map_err(|e| AppError::msg(format!("tasks.insert: {e}")))?;
+            .update(&task_id, updated)
+            .map_err(|e| AppError::msg(format!("tasks.update: {e}")))?;
 
         app::emit!(Event::TaskToggled { id: &task_id });
         Ok(())
@@ -140,11 +137,8 @@ impl TodosState {
         };
 
         self.tasks
-            .remove(&task_id)
-            .map_err(|e| AppError::msg(format!("tasks.remove: {e}")))?;
-        self.tasks
-            .insert(task_id.clone(), updated)
-            .map_err(|e| AppError::msg(format!("tasks.insert: {e}")))?;
+            .update(&task_id, updated)
+            .map_err(|e| AppError::msg(format!("tasks.update: {e}")))?;
 
         app::emit!(Event::TaskEdited { id: &task_id });
         Ok(())
