@@ -1,4 +1,4 @@
-import React, { type ReactNode } from 'react';
+import React, { useEffect, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppMode, MeroProvider, useMero } from '@calimero-network/mero-react';
 import { ToastProvider } from '@calimero-network/mero-ui';
@@ -6,7 +6,7 @@ import { ToastProvider } from '@calimero-network/mero-ui';
 import LandingPage from './pages/landing/LandingPage';
 import LoginPage from './pages/login/LoginPage';
 import BoardPage from './pages/board/BoardPage';
-import { APP_PACKAGE, APP_ROUTE } from './config';
+import { APP_DISPLAY_NAME, APP_DESCRIPTION, APP_PACKAGE, APP_ROUTE } from './config';
 
 /**
  * Auth route guards. The MeroProvider resolves auth ASYNCHRONOUSLY — on first
@@ -33,6 +33,17 @@ function RedirectIfAuthed({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
+  // Keep browser tab title and meta description in sync with studio.config.json.
+  useEffect(() => {
+    document.title = APP_DISPLAY_NAME;
+    const descEl = document.querySelector('meta[name="description"]');
+    if (descEl) descEl.setAttribute('content', APP_DESCRIPTION);
+    const ogTitle = document.querySelector('meta[property="og:title"]');
+    if (ogTitle) ogTitle.setAttribute('content', APP_DISPLAY_NAME);
+    const ogDesc = document.querySelector('meta[property="og:description"]');
+    if (ogDesc) ogDesc.setAttribute('content', APP_DESCRIPTION);
+  }, []);
+
   const registryUrl = import.meta.env.VITE_REGISTRY_URL?.trim() || undefined;
   // P4 RUNTIME defense against package shadowing: APP_PACKAGE (from
   // studio.config via ./config) takes precedence over a stale

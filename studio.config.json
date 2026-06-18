@@ -3,7 +3,7 @@
   "appVersion": "0.1.1",
   "package": "com.calimero-studio.userf.task-tracker",
   "metadata": {
-    "name": "task-tracker",
+    "name": "Task Tracker",
     "description": "A shared Jira-style task board where teams create, assign, and move tasks through status columns together",
     "author": "Calimero",
     "route": "/task-tracker"
