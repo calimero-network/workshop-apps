@@ -167,19 +167,37 @@ pub struct BoardState {
 #[app::logic]
 impl BoardState {
     /// Called by the Calimero runtime when the context is first created.
-    /// Seeds the SharedStorage writer set with the creator's public key so
-    /// `init_board` can subsequently write governed settings.
+    /// Seeds the SharedStorage writer set with the creator's public key and
+    /// immediately initializes the board settings with the provided `name`,
+    /// combining what was previously a two-step `init` + `init_board` flow.
     #[app::init]
-    pub fn init() -> BoardState {
+    pub fn init(name: String) -> BoardState {
         let creator = executor_pubkey();
         let mut writers = BTreeSet::new();
         let _ = writers.insert(creator);
 
-        BoardState {
+        let mut state = BoardState {
             settings: SharedStorage::new_with_field_name("board:settings", writers, false),
             tasks: UnorderedMap::new_with_field_name("board:tasks"),
             comments: AuthoredMap::new_with_field_name("board:comments"),
+        };
+
+        if !name.is_empty() {
+            let now_ms = storage_env::time_now() / 1_000_000;
+            let board_id = generate_board_id(now_ms);
+            let board_settings = BoardSettings {
+                id: board_id.clone(),
+                name: name.clone(),
+                created_at: now_ms,
+            };
+            let _ = state.settings.insert(LwwRegister::new(board_settings));
+            app::emit!(Event::BoardInitialized {
+                id: &board_id,
+                name: &name,
+            });
         }
+
+        state
     }
 
     // -------------------------------------------------------------------------

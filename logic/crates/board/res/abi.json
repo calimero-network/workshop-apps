@@ -277,7 +277,14 @@
   "methods": [
     {
       "name": "init",
-      "params": [],
+      "params": [
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
       "returns": {
         "kind": "unit"
       }
