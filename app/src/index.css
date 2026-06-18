@@ -23,6 +23,28 @@
   --c-off: #c4ccbf;
   --c-disabled: #e2e8da;
   --c-danger: #d23b2f;
+
+  /* Opacity-variant semantic tokens — override per data-style */
+  --c-green-faint: rgba(164,255,17,0.08);
+  --c-green-soft:  rgba(164,255,17,0.14);
+  --c-green-border: rgba(164,255,17,0.40);
+  --c-green-ring:  rgba(164,255,17,0.18);
+}
+
+/* ── clean-professional: spec primary #1D4ED8 (blue-700) / accent #F59E0B ──── */
+:root[data-style='clean-professional'] {
+  --c-green: #1d4ed8;
+  --c-green-hover: #1e40af;
+  --c-green-deep: #1e3a8a;
+  --c-green-ink: #1d4ed8;
+  --c-on-accent: #ffffff;
+  --c-paper2: #f8fafc;
+  --c-line: #e2e8f0;
+  --c-off: #94a3b8;
+  --c-green-faint:  rgba(29,78,216,0.06);
+  --c-green-soft:   rgba(29,78,216,0.10);
+  --c-green-border: rgba(29,78,216,0.28);
+  --c-green-ring:   rgba(29,78,216,0.15);
 }
 
 :root[data-theme='dark'] {

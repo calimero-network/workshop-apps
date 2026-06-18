@@ -18,9 +18,9 @@ Summary: A shared Jira-style task board where teams create, assign, and move tas
 - [x] Implement view: [board] get_comments(task_id: String) → app::Result<Vec<Comment>>
 
 ## Frontend (app/)
-- [ ] Screen: BoardView — Kanban-style board with three columns (To Do, In Progress, Done), task cards showing title/priority/assignee, and filter controls
-- [ ] Screen: TaskDetailPanel — Slide-out panel showing full task details, assignment controls, and a comment thread
-- [ ] Apply designTheme tokens
+- [x] Screen: BoardView — Kanban-style board with three columns (To Do, In Progress, Done), task cards showing title/priority/assignee, and filter controls
+- [x] Screen: TaskDetailPanel — Slide-out panel showing full task details, assignment controls, and a comment thread
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

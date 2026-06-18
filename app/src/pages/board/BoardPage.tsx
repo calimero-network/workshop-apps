@@ -145,8 +145,8 @@ export default function BoardPage() {
             }}>
               <div style={{
                 width: 56, height: 56, display: 'grid', placeItems: 'center',
-                borderRadius: 16, background: 'rgba(164,255,17,0.14)',
-                border: '1px solid rgba(164,255,17,0.4)',
+                borderRadius: 16, background: 'var(--c-green-soft)',
+                border: '1px solid var(--c-green-border)',
               }}>
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--c-green-ink)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="7" height="7" rx="1" />

@@ -136,7 +136,7 @@ const Head = styled.div`
   .status i { width: 8px; height: 8px; border-radius: 50%; }
   .status i.on { background: ${C.green}; }
   .status i.off { background: ${C.off}; }
-  .status .role { margin-left: 6px; font-size: 10.5px; font-weight: 600; color: ${C.greenInk}; background: rgba(164,255,17,0.14); padding: 2px 7px; border-radius: 999px; }
+  .status .role { margin-left: 6px; font-size: 10.5px; font-weight: 600; color: ${C.greenInk}; background: ${C.greenSoft}; padding: 2px 7px; border-radius: 999px; }
 `;
 const Avatar = styled.span<{ $online: boolean }>`
   width: 46px; height: 46px; flex-shrink: 0;
@@ -155,7 +155,7 @@ const CopyBtn = styled.button`
   width: 100%; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer;
   color: ${C.onAccent}; background: ${C.green}; border: 1px solid #93e60c; border-radius: 10px;
   transition: background 0.16s, box-shadow 0.18s, transform 0.14s;
-  &:hover { background: #93e60c; box-shadow: 0 8px 22px rgba(164,255,17,0.4); transform: translateY(-1px); }
+  &:hover { background: ${C.greenHover}; box-shadow: 0 8px 22px ${C.greenBorder}; transform: translateY(-1px); }
 `;
 const Manage = styled.div`
   margin-top: 18px; padding-top: 16px; border-top: 1px solid ${C.line};

@@ -149,7 +149,7 @@ const Close = styled.button`
 const IconBadge = styled.div`
   width: 48px; height: 48px; margin-bottom: 16px;
   display: grid; place-items: center; border-radius: 14px;
-  background: rgba(164,255,17,0.16); border: 1px solid rgba(164,255,17,0.4);
+  background: ${C.greenSoft}; border: 1px solid ${C.greenBorder};
 `;
 const Req = styled.span`color: ${C.danger};`;
 const Field = styled.div`
@@ -161,7 +161,7 @@ const Field = styled.div`
     outline: none; font-family: inherit; resize: vertical;
     transition: border-color 0.18s, box-shadow 0.18s;
     &::placeholder { color: ${C.mutedSoft}; }
-    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 4px rgba(164,255,17,0.18); }
+    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 4px ${C.greenRing}; }
     &:disabled { opacity: 0.6; }
   }
 `;

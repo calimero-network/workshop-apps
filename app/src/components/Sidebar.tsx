@@ -293,23 +293,23 @@ const Row = styled.div<{ $active?: boolean }>`
   padding: 7px 10px; border-radius: 9px; cursor: pointer; font-size: 13px;
   font-weight: ${(p) => (p.$active ? 600 : 500)};
   color: ${(p) => (p.$active ? C.greenInk : C.muted)};
-  background: ${(p) => (p.$active ? 'rgba(164,255,17,0.16)' : 'transparent')};
+  background: ${(p) => (p.$active ? C.greenSoft : 'transparent')};
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   transition: background 0.14s, color 0.14s;
-  &:hover { background: ${(p) => (p.$active ? 'rgba(164,255,17,0.2)' : C.paper2)}; color: ${C.ink}; }
+  &:hover { background: ${(p) => (p.$active ? C.greenSoft : C.paper2)}; color: ${C.ink}; }
 `;
 const AddRow = styled.div`
   margin-top: 2px; padding: 7px 10px; border-radius: 9px; cursor: pointer;
   font-size: 12.5px; font-weight: 600; color: ${C.greenDeep};
   transition: background 0.14s;
-  &:hover { background: rgba(164,255,17,0.12); }
+  &:hover { background: ${C.greenFaint}; }
 `;
 const MemberRow = styled.div<{ $clickable?: boolean }>`
   padding: 5px 8px; border-radius: 9px; margin-bottom: 1px;
   display: flex; align-items: center; gap: 9px;
   cursor: ${(p) => (p.$clickable ? 'pointer' : 'default')};
   .name { flex: 1; font-size: 13px; color: ${C.muted}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .you { margin-left: auto; font-size: 10.5px; font-weight: 600; color: ${C.greenDeep}; background: rgba(164,255,17,0.14); padding: 2px 7px; border-radius: 999px; }
+  .you { margin-left: auto; font-size: 10.5px; font-weight: 600; color: ${C.greenDeep}; background: ${C.greenSoft}; padding: 2px 7px; border-radius: 999px; }
   &:hover { background: ${C.paper2}; }
 `;
 const KeyHint = styled.span`

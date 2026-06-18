@@ -187,9 +187,9 @@ const PrimaryBtn = styled.button`
   ${baseBtn}
   color: ${C.onAccent};
   background: ${C.green};
-  border: 1px solid #93e60c;
+  border: 1px solid ${C.greenBorder};
   box-shadow: 0 1px 0 rgba(0,0,0,0.04);
-  &:hover { background: ${C.greenHover}; box-shadow: 0 10px 28px rgba(164,255,17,0.4); transform: translateY(-1px); }
+  &:hover { background: ${C.greenHover}; box-shadow: 0 10px 28px ${C.greenBorder}; transform: translateY(-1px); }
 `;
 const SecondaryBtn = styled.button`
   ${baseBtn}
@@ -229,7 +229,7 @@ const BackLink = styled.button`
   padding: 6px 8px;
   border-radius: 8px;
   transition: background 0.15s;
-  &:hover { background: rgba(164,255,17,0.12); }
+  &:hover { background: ${C.greenFaint}; }
 `;
 const Footnote = styled.p`
   font-size: 12.5px;

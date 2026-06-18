@@ -267,11 +267,11 @@ const StatusRow = styled.div`display: flex; gap: 6px;`;
 const StatusBtn = styled.button<{ $active: boolean }>`
   flex: 1; padding: 8px 6px; font-size: 12px; font-weight: 600; border-radius: 9px;
   cursor: pointer; border: 1.5px solid transparent;
-  background: ${(p) => p.$active ? 'rgba(164,255,17,0.16)' : C.paper2};
+  background: ${(p) => p.$active ? C.greenSoft : C.paper2};
   color: ${(p) => p.$active ? C.greenInk : C.muted};
-  border-color: ${(p) => p.$active ? 'rgba(164,255,17,0.5)' : 'transparent'};
+  border-color: ${(p) => p.$active ? C.greenBorder : 'transparent'};
   transition: background 0.15s, color 0.15s, border-color 0.15s;
-  &:hover:not(:disabled) { background: rgba(164,255,17,0.1); color: ${C.greenInk}; }
+  &:hover:not(:disabled) { background: ${C.greenFaint}; color: ${C.greenInk}; }
   &:disabled { opacity: 0.6; cursor: default; }
 `;
 const PriorityBadge = styled.span<{ $priority: string }>`
@@ -313,7 +313,7 @@ const EditRow = styled.div`display: flex; flex-direction: column; gap: 8px;
     width: 100%; padding: 9px 11px; font-size: 13.5px; font-family: inherit;
     color: ${C.ink}; background: ${C.paper}; border: 1px solid ${C.line};
     border-radius: 9px; outline: none; resize: vertical;
-    &:focus { border-color: ${C.green}; }
+    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px ${C.greenRing}; }
   }
 `;
 const EditActions = styled.div`display: flex; gap: 8px;`;
@@ -334,7 +334,7 @@ const CommentTextarea = styled.textarea`
   border-radius: 10px; outline: none; resize: vertical;
   transition: border-color 0.18s, box-shadow 0.18s;
   &::placeholder { color: ${C.mutedSoft}; }
-  &:focus { border-color: ${C.green}; box-shadow: 0 0 0 4px rgba(164,255,17,0.14); }
+  &:focus { border-color: ${C.green}; box-shadow: 0 0 0 4px ${C.greenRing}; }
   &:disabled { opacity: 0.6; }
 `;
 const SendBtn = styled.button`

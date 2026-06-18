@@ -24,12 +24,20 @@ export const C = {
   paper: 'var(--c-paper)',
   paper2: 'var(--c-paper2)',
   line: 'var(--c-line)',
-  lineDark: 'rgba(164,255,17,0.14)',
+  lineDark: 'var(--c-green-faint)',
   muted: 'var(--c-muted)',
   mutedSoft: 'var(--c-muted-soft)',
   off: 'var(--c-off)',
   disabled: 'var(--c-disabled)',
   danger: 'var(--c-danger)',
+  /** Very faint accent tint — bg for empty/hover states */
+  greenFaint: 'var(--c-green-faint)',
+  /** Soft accent background — active/selected states */
+  greenSoft: 'var(--c-green-soft)',
+  /** Accent border/ring color */
+  greenBorder: 'var(--c-green-border)',
+  /** Focus ring shadow color */
+  greenRing: 'var(--c-green-ring)',
 } as const;
 
 export type ThemeMode = 'light' | 'dark';

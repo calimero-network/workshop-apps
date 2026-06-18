@@ -6,9 +6,9 @@ import type { GroupMember } from '@calimero-network/mero-react';
 import TaskCard from './TaskCard';
 
 const COLUMNS: { key: string; label: string; accent: string }[] = [
-  { key: 'todo',        label: 'To Do',       accent: 'rgba(59,130,246,0.14)' },
+  { key: 'todo',        label: 'To Do',       accent: 'var(--c-green-soft)' },
   { key: 'in_progress', label: 'In Progress',  accent: 'rgba(245,158,11,0.14)' },
-  { key: 'done',        label: 'Done',         accent: 'rgba(164,255,17,0.14)' },
+  { key: 'done',        label: 'Done',         accent: 'rgba(16,185,129,0.12)' },
 ];
 
 interface BoardViewProps {
@@ -203,6 +203,6 @@ const EmptyCol = styled.div`
   border: 1.5px dashed ${C.line}; margin-bottom: 8px;
   transition: border-color 0.16s, background 0.16s;
   span { font-size: 13px; color: ${C.mutedSoft}; font-weight: 600; }
-  &:hover { border-color: ${C.green}; background: rgba(164,255,17,0.06); }
+  &:hover { border-color: ${C.green}; background: ${C.greenFaint}; }
   &:hover span { color: ${C.greenDeep}; }
 `;
