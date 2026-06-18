@@ -447,7 +447,5 @@
         "$ref": "Event_CommentDeleted"
       }
     }
-  ],
-  "state_root": "BoardState",
-  "state_version": 1
+  ]
 }
