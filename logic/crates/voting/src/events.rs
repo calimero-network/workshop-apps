@@ -1,11 +1,13 @@
 #[calimero_sdk::app::event]
 pub enum Event<'a> {
-    /// A new room was created in the lobby.
-    RoomCreated { id: &'a str, name: &'a str },
-    /// A room was deleted from the lobby.
-    RoomDeleted { id: &'a str },
-    /// The room list changed (created, deleted, or updated).
-    RoomListUpdated {},
-    /// A member set or changed their display name.
-    NameChanged { id: &'a str },
+    /// The poll was created by the organizer.
+    PollCreated { id: &'a str },
+    /// A new option was added to the poll.
+    OptionAdded { id: &'a str },
+    /// An option was removed from the poll.
+    OptionRemoved { id: &'a str },
+    /// A voter submitted (or resubmitted) their ranking.
+    RankingSubmitted { id: &'a str },
+    /// The poll was closed by the organizer; no further rankings accepted.
+    PollClosed {},
 }
