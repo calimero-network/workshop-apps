@@ -60,9 +60,19 @@ function requireService(id: string): string {
 }
 
 export const SERVICE_NAME = {
-  /** Workspace-level service (lobby in chat): names, presence, directory listing. */
-  get directory(): string { return requireService('directory'); },
-  /** Per-context service (room in chat): the actual per-instance state. */
+  /**
+   * Workspace-level service.  For multi-service apps the entry is tagged
+   * id="directory".  For single-service apps (no id tags) we fall back to
+   * the one and only service so bootstrap still works.
+   */
+  get directory(): string {
+    const explicit = byId('directory');
+    if (explicit) return explicit.name;
+    const all = (raw as StudioConfig).services;
+    if (all.length === 1) return all[0].name;
+    throw new Error('studio.config.json: services[] missing entry for id="directory"');
+  },
+  /** Per-context service.  Returns null for single-service apps. */
   get instance(): string | null {
     const svc = byId('instance');
     return svc ? svc.name : null;

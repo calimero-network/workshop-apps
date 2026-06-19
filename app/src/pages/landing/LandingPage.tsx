@@ -4,13 +4,13 @@ import { ConnectButton, CalimeroLogo } from '@calimero-network/mero-react';
 import { APP_DISPLAY_NAME, APP_DESCRIPTION } from '../../config';
 
 /**
- * One-page marketing landing — the app's front door.
+ * One-page marketing landing -- the app's front door.
  *
  * White, professional Calimero aesthetic (neon green on paper + near-black),
  * mirroring Calimero Studio's landing. Scroll-reveal animations, an animated
  * live preview, a features grid and a FAQ about nodes / contexts / data.
  *
- * BUILD AGENT: customize the copy for the specific app — the headline, the
+ * BUILD AGENT: customize the copy for the specific app -- the headline, the
  * sub-headline, the three FEATURES, and the FAQ answers. Keep the structure,
  * the animations, the brand palette (C) and the auth wiring:
  *   - already authenticated (incl. desktop SSO skip) → go straight to the app
@@ -18,7 +18,7 @@ import { APP_DISPLAY_NAME, APP_DESCRIPTION } from '../../config';
  * Pull real product features from the spec; don't ship the placeholder copy.
  */
 
-/* ── Calimero brand palette — neon green on white + near-black ─────────────── */
+/* ── Calimero brand palette -- neon green on white + near-black ─────────────── */
 const C = {
   green: '#A4FF11',
   greenHover: '#93e60c',
@@ -34,24 +34,24 @@ const C = {
   mutedSoft: '#93a394',
 } as const;
 
-/* ConnectButton + its login popup use the default mero-react theme — the
+/* ConnectButton + its login popup use the default mero-react theme -- the
    default button (green #a5ff11 on dark text) already reads well on this white
    page, and the default popup keeps proper contrast (a dark modal). Overriding
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: 'votes', title: 'Ranked-choice fairness', body: "Everyone ranks every option from most to least preferred. The winner emerges from the full weight of the group's preferences, not just plurality." },
+  { icon: 'sync', title: 'Live consensus, no server', body: "Rankings sync instantly across all nodes via Calimero's CRDT protocol. Watch standings update in real time as peers submit their votes." },
+  { icon: 'lock', title: 'You own the vote', body: "Poll state lives on your nodes only -- no third-party tallying service, no hidden data access. The group decides; no one else sees the results." },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['What is a node?', 'A node (merod) is the runtime that stores your poll data and executes the voting logic. You run your own -- locally or on your own server -- so your group\'s votes never touch a third-party service.'],
+  ['Where are the poll results stored?', 'Rankings are stored as CRDT records on each participating node. They merge conflict-free across peers -- no central tallying server, no hidden data access.'],
+  ['What is a voting context?', 'A context is the shared, encrypted space your group joins for a poll. Everyone in the context sees the same options and live standings, synced directly between nodes in real time.'],
+  ['How does ranked-choice work here?', 'Each member drags options into their preferred order and submits. The app computes each option\'s average rank across all submissions and shows live standings. The option with the best average rank wins.'],
+  ['Can I change my ranking?', 'Yes. While the poll is open you can resubmit your ranking as many times as you like -- your latest submission replaces the previous one.'],
+  ['Who can close the poll?', 'The organizer (the member who created the poll) closes it. Once closed, the final standings are locked and no further rankings can be submitted.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -102,40 +102,72 @@ function R({
 const STEPS = [
   { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
   { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
+  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state -- no accounts.' },
   { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
-];
+/* ── animated live preview: votes ticking up as peers submit rankings ──────── */
+type VoteFrame = { options: { label: string; score: number; first: number }[]; pulse: boolean };
+
+const OPTION_LABELS = ['Team dinner', 'Remote offsite', 'Game night', 'Hackathon'];
+
+function buildFrame(step: number): VoteFrame {
+  // At each step one more "peer" has submitted a ranking.
+  // Scores are fixed: each peer's ranking is encoded below.
+  const rankings: string[][] = [
+    ['Game night', 'Team dinner', 'Remote offsite', 'Hackathon'],
+    ['Team dinner', 'Game night', 'Remote offsite', 'Hackathon'],
+    ['Game night', 'Team dinner', 'Hackathon', 'Remote offsite'],
+    ['Team dinner', 'Game night', 'Remote offsite', 'Hackathon'],
+  ];
+
+  const sums: Record<string, number> = {};
+  const counts: Record<string, number> = {};
+  const firsts: Record<string, number> = {};
+  for (const label of OPTION_LABELS) { sums[label] = 0; counts[label] = 0; firsts[label] = 0; }
+
+  for (let i = 0; i < step; i++) {
+    rankings[i].forEach((label, idx) => {
+      sums[label] += idx + 1;
+      counts[label]++;
+      if (idx === 0) firsts[label]++;
+    });
+  }
+
+  const options = OPTION_LABELS.map((label) => ({
+    label,
+    score: counts[label] > 0 ? sums[label] / counts[label] : 99,
+    first: firsts[label],
+  })).sort((a, b) => a.score - b.score);
+
+  return { options, pulse: step > 0 };
+}
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [step, setStep] = useState(0);
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
     const timers: number[] = [];
     const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
     const run = () => {
-      setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
+      setStep(0);
+      setPulse(false);
+      [1, 2, 3, 4].forEach((s, i) => {
+        at(600 + i * 1400, () => {
+          setStep(s);
           setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
+          at(600 + i * 1400 + 400, () => setPulse(false));
         });
       });
     };
     run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
+    const loop = window.setInterval(run, 4 * 1400 + 2600);
     return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
   }, []);
+
+  const frame = buildFrame(step);
+  const maxScore = 4;
 
   return (
     <Preview aria-hidden="true">
@@ -148,15 +180,25 @@ function LivePreview() {
       </div>
       <div className="body">
         <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
-        </div>
-        <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
-            </div>
+          {['A', 'M', 'J', 'you'].map((who, i) => (
+            <i key={who} style={{ opacity: step > i ? 1 : 0.28, transition: 'opacity 0.4s' }}>{who}</i>
           ))}
+          <b>{step} vote{step !== 1 ? 's' : ''} in</b>
+        </div>
+        <div className="bars">
+          {frame.options.map((opt, rank) => {
+            const pct = step === 0 ? 0 : Math.round(Math.max(0, (maxScore - opt.score + 0.5) / maxScore) * 100);
+            return (
+              <div key={opt.label} className={`bar-row${rank === 0 && step > 0 ? ' winner' : ''}`}>
+                <span className="rank">{rank + 1}</span>
+                <span className="lbl">{opt.label}</span>
+                <div className="track">
+                  <div className="fill" style={{ width: `${pct}%` }} />
+                </div>
+                {opt.first > 0 && <span className="badge">{opt.first}×1st</span>}
+              </div>
+            );
+          })}
         </div>
       </div>
     </Preview>
@@ -235,8 +277,8 @@ export default function LandingPage() {
         <Inner>
           <R v="up">
             <Kicker>How it works</Kicker>
-            <H2>From your node to a shared app — in four moves</H2>
-            <Sub>No accounts, no servers, no setup friction. Connect a node and you’re collaborating.</Sub>
+            <H2>From your node to a shared app -- in four moves</H2>
+            <Sub>No accounts, no servers, no setup friction. Connect a node and you're collaborating.</Sub>
           </R>
           <Pipeline>
             <span className="track" />
@@ -258,7 +300,7 @@ export default function LandingPage() {
       <Section id="features">
         <Inner>
           <R v="up">
-            <Kicker>Why it’s different</Kicker>
+            <Kicker>Why it's different</Kicker>
             <H2>Built on the Calimero network</H2>
           </R>
           <Cards>
@@ -293,8 +335,8 @@ export default function LandingPage() {
       {/* ── final CTA ──────────────────────────────────────────── */}
       <CtaBand>
         <R v="zoom">
-          <h2>Connect your node to get started.</h2>
-          <p>It takes seconds — your data never leaves your control.</p>
+          <h2>Ready to make a fair group decision?</h2>
+          <p>Connect your node, create a poll, and let the rankings speak.</p>
           <div className="btn"><ConnectButton /></div>
         </R>
       </CtaBand>
@@ -304,7 +346,7 @@ export default function LandingPage() {
         <div className="top">
           <div className="brand">
             <span className="wm"><span className="mk"><CalimeroLogo size={20} color={C.green} /></span> {APP_DISPLAY_NAME}</span>
-            <p>Private. Real-time. Yours.</p>
+            <p>Fair decisions. Decentralized. Yours.</p>
           </div>
           <div className="cols">
             <div>
@@ -341,7 +383,6 @@ const float = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform
 const drift = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-22px,14px) scale(1.07);}`;
 const travel = keyframes`0%{left:0;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{left:100%;opacity:0;}`;
 const rowIn = keyframes`from{opacity:0;transform:translateY(8px) scale(0.97);}to{opacity:1;transform:none;}`;
-const rowInMe = keyframes`from{opacity:0;transform:translateY(8px) translateX(8px) scale(0.97);}to{opacity:1;transform:none;}`;
 
 /* ════════════════════════ layout ════════════════════════ */
 const Root = styled.div`
@@ -536,19 +577,25 @@ const Preview = styled.div`
   .peers i {
     width: 22px; height: 22px; border-radius: 50%;
     display: grid; place-items: center;
-    font-size: 10px; font-weight: 700; color: ${C.ink};
+    font-size: 9px; font-weight: 700; color: ${C.ink};
     background: linear-gradient(135deg, ${C.green}, #cde88a);
     border: 1.5px solid ${C.ink};
     margin-left: -6px;
+    font-style: normal;
+    transition: opacity 0.4s;
   }
   .peers i:first-child { margin-left: 0; }
-  .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
-  .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+  .peers b { margin-left: 10px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; font-style: normal; }
+  .bars { display: flex; flex-direction: column; gap: 10px; }
+  .bar-row { display: flex; align-items: center; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .bar-row .rank { font-size: 10px; font-weight: 700; color: ${C.mutedSoft}; width: 12px; flex-shrink: 0; font-family: ui-monospace,'SF Mono',Menlo,monospace; }
+  .bar-row.winner .rank { color: ${C.green}; }
+  .bar-row .lbl { font-size: 11px; color: #dfe7db; width: 90px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-row.winner .lbl { color: ${C.green}; font-weight: 600; }
+  .bar-row .track { flex: 1; height: 6px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; }
+  .bar-row .fill { height: 100%; background: linear-gradient(90deg, ${C.green}, #cde88a); border-radius: 999px; transition: width 0.5s cubic-bezier(0.22,1,0.36,1); }
+  .bar-row.winner .fill { box-shadow: 0 0 8px rgba(164,255,17,0.6); }
+  .bar-row .badge { font-size: 9.5px; font-weight: 700; color: ${C.ink}; background: ${C.green}; border-radius: 999px; padding: 1px 6px; white-space: nowrap; }
 `;
 
 /* sections */

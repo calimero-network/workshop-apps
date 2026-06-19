@@ -17,10 +17,10 @@ Summary: Group decision-making through ranked-choice voting where everyone ranks
 - [x] Implement mutate: [voting] close_poll() → app::Result<()>
 
 ## Frontend (app/)
-- [ ] Screen: PollSetupPage — Create poll title, add/remove options, invite group members
-- [ ] Screen: VotingPage — Drag-and-drop ranking of all options with submit button
-- [ ] Screen: ResultsPage — Live aggregated standings showing each option's average rank and first-place votes
-- [ ] Apply designTheme tokens
+- [x] Screen: PollSetupPage — Create poll title, add/remove options, invite group members
+- [x] Screen: VotingPage — Drag-and-drop ranking of all options with submit button
+- [x] Screen: ResultsPage — Live aggregated standings showing each option's average rank and first-place votes
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

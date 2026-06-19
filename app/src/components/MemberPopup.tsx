@@ -96,9 +96,7 @@ export default function MemberPopup({ identity, alias, role, online, isSelf, can
         )}
 
         <Note>
-          This is the member’s workspace identity. To make someone a room moderator you need
-          <strong> their room key</strong> (shown in a room’s Moderation panel) — it’s per-room and
-          differs from this identity.
+          This is the member’s workspace identity — used for namespace membership and role management.
         </Note>
       </Dialog>
     </Overlay>
