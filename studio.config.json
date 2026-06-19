@@ -1,0 +1,22 @@
+{
+  "appName": "ranked-vote",
+  "appVersion": "0.2.0",
+  "package": "com.calimero.ranked-vote",
+  "metadata": {
+    "name": "ranked-vote",
+    "description": "Group decision-making through ranked-choice voting where everyone ranks options and sees results together",
+    "author": "Calimero",
+    "route": "/ranked-vote"
+  },
+  "theme": {
+    "primaryColor": "#4F46E5",
+    "accentColor": "#F59E0B",
+    "style": "modern-clean"
+  },
+  "services": [
+    {
+      "name": "voting",
+      "crate": "ranked-vote-voting"
+    }
+  ]
+}
