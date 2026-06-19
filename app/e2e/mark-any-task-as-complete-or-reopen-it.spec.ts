@@ -23,13 +23,44 @@ test.describe(`team member: mark any task as complete or reopen it`, () => {
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`after a member toggles a task's status, every other member sees the updated status within 5s`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  // [Verifier] NOTE: Task toggle controls are not yet present in the frontend
+  // — the current UI is the chat foundation shell. Promote from fixme once
+  // the frontend-writer ships TaskListPage with per-task toggle buttons.
+  test.fixme(`after a member toggles a task's status, every other member sees the updated status within 5s`, async ({ browser }) => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      await loginViaHash(pageA, 0);
+      await loginViaHash(pageB, 1);
+
+      // Node 0 adds a task then toggles it complete
+      await pageA.getByPlaceholder('Add a task').fill('Write tests');
+      await pageA.getByRole('button', { name: 'Add' }).click();
+      await pageA.getByRole('checkbox', { name: 'Write tests' }).click();
+
+      // Node 1 should see the task as completed within 5 s
+      await expect(pageB.getByRole('checkbox', { name: 'Write tests' })).toBeChecked({ timeout: 5_000 });
+    } finally {
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 
-  test.skip(`a completed task can be reopened by any member, returning it to the pending list`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  // [Verifier] NOTE: Reopen (second toggle) requires the same TaskListPage
+  // with a completed section and clickable toggle. Promote from fixme once
+  // the frontend ships the todos UI.
+  test.fixme(`a completed task can be reopened by any member, returning it to the pending list`, async ({ page }) => {
+    // Node 0 adds a task, marks it complete, then reopens it
+    await page.getByPlaceholder('Add a task').fill('Write docs');
+    await page.getByRole('button', { name: 'Add' }).click();
+    const taskCheckbox = page.getByRole('checkbox', { name: 'Write docs' });
+    await taskCheckbox.click(); // complete
+    await taskCheckbox.click(); // reopen
+
+    // Task should appear back in the pending section
+    await expect(page.getByText('Write docs')).toBeVisible({ timeout: 5_000 });
+    await expect(taskCheckbox).not.toBeChecked();
   });
 });

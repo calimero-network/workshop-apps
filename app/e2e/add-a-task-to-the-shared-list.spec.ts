@@ -23,8 +23,28 @@ test.describe(`team member: add a task to the shared list`, () => {
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`after a member adds a task, every other team member sees it appear in the list within 5s`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  // [Verifier] NOTE: TaskListPage (add-task input, task list) is not yet present
+  // in the frontend — the current UI is the chat foundation shell. This test
+  // will be promoted from fixme to a real multi-node assertion once the
+  // frontend-writer ships the todos TaskListPage with a task-input and list.
+  test.fixme(`after a member adds a task, every other team member sees it appear in the list within 5s`, async ({ browser }) => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      await loginViaHash(pageA, 0);
+      await loginViaHash(pageB, 1);
+
+      // Node 0 adds a task via the add-task input (selector TBD when TaskListPage ships)
+      await pageA.getByPlaceholder('Add a task').fill('Design the landing page');
+      await pageA.getByRole('button', { name: 'Add' }).click();
+
+      // Node 1 should see the task within 5 s
+      await expect(pageB.getByText('Design the landing page')).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 });

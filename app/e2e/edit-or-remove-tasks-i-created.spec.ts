@@ -23,13 +23,58 @@ test.describe(`team member: edit or remove tasks I created`, () => {
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`a member can only edit or delete tasks they authored; attempts on other members' tasks are rejected`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  // [Verifier] NOTE: Edit/delete affordances (per-task buttons gated by author)
+  // are not yet present in the frontend — the current UI is the chat foundation
+  // shell. Promote from fixme once TaskListPage ships edit/delete controls.
+  test.fixme(`a member can only edit or delete tasks they authored; attempts on other members' tasks are rejected`, async ({ browser }) => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      await loginViaHash(pageA, 0); // author
+      await loginViaHash(pageB, 1); // other member
+
+      // Author (node 0) creates a task
+      await pageA.getByPlaceholder('Add a task').fill('Author-only task');
+      await pageA.getByRole('button', { name: 'Add' }).click();
+      await expect(pageB.getByText('Author-only task')).toBeVisible({ timeout: 5_000 });
+
+      // Other member (node 1) should not see edit/delete controls for this task
+      const editBtn = pageB.getByRole('button', { name: /edit/i }).first();
+      const deleteBtn = pageB.getByRole('button', { name: /delete/i }).first();
+      await expect(editBtn).toBeHidden();
+      await expect(deleteBtn).toBeHidden();
+    } finally {
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 
-  test.skip(`after a task is edited, every member sees the updated text within 5s`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  // [Verifier] NOTE: Inline edit UI is not yet present in the frontend.
+  // Promote from fixme once TaskListPage ships an edit flow (inline input or
+  // modal) and the cross-node sync can be observed.
+  test.fixme(`after a task is edited, every member sees the updated text within 5s`, async ({ browser }) => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      await loginViaHash(pageA, 0);
+      await loginViaHash(pageB, 1);
+
+      // Node 0 creates a task, then edits it
+      await pageA.getByPlaceholder('Add a task').fill('Original title');
+      await pageA.getByRole('button', { name: 'Add' }).click();
+      await pageA.getByRole('button', { name: /edit/i }).first().click();
+      await pageA.getByDisplayValue('Original title').fill('Updated title');
+      await pageA.getByRole('button', { name: /save/i }).click();
+
+      // Node 1 should see the updated text within 5 s
+      await expect(pageB.getByText('Updated title')).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 });

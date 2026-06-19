@@ -1,0 +1,265 @@
+# Spec smoke test for team-todos.
+#
+# Exercises the todos service mutate methods in a two-node merobox run:
+#   - add_task / list_tasks (floor view)
+#   - toggle_task (mark complete, cross-node)
+#   - edit_task (update title, cross-node)
+#   - clear_completed (bulk remove, cross-node)
+#   - delete_task (single remove, cross-node)
+#
+# Usage (from project root, after `bash logic/build-bundle.sh`):
+#   merobox bootstrap run test/spec-smoke.workflow.yml
+#
+# Pre-flight: logic/build-bundle.sh must produce logic/res/team-todos-0.2.0.mpk
+
+name: team-todos spec smoke
+description: Verify todos service mutate methods replicate across two nodes.
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 12428
+  base_rpc_port: 12528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # --- Bootstrap application + namespace ---
+
+  - type: install_application
+    name: Install team-todos bundle on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/team-todos-0.2.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install team-todos bundle on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/team-todos-0.2.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create todos context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: todos
+    outputs:
+      todos_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: join_context
+    name: app-node-2 joins todos context
+    node: app-node-2
+    context_id: '{{todos_ctx}}'
+
+  # --- Floor: list_tasks view on both nodes (must return empty initially) ---
+
+  - type: call
+    name: List tasks from app-node-1 (initial state)
+    node: app-node-1
+    context_id: '{{todos_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_n1_initial: result.output
+
+  - type: call
+    name: List tasks from app-node-2 (initial state)
+    node: app-node-2
+    context_id: '{{todos_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      tasks_n2_initial: result.output
+
+  - type: json_assert
+    name: Both nodes start with an empty task list
+    statements:
+      - 'json_equal({{tasks_n1_initial}}, [])'
+      - 'json_equal({{tasks_n2_initial}}, [])'
+
+  # --- Exercise add_task ---
+
+  - type: call
+    name: Exercise add_task on app-node-1
+    node: app-node-1
+    context_id: '{{todos_ctx}}'
+    method: add_task
+    args:
+      title: "Design the landing page"
+    outputs:
+      created_task_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for todos sync after add_task
+    context_id: '{{todos_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm task visible on app-node-2 after add_task
+    node: app-node-2
+    context_id: '{{todos_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      added_task: result.output.0
+
+  - type: json_assert
+    name: add_task produced a visible pending Task on app-node-2
+    statements:
+      - 'json_subset({{added_task}}, {"title": "Design the landing page", "completed": false})'
+
+  # --- Exercise toggle_task (mark complete) ---
+
+  - type: call
+    name: Exercise toggle_task on app-node-1
+    node: app-node-1
+    context_id: '{{todos_ctx}}'
+    method: toggle_task
+    args:
+      task_id: '{{created_task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for todos sync after toggle_task
+    context_id: '{{todos_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm toggled status on app-node-2
+    node: app-node-2
+    context_id: '{{todos_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      toggled_task: result.output.0
+
+  - type: json_assert
+    name: toggle_task marked task as completed on app-node-2
+    statements:
+      - 'json_subset({{toggled_task}}, {"completed": true})'
+
+  # --- Exercise edit_task ---
+
+  - type: call
+    name: Exercise edit_task on app-node-1
+    node: app-node-1
+    context_id: '{{todos_ctx}}'
+    method: edit_task
+    args:
+      task_id: '{{created_task_id}}'
+      new_title: "Design the landing page v2"
+
+  - type: wait_for_sync
+    name: Wait for todos sync after edit_task
+    context_id: '{{todos_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm edited title on app-node-2
+    node: app-node-2
+    context_id: '{{todos_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      edited_task: result.output.0
+
+  - type: json_assert
+    name: edit_task updated title is visible on app-node-2
+    statements:
+      - 'json_subset({{edited_task}}, {"title": "Design the landing page v2"})'
+
+  # --- Exercise clear_completed (task is currently completed=true) ---
+
+  - type: call
+    name: Exercise clear_completed on app-node-1
+    node: app-node-1
+    context_id: '{{todos_ctx}}'
+    method: clear_completed
+    args: {}
+
+  - type: wait_for_sync
+    name: Wait for todos sync after clear_completed
+    context_id: '{{todos_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm completed tasks removed on app-node-2
+    node: app-node-2
+    context_id: '{{todos_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      after_clear: result.output
+
+  - type: json_assert
+    name: clear_completed removed all completed tasks on app-node-2
+    statements:
+      - 'json_equal({{after_clear}}, [])'
+
+  # --- Exercise delete_task (add a fresh pending task then delete it) ---
+
+  - type: call
+    name: Add a task to exercise delete_task
+    node: app-node-1
+    context_id: '{{todos_ctx}}'
+    method: add_task
+    args:
+      title: "Temporary task for deletion"
+    outputs:
+      delete_task_id: result.output
+
+  - type: call
+    name: Exercise delete_task on app-node-1
+    node: app-node-1
+    context_id: '{{todos_ctx}}'
+    method: delete_task
+    args:
+      task_id: '{{delete_task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for todos sync after delete_task
+    context_id: '{{todos_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm task deleted on app-node-2
+    node: app-node-2
+    context_id: '{{todos_ctx}}'
+    method: list_tasks
+    args: {}
+    outputs:
+      after_delete: result.output
+
+  - type: json_assert
+    name: delete_task removed the task on app-node-2
+    statements:
+      - 'json_equal({{after_delete}}, [])'

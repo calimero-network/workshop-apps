@@ -23,8 +23,20 @@ test.describe(`anyone on the team: see all tasks grouped by status`, () => {
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`the task list always displays pending tasks separately from completed tasks, updating live as statuses change`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  // [Verifier] NOTE: Grouped task sections ("Pending" / "Completed") are not
+  // yet present in the frontend — the current UI is the chat foundation shell.
+  // Promote from fixme once TaskListPage ships two distinct heading sections
+  // that update live when a task is toggled.
+  test.fixme(`the task list always displays pending tasks separately from completed tasks, updating live as statuses change`, async ({ page }) => {
+    // Add a pending task — it should appear under the Pending heading
+    await page.getByPlaceholder('Add a task').fill('Pending task');
+    await page.getByRole('button', { name: 'Add' }).click();
+    await expect(page.getByRole('heading', { name: /pending/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('Pending task')).toBeVisible({ timeout: 5_000 });
+
+    // Toggle it complete — it should move to the Completed section
+    await page.getByRole('checkbox', { name: 'Pending task' }).click();
+    await expect(page.getByRole('heading', { name: /completed/i })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('Pending task')).toBeVisible({ timeout: 5_000 });
   });
 });
