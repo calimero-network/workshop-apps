@@ -1,18 +1,7 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "Event_RoomCreated": {
+    "Category": {
       "kind": "record",
       "fields": [
         {
@@ -29,7 +18,7 @@
         }
       ]
     },
-    "Event_RoomDeleted": {
+    "Event_CategoryAdded": {
       "kind": "record",
       "fields": [
         {
@@ -40,185 +29,158 @@
         }
       ]
     },
-    "LobbyState": {
+    "Event_ExpenseApproved": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ExpenseEdited": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ExpenseReimbursed": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ExpenseRejected": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ExpenseSubmitted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Expense": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "amount",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "currency",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "category",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "reviewer_note",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "submitted_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "ExpenseState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "creator",
           "type": {
             "kind": "record",
             "fields": [],
             "crdt_type": "lww_register",
             "inner_type": {
-              "kind": "u64"
+              "kind": "string"
             }
           }
         },
         {
-          "name": "rooms",
+          "name": "expenses",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "$ref": "RoomSummary"
+              "$ref": "Expense"
             },
             "crdt_type": "unordered_map"
           }
         },
         {
-          "name": "activity",
+          "name": "categories",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "$ref": "RoomActivity"
+              "$ref": "Category"
             },
             "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "u64"
-              }
-            },
-            "crdt_type": "authored_map"
-          }
-        },
-        {
-          "name": "names",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "string"
-              }
-            },
-            "crdt_type": "authored_map"
-          }
-        }
-      ]
-    },
-    "NameEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "PresenceEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_seen_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomActivity": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomSummary": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "created_by",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          },
-          "nullable": true
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "created_ms",
-          "type": {
-            "kind": "u64"
           }
         }
       ]
@@ -233,182 +195,222 @@
       }
     },
     {
-      "name": "register_room",
+      "name": "submit_expense",
       "params": [
         {
-          "name": "room_id",
+          "name": "description",
           "type": {
             "kind": "string"
           }
         },
+        {
+          "name": "amount",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "currency",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "category",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "edit_expense",
+      "params": [
+        {
+          "name": "expense_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "amount",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "currency",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "category",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "approve_expense",
+      "params": [
+        {
+          "name": "expense_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "note",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "reject_expense",
+      "params": [
+        {
+          "name": "expense_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "note",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "mark_reimbursed",
+      "params": [
+        {
+          "name": "expense_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "list_my_expenses",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Expense"
+        }
+      }
+    },
+    {
+      "name": "list_pending_expenses",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Expense"
+        }
+      }
+    },
+    {
+      "name": "list_all_expenses",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Expense"
+        }
+      }
+    },
+    {
+      "name": "add_category",
+      "params": [
         {
           "name": "name",
           "type": {
             "kind": "string"
           }
-        },
-        {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "member_count",
-          "type": {
-            "kind": "u64"
-          }
         }
       ],
       "returns": {
-        "$ref": "RoomSummary"
+        "kind": "string"
       }
     },
     {
-      "name": "get_rooms",
+      "name": "list_categories",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "RoomSummary"
-        }
-      }
-    },
-    {
-      "name": "get_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
-      "params": [
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_names",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "NameEntry"
+          "$ref": "Category"
         }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "ExpenseSubmitted",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_ExpenseSubmitted"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "ExpenseEdited",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_ExpenseEdited"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "ExpenseApproved",
+      "payload": {
+        "$ref": "Event_ExpenseApproved"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "ExpenseRejected",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_ExpenseRejected"
+      }
+    },
+    {
+      "name": "ExpenseReimbursed",
+      "payload": {
+        "$ref": "Event_ExpenseReimbursed"
+      }
+    },
+    {
+      "name": "CategoryAdded",
+      "payload": {
+        "$ref": "Event_CategoryAdded"
       }
     }
   ],
-  "state_root": "LobbyState",
+  "state_root": "ExpenseState",
   "state_version": 1
 }
