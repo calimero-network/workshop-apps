@@ -1,7 +1,7 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
+    "Event_LeadAdded": {
       "kind": "record",
       "fields": [
         {
@@ -12,7 +12,41 @@
         }
       ]
     },
-    "Event_RoomCreated": {
+    "Event_LeadClosed": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "outcome",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_LeadMoved": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "stage",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Lead": {
       "kind": "record",
       "fields": [
         {
@@ -26,172 +60,27 @@
           "type": {
             "kind": "string"
           }
-        }
-      ]
-    },
-    "Event_RoomDeleted": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "LobbyState": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "created_ms",
-          "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
-            }
-          }
         },
         {
-          "name": "rooms",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "u64"
-              }
-            },
-            "crdt_type": "authored_map"
-          }
-        },
-        {
-          "name": "names",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "string"
-              }
-            },
-            "crdt_type": "authored_map"
-          }
-        }
-      ]
-    },
-    "NameEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
+          "name": "company",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "PresenceEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_seen_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomActivity": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "last_message_ms",
+          "name": "value",
           "type": {
             "kind": "u64"
           }
         },
         {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "RoomSummary": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "room_id",
+          "name": "stage",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "status",
           "type": {
             "kind": "string"
           }
@@ -203,22 +92,69 @@
           }
         },
         {
-          "name": "context_id",
-          "type": {
-            "kind": "string"
-          },
-          "nullable": true
-        },
-        {
-          "name": "member_count",
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
         },
         {
-          "name": "created_ms",
+          "name": "last_modified_ms",
           "type": {
             "kind": "u64"
+          }
+        }
+      ]
+    },
+    "PipelineConfig": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "stages",
+          "type": {
+            "kind": "list",
+            "items": {
+              "kind": "string"
+            }
+          }
+        }
+      ]
+    },
+    "PipelineState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "config",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "shared_storage",
+            "inner_type": {
+              "kind": "record",
+              "fields": [],
+              "crdt_type": "lww_register",
+              "inner_type": {
+                "$ref": "PipelineConfig"
+              }
+            }
+          }
+        },
+        {
+          "name": "leads",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Lead"
+            },
+            "crdt_type": "unordered_map"
           }
         }
       ]
@@ -233,14 +169,35 @@
       }
     },
     {
-      "name": "register_room",
+      "name": "set_stages",
       "params": [
         {
-          "name": "room_id",
+          "name": "stages",
           "type": {
-            "kind": "string"
+            "kind": "list",
+            "items": {
+              "kind": "string"
+            }
           }
-        },
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_stages",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "kind": "string"
+        }
+      }
+    },
+    {
+      "name": "add_lead",
+      "params": [
         {
           "name": "name",
           "type": {
@@ -248,95 +205,35 @@
           }
         },
         {
-          "name": "context_id",
+          "name": "company",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "member_count",
+          "name": "value",
           "type": {
             "kind": "u64"
           }
         }
       ],
       "returns": {
-        "$ref": "RoomSummary"
+        "kind": "string"
       }
     },
     {
-      "name": "get_rooms",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomSummary"
-        }
-      }
-    },
-    {
-      "name": "get_room",
+      "name": "move_lead",
       "params": [
         {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
-      "params": [
-        {
-          "name": "room_id",
+          "name": "lead_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
+          "name": "new_stage",
           "type": {
             "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "timestamp_ms",
-          "type": {
-            "kind": "u64"
           }
         }
       ],
@@ -345,27 +242,16 @@
       }
     },
     {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
+      "name": "close_lead",
       "params": [
         {
-          "name": "name",
+          "name": "lead_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "outcome",
           "type": {
             "kind": "string"
           }
@@ -376,39 +262,49 @@
       }
     },
     {
-      "name": "list_names",
+      "name": "list_leads",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "Lead"
+        }
+      }
+    },
+    {
+      "name": "list_closed_leads",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Lead"
         }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "StagesUpdated"
+    },
+    {
+      "name": "LeadAdded",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_LeadAdded"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "LeadMoved",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_LeadMoved"
       }
     },
     {
-      "name": "RoomListUpdated"
-    },
-    {
-      "name": "NameChanged",
+      "name": "LeadClosed",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_LeadClosed"
       }
     }
   ],
-  "state_root": "LobbyState",
+  "state_root": "PipelineState",
   "state_version": 1
 }

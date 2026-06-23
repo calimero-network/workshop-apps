@@ -1,11 +1,11 @@
 #[calimero_sdk::app::event]
 pub enum Event<'a> {
-    /// A new room was created in the lobby.
-    RoomCreated { id: &'a str, name: &'a str },
-    /// A room was deleted from the lobby.
-    RoomDeleted { id: &'a str },
-    /// The room list changed (created, deleted, or updated).
-    RoomListUpdated {},
-    /// A member set or changed their display name.
-    NameChanged { id: &'a str },
+    /// Pipeline stages were updated by the team lead.
+    StagesUpdated {},
+    /// A new lead was added to the pipeline.
+    LeadAdded { id: &'a str },
+    /// A lead was moved to a different stage.
+    LeadMoved { id: &'a str, stage: &'a str },
+    /// A lead was closed (Won or Lost).
+    LeadClosed { id: &'a str, outcome: &'a str },
 }

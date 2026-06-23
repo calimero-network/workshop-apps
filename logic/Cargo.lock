@@ -213,32 +213,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
-name = "chat-lobby"
-version = "0.1.0"
-dependencies = [
- "bs58 0.4.0",
- "calimero-sdk",
- "calimero-storage",
- "calimero-storage-macros",
- "calimero-wasm-abi",
- "chat-types",
- "serde_json",
-]
-
-[[package]]
-name = "chat-room"
-version = "0.1.0"
-dependencies = [
- "bs58 0.4.0",
- "calimero-sdk",
- "calimero-storage",
- "calimero-storage-macros",
- "calimero-wasm-abi",
- "chat-types",
- "serde_json",
-]
-
-[[package]]
 name = "chat-types"
 version = "0.1.0"
 dependencies = [
@@ -330,6 +304,19 @@ checksum = "ccc2776f0c61eca1ca32528f85548abd1a4be8fb53d1b21c013e4f18da1e7090"
 dependencies = [
  "data-encoding",
  "syn",
+]
+
+[[package]]
+name = "deal-flow-pipeline"
+version = "0.1.0"
+dependencies = [
+ "bs58 0.4.0",
+ "calimero-sdk",
+ "calimero-storage",
+ "calimero-storage-macros",
+ "calimero-wasm-abi",
+ "chat-types",
+ "serde_json",
 ]
 
 [[package]]
