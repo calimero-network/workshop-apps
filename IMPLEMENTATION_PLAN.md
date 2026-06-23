@@ -22,9 +22,9 @@ Summary: A simple, shared sales pipeline for small teams to track leads through 
 ## Verification
 - [x] cargo build --target wasm32-unknown-unknown succeeds
 - [ ] tsc --noEmit passes
-- [ ] Test story (team lead): set up custom pipeline stages like New, Contacted, Proposal, Won, and Lost
-- [ ] Test story (sales rep): add a new lead with a name, company, and estimated deal value
-- [ ] Test story (sales rep): move a lead from one stage to the next
-- [ ] Test story (anyone on the team): see the full pipeline at a glance with leads grouped by stage and value totals per stage
-- [ ] Test story (team lead): mark a lead as Won or Lost and see a summary of closed deals
-- [ ] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps
+- [x] Test story (team lead): set up custom pipeline stages like New, Contacted, Proposal, Won, and Lost
+- [x] Test story (sales rep): add a new lead with a name, company, and estimated deal value
+- [x] Test story (sales rep): move a lead from one stage to the next
+- [x] Test story (anyone on the team): see the full pipeline at a glance with leads grouped by stage and value totals per stage
+- [x] Test story (team lead): mark a lead as Won or Lost and see a summary of closed deals
+- [x] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps

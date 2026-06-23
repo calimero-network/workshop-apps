@@ -1,0 +1,246 @@
+# deal-flow pipeline spec smoke
+#
+# Exercises the pipeline service's mutate + view methods across two nodes.
+# The deterministic floor (install, namespace, context, parameterless views)
+# is followed by mutate-method round-trip steps that cover set_stages,
+# add_lead, move_lead, and close_lead.
+#
+# Usage (run from the project root, after the bundle has been built):
+#   merobox bootstrap run test/spec-smoke.workflow.yml
+#
+# Pre-flight: the build step must have produced
+# `logic/res/deal-flow-0.2.0.mpk`.
+
+name: deal-flow pipeline spec smoke
+description: Verify pipeline service replicates stage and lead mutations across two nodes.
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 13428
+  base_rpc_port: 13528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # ── Bootstrap: install + namespace + context ──────────────────────────────
+
+  - type: install_application
+    name: Install deal-flow bundle on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/deal-flow-0.2.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install deal-flow bundle on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/deal-flow-0.2.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create pipeline context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: pipeline
+    outputs:
+      pipeline_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation from app-node-1
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: join_context
+    name: app-node-2 joins pipeline context
+    node: app-node-2
+    context_id: '{{pipeline_ctx}}'
+
+  # ── Floor: parameterless view calls ──────────────────────────────────────
+
+  - type: call
+    name: get_stages (view) on app-node-1 — initial state
+    node: app-node-1
+    context_id: '{{pipeline_ctx}}'
+    method: get_stages
+    args: {}
+    outputs:
+      initial_stages: result.output
+
+  - type: call
+    name: list_leads (view) on app-node-1 — initial state
+    node: app-node-1
+    context_id: '{{pipeline_ctx}}'
+    method: list_leads
+    args: {}
+    outputs:
+      initial_leads: result.output
+
+  - type: call
+    name: list_closed_leads (view) on app-node-1 — initial state
+    node: app-node-1
+    context_id: '{{pipeline_ctx}}'
+    method: list_closed_leads
+    args: {}
+    outputs:
+      initial_closed: result.output
+
+  - type: json_assert
+    name: Initial leads list is empty on fresh node
+    statements:
+      - 'json_equal({{initial_leads}}, [])'
+
+  - type: json_assert
+    name: Initial closed-leads list is empty on fresh node
+    statements:
+      - 'json_equal({{initial_closed}}, [])'
+
+  # ── Mutate: set_stages ────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise set_stages on app-node-1
+    node: app-node-1
+    context_id: '{{pipeline_ctx}}'
+    method: set_stages
+    args:
+      stages:
+        - "New"
+        - "Contacted"
+        - "Proposal"
+        - "Won"
+        - "Lost"
+
+  - type: wait_for_sync
+    name: Wait for pipeline sync after set_stages
+    context_id: '{{pipeline_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm stages visible on app-node-2 after set_stages
+    node: app-node-2
+    context_id: '{{pipeline_ctx}}'
+    method: get_stages
+    args: {}
+    outputs:
+      stages_n2: result.output
+
+  - type: json_assert
+    name: set_stages replicated to app-node-2
+    statements:
+      - 'json_equal({{stages_n2}}, ["New", "Contacted", "Proposal", "Won", "Lost"])'
+
+  # ── Mutate: add_lead ──────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise add_lead on app-node-1
+    node: app-node-1
+    context_id: '{{pipeline_ctx}}'
+    method: add_lead
+    args:
+      name: "Sarah Chen"
+      company: "Acme Corp"
+      value: 25000
+    outputs:
+      new_lead_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for pipeline sync after add_lead
+    context_id: '{{pipeline_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm lead visible on app-node-2 after add_lead
+    node: app-node-2
+    context_id: '{{pipeline_ctx}}'
+    method: list_leads
+    args: {}
+    outputs:
+      lead_after_add: result.output.0
+
+  - type: json_assert
+    name: add_lead produced a visible Lead on app-node-2 in New stage
+    statements:
+      - 'json_subset({{lead_after_add}}, {"name": "Sarah Chen", "company": "Acme Corp", "stage": "New", "status": "active"})'
+
+  # ── Mutate: move_lead ─────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise move_lead on app-node-1
+    node: app-node-1
+    context_id: '{{pipeline_ctx}}'
+    method: move_lead
+    args:
+      lead_id: '{{new_lead_id}}'
+      new_stage: "Contacted"
+
+  - type: wait_for_sync
+    name: Wait for pipeline sync after move_lead
+    context_id: '{{pipeline_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm lead moved to Contacted on app-node-2
+    node: app-node-2
+    context_id: '{{pipeline_ctx}}'
+    method: list_leads
+    args: {}
+    outputs:
+      lead_after_move: result.output.0
+
+  - type: json_assert
+    name: move_lead updated stage to Contacted on app-node-2
+    statements:
+      - 'json_subset({{lead_after_move}}, {"name": "Sarah Chen", "stage": "Contacted"})'
+
+  # ── Mutate: close_lead ────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise close_lead on app-node-1
+    node: app-node-1
+    context_id: '{{pipeline_ctx}}'
+    method: close_lead
+    args:
+      lead_id: '{{new_lead_id}}'
+      outcome: "Won"
+
+  - type: wait_for_sync
+    name: Wait for pipeline sync after close_lead
+    context_id: '{{pipeline_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm closed lead visible on app-node-2 via list_closed_leads
+    node: app-node-2
+    context_id: '{{pipeline_ctx}}'
+    method: list_closed_leads
+    args: {}
+    outputs:
+      closed_lead: result.output.0
+
+  - type: json_assert
+    name: close_lead produced a Won closed deal on app-node-2
+    statements:
+      - 'json_subset({{closed_lead}}, {"name": "Sarah Chen", "stage": "Won", "status": "closed"})'
