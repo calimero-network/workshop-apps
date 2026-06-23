@@ -1,7 +1,7 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_NameChanged": {
+    "Event_IncidentAcknowledged": {
       "kind": "record",
       "fields": [
         {
@@ -12,7 +12,7 @@
         }
       ]
     },
-    "Event_RoomCreated": {
+    "Event_IncidentEscalated": {
       "kind": "record",
       "fields": [
         {
@@ -22,14 +22,31 @@
           }
         },
         {
-          "name": "name",
+          "name": "entry_id",
           "type": {
             "kind": "string"
           }
         }
       ]
     },
-    "Event_RoomDeleted": {
+    "Event_IncidentReported": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "severity",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_IncidentResolved": {
       "kind": "record",
       "fields": [
         {
@@ -40,183 +57,327 @@
         }
       ]
     },
-    "LobbyState": {
+    "Event_OnCallSlotRemoved": {
       "kind": "record",
       "fields": [
         {
-          "name": "created_ms",
-          "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "u64"
-            }
-          }
-        },
-        {
-          "name": "rooms",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomSummary"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "activity",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "RoomActivity"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "presence",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "u64"
-              }
-            },
-            "crdt_type": "authored_map"
-          }
-        },
-        {
-          "name": "names",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "string"
-              }
-            },
-            "crdt_type": "authored_map"
-          }
-        }
-      ]
-    },
-    "NameEntry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "member",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         }
       ]
     },
-    "PresenceEntry": {
+    "Event_OnCallSlotSet": {
       "kind": "record",
       "fields": [
         {
-          "name": "member",
+          "name": "id",
           "type": {
             "kind": "string"
-          }
-        },
-        {
-          "name": "last_seen_ms",
-          "type": {
-            "kind": "u64"
           }
         }
       ]
     },
-    "RoomActivity": {
+    "Event_PostmortemCreated": {
       "kind": "record",
       "fields": [
         {
-          "name": "room_id",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "room_name",
+          "name": "incident_id",
           "type": {
             "kind": "string"
-          }
-        },
-        {
-          "name": "last_message_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "message_count",
-          "type": {
-            "kind": "u64"
           }
         }
       ]
     },
-    "RoomSummary": {
+    "Event_PostmortemUpdated": {
       "kind": "record",
       "fields": [
         {
-          "name": "room_id",
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_TimelineEntryPosted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "incident_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Incident": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "created_by",
+          "name": "title",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "context_id",
+          "name": "description",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "severity",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "reported_by",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "commander",
           "type": {
             "kind": "string"
           },
           "nullable": true
         },
         {
-          "name": "member_count",
+          "name": "root_cause",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true
+        },
+        {
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
         },
         {
-          "name": "created_ms",
+          "name": "resolved_at",
+          "type": {
+            "kind": "u64"
+          },
+          "nullable": true
+        }
+      ]
+    },
+    "IncidentManagerState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "incidents",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Incident"
+            },
+            "crdt_type": "unordered_map"
+          }
+        },
+        {
+          "name": "timeline",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "TimelineEntry"
+            },
+            "crdt_type": "authored_map"
+          }
+        },
+        {
+          "name": "postmortems",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Postmortem"
+            },
+            "crdt_type": "unordered_map"
+          }
+        },
+        {
+          "name": "oncall_schedule",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "shared_storage",
+            "inner_type": {
+              "kind": "record",
+              "fields": [],
+              "crdt_type": "lww_register",
+              "inner_type": {
+                "kind": "list",
+                "items": {
+                  "$ref": "OnCallSlot"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "OnCallSlot": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "member_name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "member_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "start_time",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "end_time",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "order",
+          "type": {
+            "kind": "u32"
+          }
+        }
+      ]
+    },
+    "Postmortem": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "incident_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "summary",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "root_cause",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "action_items",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "last_edited_by",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "TimelineEntry": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "incident_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "entry_type",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
@@ -233,139 +394,281 @@
       }
     },
     {
-      "name": "register_room",
+      "name": "report_incident",
       "params": [
         {
-          "name": "room_id",
+          "name": "title",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "name",
+          "name": "description",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "context_id",
+          "name": "severity",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "acknowledge_incident",
+      "params": [
+        {
+          "name": "incident_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "escalate_incident",
+      "params": [
+        {
+          "name": "incident_id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "member_count",
+          "name": "next_responder_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "resolve_incident",
+      "params": [
+        {
+          "name": "incident_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "root_cause",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "post_timeline_entry",
+      "params": [
+        {
+          "name": "incident_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "body",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "entry_type",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "get_timeline",
+      "params": [
+        {
+          "name": "incident_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "TimelineEntry"
+        }
+      }
+    },
+    {
+      "name": "list_incidents",
+      "params": [
+        {
+          "name": "status_filter",
+          "type": {
+            "kind": "string"
+          },
+          "nullable": true
+        }
+      ],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Incident"
+        }
+      }
+    },
+    {
+      "name": "get_incident",
+      "params": [
+        {
+          "name": "incident_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "$ref": "Incident"
+      }
+    },
+    {
+      "name": "create_postmortem",
+      "params": [
+        {
+          "name": "incident_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "summary",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "root_cause",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "action_items",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "update_postmortem",
+      "params": [
+        {
+          "name": "postmortem_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "summary",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "root_cause",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "action_items",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_postmortem",
+      "params": [
+        {
+          "name": "incident_id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "$ref": "Postmortem"
+      }
+    },
+    {
+      "name": "set_oncall_slot",
+      "params": [
+        {
+          "name": "member_name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "member_id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "start_time",
           "type": {
             "kind": "u64"
           }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "get_rooms",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomSummary"
-        }
-      }
-    },
-    {
-      "name": "get_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "RoomSummary"
-      }
-    },
-    {
-      "name": "delete_room",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "get_activity",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "RoomActivity"
-        }
-      }
-    },
-    {
-      "name": "on_room_message",
-      "params": [
-        {
-          "name": "room_id",
-          "type": {
-            "kind": "string"
-          }
         },
         {
-          "name": "room_name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "message_count",
+          "name": "end_time",
           "type": {
             "kind": "u64"
           }
         },
         {
-          "name": "timestamp_ms",
+          "name": "order",
           "type": {
-            "kind": "u64"
+            "kind": "u32"
           }
         }
       ],
       "returns": {
-        "kind": "unit"
+        "kind": "string"
       }
     },
     {
-      "name": "heartbeat",
-      "params": [],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "list_presence",
-      "params": [],
-      "returns": {
-        "kind": "list",
-        "items": {
-          "$ref": "PresenceEntry"
-        }
-      }
-    },
-    {
-      "name": "set_name",
+      "name": "remove_oncall_slot",
       "params": [
         {
-          "name": "name",
+          "name": "slot_id",
           "type": {
             "kind": "string"
           }
@@ -376,39 +679,72 @@
       }
     },
     {
-      "name": "list_names",
+      "name": "get_oncall_schedule",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "NameEntry"
+          "$ref": "OnCallSlot"
         }
       }
     }
   ],
   "events": [
     {
-      "name": "RoomCreated",
+      "name": "IncidentReported",
       "payload": {
-        "$ref": "Event_RoomCreated"
+        "$ref": "Event_IncidentReported"
       }
     },
     {
-      "name": "RoomDeleted",
+      "name": "IncidentAcknowledged",
       "payload": {
-        "$ref": "Event_RoomDeleted"
+        "$ref": "Event_IncidentAcknowledged"
       }
     },
     {
-      "name": "RoomListUpdated"
+      "name": "IncidentEscalated",
+      "payload": {
+        "$ref": "Event_IncidentEscalated"
+      }
     },
     {
-      "name": "NameChanged",
+      "name": "IncidentResolved",
       "payload": {
-        "$ref": "Event_NameChanged"
+        "$ref": "Event_IncidentResolved"
+      }
+    },
+    {
+      "name": "TimelineEntryPosted",
+      "payload": {
+        "$ref": "Event_TimelineEntryPosted"
+      }
+    },
+    {
+      "name": "PostmortemCreated",
+      "payload": {
+        "$ref": "Event_PostmortemCreated"
+      }
+    },
+    {
+      "name": "PostmortemUpdated",
+      "payload": {
+        "$ref": "Event_PostmortemUpdated"
+      }
+    },
+    {
+      "name": "OnCallSlotSet",
+      "payload": {
+        "$ref": "Event_OnCallSlotSet"
+      }
+    },
+    {
+      "name": "OnCallSlotRemoved",
+      "payload": {
+        "$ref": "Event_OnCallSlotRemoved"
       }
     }
   ],
-  "state_root": "LobbyState",
+  "state_root": "IncidentManagerState",
   "state_version": 1
 }
