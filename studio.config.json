@@ -1,0 +1,22 @@
+{
+  "appName": "incident-command",
+  "appVersion": "0.2.0",
+  "package": "com.calimero.incident-command",
+  "metadata": {
+    "name": "incident-command",
+    "description": "PagerDuty-style incident management where teams report, triage, resolve incidents together and write collaborative postmortems",
+    "author": "Calimero",
+    "route": "/incident-command"
+  },
+  "theme": {
+    "primaryColor": "#DC2626",
+    "accentColor": "#16A34A",
+    "style": "operational-urgent"
+  },
+  "services": [
+    {
+      "name": "incident-manager",
+      "crate": "incident-command-incident-manager"
+    }
+  ]
+}
