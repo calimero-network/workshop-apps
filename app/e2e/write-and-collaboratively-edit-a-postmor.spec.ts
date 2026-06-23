@@ -20,7 +20,7 @@ async function createResolvedIncident(page: Page, title: string): Promise<void> 
   await page.getByRole('button', { name: 'P2' }).click();
   await page.getByPlaceholder('Brief incident title\u2026').fill(title);
   await page.getByPlaceholder('What is happening? Impact? Timeline?').fill('Postmortem test incident');
-  await page.getByRole('button', { name: 'Report Incident' }).click();
+  await page.getByRole('button', { name: 'Report Incident', exact: true }).click();
   await expect(page.getByText(title)).toBeVisible({ timeout: 10_000 });
   await page.getByText(title).first().click();
   await page.getByRole('button', { name: 'Acknowledge' }).click();
