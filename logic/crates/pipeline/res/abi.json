@@ -1,165 +1,27 @@
 {
-  "schema_version": "wasm-abi/1",
-  "types": {
-    "Event_LeadAdded": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
+  "events": [
+    {
+      "name": "StagesUpdated"
     },
-    "Event_LeadClosed": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "outcome",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
+    {
+      "name": "LeadAdded",
+      "payload": {
+        "$ref": "Event_LeadAdded"
+      }
     },
-    "Event_LeadMoved": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "stage",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
+    {
+      "name": "LeadMoved",
+      "payload": {
+        "$ref": "Event_LeadMoved"
+      }
     },
-    "Lead": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "name",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "company",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "value",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "stage",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "status",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "created_by",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "created_at",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "last_modified_ms",
-          "type": {
-            "kind": "u64"
-          }
-        }
-      ]
-    },
-    "PipelineConfig": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "stages",
-          "type": {
-            "kind": "list",
-            "items": {
-              "kind": "string"
-            }
-          }
-        }
-      ]
-    },
-    "PipelineState": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "config",
-          "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "shared_storage",
-            "inner_type": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "$ref": "PipelineConfig"
-              }
-            }
-          }
-        },
-        {
-          "name": "leads",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "$ref": "Lead"
-            },
-            "crdt_type": "unordered_map"
-          }
-        }
-      ]
+    {
+      "name": "LeadClosed",
+      "payload": {
+        "$ref": "Event_LeadClosed"
+      }
     }
-  },
+  ],
   "methods": [
     {
       "name": "init",
@@ -174,10 +36,10 @@
         {
           "name": "stages",
           "type": {
-            "kind": "list",
             "items": {
               "kind": "string"
-            }
+            },
+            "kind": "list"
           }
         }
       ],
@@ -189,10 +51,10 @@
       "name": "get_stages",
       "params": [],
       "returns": {
-        "kind": "list",
         "items": {
           "kind": "string"
-        }
+        },
+        "kind": "list"
       }
     },
     {
@@ -265,46 +127,186 @@
       "name": "list_leads",
       "params": [],
       "returns": {
-        "kind": "list",
         "items": {
           "$ref": "Lead"
-        }
+        },
+        "kind": "list"
       }
     },
     {
       "name": "list_closed_leads",
       "params": [],
       "returns": {
-        "kind": "list",
         "items": {
           "$ref": "Lead"
-        }
+        },
+        "kind": "list"
       }
     }
   ],
-  "events": [
-    {
-      "name": "StagesUpdated"
-    },
-    {
-      "name": "LeadAdded",
-      "payload": {
-        "$ref": "Event_LeadAdded"
-      }
-    },
-    {
-      "name": "LeadMoved",
-      "payload": {
-        "$ref": "Event_LeadMoved"
-      }
-    },
-    {
-      "name": "LeadClosed",
-      "payload": {
-        "$ref": "Event_LeadClosed"
-      }
-    }
-  ],
+  "schema_version": "wasm-abi/1",
   "state_root": "PipelineState",
-  "state_version": 1
+  "types": {
+    "Event_LeadAdded": {
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "kind": "record"
+    },
+    "Event_LeadClosed": {
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "outcome",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "kind": "record"
+    },
+    "Event_LeadMoved": {
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "stage",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "kind": "record"
+    },
+    "Lead": {
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "company",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "stage",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "status",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_by",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "last_modified_ms",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ],
+      "kind": "record"
+    },
+    "PipelineConfig": {
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "stages",
+          "type": {
+            "items": {
+              "kind": "string"
+            },
+            "kind": "list"
+          }
+        },
+        {
+          "name": "updated_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ],
+      "kind": "record"
+    },
+    "PipelineState": {
+      "fields": [
+        {
+          "name": "config",
+          "type": {
+            "crdt_type": "unordered_map",
+            "key": {
+              "kind": "string"
+            },
+            "kind": "map",
+            "value": {
+              "$ref": "PipelineConfig"
+            }
+          }
+        },
+        {
+          "name": "leads",
+          "type": {
+            "crdt_type": "unordered_map",
+            "key": {
+              "kind": "string"
+            },
+            "kind": "map",
+            "value": {
+              "$ref": "Lead"
+            }
+          }
+        }
+      ],
+      "kind": "record"
+    }
+  }
 }

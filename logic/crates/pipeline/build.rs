@@ -24,7 +24,14 @@ fn main() {
 
     let manifest = emit_manifest_from_crate(&sources).expect("Failed to emit ABI manifest");
 
-    let json = serde_json::to_string_pretty(&manifest).expect("Failed to serialize manifest");
+    // Strip `state_version` — emitted by calimero-wasm-abi but absent from the
+    // abi-codegen v1 schema (additionalProperties: false). SDK issue reported.
+    let mut value: serde_json::Value =
+        serde_json::to_value(&manifest).expect("Failed to convert manifest to JSON value");
+    if let Some(obj) = value.as_object_mut() {
+        obj.remove("state_version");
+    }
+    let json = serde_json::to_string_pretty(&value).expect("Failed to serialize manifest");
 
     let res_dir = Path::new("res");
     if !res_dir.exists() {

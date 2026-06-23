@@ -5,9 +5,8 @@ use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
 use calimero_storage::collections::crdt_meta::MergeError;
-use calimero_storage::collections::{LwwRegister, Mergeable, SharedStorage, UnorderedMap};
+use calimero_storage::collections::{Mergeable, UnorderedMap};
 use calimero_storage::env as storage_env;
-use std::collections::BTreeSet;
 
 pub mod events;
 use events::Event;
@@ -16,13 +15,31 @@ use events::Event;
 // Data models
 // ---------------------------------------------------------------------------
 
-/// Governed pipeline configuration — only the context creator can update stages.
+/// Pipeline configuration — holds the ordered list of pipeline stages.
+/// Stored in an UnorderedMap keyed by a fixed "pipeline-config" key so that
+/// concurrent updates are resolved by the highest `updated_at` timestamp (LWW).
+///
+/// NOTE: SharedStorage<LwwRegister<T>> generates a nested CRDT type in the ABI
+/// that the calimero-abi-codegen validator cannot handle (SDK issue reported).
+/// UnorderedMap<String, PipelineConfig> + Mergeable is the working equivalent.
 #[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
 #[serde(crate = "calimero_sdk::serde")]
 pub struct PipelineConfig {
     pub id: String,
     pub stages: Vec<String>,
+    /// Millisecond timestamp of the last update; used for LWW merge resolution.
+    pub updated_at: u64,
+}
+
+impl Mergeable for PipelineConfig {
+    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
+        // Last-write-wins: take whichever version was updated more recently.
+        if other.updated_at > self.updated_at {
+            *self = other.clone();
+        }
+        Ok(())
+    }
 }
 
 /// A sales lead in the pipeline. Shared — any team member can move or close.
@@ -57,10 +74,15 @@ impl Mergeable for Lead {
 // Pipeline state
 // ---------------------------------------------------------------------------
 
+/// Fixed key used to store the single PipelineConfig entry in the config map.
+const CONFIG_KEY: &str = "pipeline-config";
+
 #[app::state(emits = for<'a> Event<'a>)]
 pub struct PipelineState {
-    /// Governed: only the creator (writer set) can update the stage list.
-    config: SharedStorage<LwwRegister<PipelineConfig>>,
+    /// Pipeline stage configuration. Stored as a single-entry UnorderedMap so
+    /// concurrent updates from different members are resolved via Mergeable LWW.
+    /// (SharedStorage<LwwRegister<T>> is not expressible by the ABI codegen.)
+    config: UnorderedMap<String, PipelineConfig>,
     /// Shared: any member can add, move, or close leads.
     leads: UnorderedMap<String, Lead>,
 }
@@ -69,15 +91,9 @@ pub struct PipelineState {
 impl PipelineState {
     #[app::init]
     pub fn init() -> PipelineState {
-        let creator: calimero_sdk::PublicKey = calimero_sdk::env::executor_id().into();
-        let mut writers = BTreeSet::new();
-        let _ = writers.insert(creator);
-
-        // false = writer set can be rotated later (add/remove moderators)
-        let mut config =
-            SharedStorage::new_with_field_name("pipeline:config", writers, false);
+        let now_ms = storage_env::time_now() / 1_000_000;
         let initial_config = PipelineConfig {
-            id: "config".to_string(),
+            id: CONFIG_KEY.to_string(),
             stages: vec![
                 "New".to_string(),
                 "Contacted".to_string(),
@@ -85,8 +101,11 @@ impl PipelineState {
                 "Won".to_string(),
                 "Lost".to_string(),
             ],
+            updated_at: now_ms,
         };
-        let _ = config.insert(LwwRegister::new(initial_config));
+
+        let mut config = UnorderedMap::new_with_field_name("pipeline:config");
+        let _ = config.insert(CONFIG_KEY.to_string(), initial_config);
 
         PipelineState {
             config,
@@ -96,29 +115,23 @@ impl PipelineState {
 
     // ---- Stages API ----
 
-    /// Update the pipeline stage list. Only the context creator may call this.
+    /// Update the pipeline stage list (any team member may call this).
     pub fn set_stages(&mut self, stages: Vec<String>) -> app::Result<()> {
         if stages.is_empty() {
             app::bail!("stages must not be empty");
         }
 
+        let now_ms = storage_env::time_now() / 1_000_000;
         let updated_config = PipelineConfig {
-            id: "config".to_string(),
+            id: CONFIG_KEY.to_string(),
             stages,
+            updated_at: now_ms,
         };
+
+        // UnorderedMap::insert overwrites an existing key, so no contains check needed.
         self.config
-            .insert(LwwRegister::new(updated_config))
-            .map_err(|e| {
-                let s = e.to_string();
-                if s.contains("ActionNotAllowed") {
-                    AppError::msg(
-                        "set_stages: caller is not authorized to update pipeline config"
-                            .to_string(),
-                    )
-                } else {
-                    AppError::msg(format!("config.insert: {s}"))
-                }
-            })?;
+            .insert(CONFIG_KEY.to_string(), updated_config)
+            .map_err(|e| AppError::msg(format!("config.insert: {e}")))?;
 
         app::emit!(Event::StagesUpdated {});
         Ok(())
@@ -128,9 +141,10 @@ impl PipelineState {
     pub fn get_stages(&self) -> app::Result<Vec<String>> {
         let cfg = self
             .config
-            .get()
-            .map_err(|e| AppError::msg(format!("config.get: {e}")))?;
-        Ok(cfg.get().stages.clone())
+            .get(CONFIG_KEY)
+            .map_err(|e| AppError::msg(format!("config.get: {e}")))?
+            .ok_or_else(|| AppError::msg("pipeline config not initialised".to_string()))?;
+        Ok(cfg.stages.clone())
     }
 
     // ---- Leads API ----
@@ -154,11 +168,10 @@ impl PipelineState {
         // Place new lead in the first configured stage.
         let stages = self
             .config
-            .get()
+            .get(CONFIG_KEY)
             .map_err(|e| AppError::msg(format!("config.get: {e}")))?
-            .get()
-            .stages
-            .clone();
+            .map(|c| c.stages.clone())
+            .unwrap_or_default();
         let first_stage = stages
             .into_iter()
             .next()
@@ -193,11 +206,10 @@ impl PipelineState {
         // Validate the target stage exists in the current config.
         let stages = self
             .config
-            .get()
+            .get(CONFIG_KEY)
             .map_err(|e| AppError::msg(format!("config.get: {e}")))?
-            .get()
-            .stages
-            .clone();
+            .map(|c| c.stages.clone())
+            .unwrap_or_default();
         if !stages.contains(&new_stage) {
             app::bail!("stage not found in pipeline config");
         }
