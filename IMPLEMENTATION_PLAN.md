@@ -33,12 +33,12 @@ Summary: PagerDuty-style incident management where teams report, triage, resolve
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds
 - [ ] tsc --noEmit passes
-- [ ] Test story (on-call responder): report a new incident with a severity level and description
-- [ ] Test story (team member): acknowledge an open incident
-- [ ] Test story (incident commander): post timeline updates during an incident
-- [ ] Test story (team member): escalate an unacknowledged incident to the next on-call responder
-- [ ] Test story (incident commander): resolve an incident and tag a root cause
-- [ ] Test story (team member): write and collaboratively edit a postmortem after an incident is resolved
-- [ ] Test story (team lead): set and update the on-call rotation schedule
-- [ ] Test story (anyone on the team): see a dashboard of all open incidents sorted by severity
-- [ ] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps
+- [x] Test story (on-call responder): report a new incident with a severity level and description
+- [x] Test story (team member): acknowledge an open incident
+- [x] Test story (incident commander): post timeline updates during an incident
+- [x] Test story (team member): escalate an unacknowledged incident to the next on-call responder
+- [x] Test story (incident commander): resolve an incident and tag a root cause
+- [x] Test story (team member): write and collaboratively edit a postmortem after an incident is resolved
+- [x] Test story (team lead): set and update the on-call rotation schedule
+- [x] Test story (anyone on the team): see a dashboard of all open incidents sorted by severity
+- [x] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps
