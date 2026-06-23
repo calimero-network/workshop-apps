@@ -1,0 +1,22 @@
+{
+  "appName": "deal-flow",
+  "appVersion": "0.2.0",
+  "package": "com.calimero.deal-flow",
+  "metadata": {
+    "name": "deal-flow",
+    "description": "A simple, shared sales pipeline for small teams to track leads through customizable stages",
+    "author": "Calimero",
+    "route": "/deal-flow"
+  },
+  "theme": {
+    "primaryColor": "#2563EB",
+    "accentColor": "#10B981",
+    "style": "clean-professional"
+  },
+  "services": [
+    {
+      "name": "pipeline",
+      "crate": "deal-flow-pipeline"
+    }
+  ]
+}
