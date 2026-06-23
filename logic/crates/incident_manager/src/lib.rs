@@ -129,19 +129,21 @@ pub struct Postmortem {
     pub last_edited_by: String,
     /// Creation timestamp in nanoseconds.
     pub created_at: u64,
+    /// Last-update timestamp in nanoseconds; used by CRDT merge to converge
+    /// concurrent edits — the entry with the highest timestamp wins.
+    pub updated_at: u64,
 }
 
 impl Mergeable for Postmortem {
-    /// Collaborative editing: take whichever version has the most total content.
-    /// This is commutative and ensures concurrent edits converge deterministically.
+    /// Collaborative editing: last-write-wins based on `updated_at` nanosecond
+    /// timestamp. This is commutative, associative, and idempotent.
     fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        let self_total = self.summary.len() + self.root_cause.len() + self.action_items.len();
-        let other_total = other.summary.len() + other.root_cause.len() + other.action_items.len();
-        if other_total > self_total {
+        if other.updated_at > self.updated_at {
             self.summary = other.summary.clone();
             self.root_cause = other.root_cause.clone();
             self.action_items = other.action_items.clone();
             self.last_edited_by = other.last_edited_by.clone();
+            self.updated_at = other.updated_at;
         }
         Ok(())
     }
@@ -570,6 +572,7 @@ impl IncidentManagerState {
             action_items,
             last_edited_by: caller,
             created_at: now,
+            updated_at: now,
         };
 
         // Keyed by incident_id so get_postmortem(incident_id) is O(1).
@@ -611,13 +614,14 @@ impl IncidentManagerState {
         pm.root_cause = root_cause;
         pm.action_items = action_items;
         pm.last_edited_by = caller;
+        // Advance the timestamp so the Mergeable LWW merge always picks this
+        // version over any older concurrent write.
+        pm.updated_at = storage_env::time_now();
 
-        // insert merges via Mergeable; "more content wins" merge will accept
-        // the updated version as long as total length >= the stored version.
-        // For a clean overwrite, remove first then re-insert.
-        self.postmortems
-            .remove(&incident_key)
-            .map_err(|e| AppError::msg(format!("postmortems.remove: {e}")))?;
+        // Do NOT remove before re-inserting. In a CRDT UnorderedMap, remove
+        // leaves a tombstone that can win over a subsequent insert during
+        // cross-node sync, making the entry disappear on peers. Plain insert
+        // calls Mergeable::merge instead, which converges correctly.
         self.postmortems
             .insert(incident_key, pm)
             .map_err(|e| AppError::msg(format!("postmortems.insert: {e}")))?;
