@@ -1,0 +1,388 @@
+# Spec-smoke workflow for incident-command.
+#
+# Exercises every mutate method defined in the incident_manager service,
+# verifying round-trip state with the corresponding view methods across
+# two nodes. The deterministic floor (install / namespace / context / join)
+# is included here; view-call assertions use json_equal / json_subset only.
+#
+# Usage (from the project root after building the bundle):
+#   merobox bootstrap run test/spec-smoke.workflow.yml
+
+name: incident-command spec-smoke
+description: Verify incident_manager mutate methods replicate across two nodes.
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 12428
+  base_rpc_port: 12528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # ── Bootstrap ────────────────────────────────────────────────────────────────
+
+  - type: install_application
+    name: Install bundle on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/incident-command-0.2.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install bundle on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/incident-command-0.2.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create incident_manager context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: incident_manager
+    outputs:
+      incident_manager_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation from app-node-1
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins the namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: join_context
+    name: app-node-2 joins the incident_manager context
+    node: app-node-2
+    context_id: '{{incident_manager_ctx}}'
+
+  # ── Exercise report_incident ─────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise report_incident on app-node-1
+    node: app-node-1
+    context_id: '{{incident_manager_ctx}}'
+    method: report_incident
+    args:
+      title: "DB connection pool exhausted"
+      description: "Production Postgres pool at 0 available connections since 14:32 UTC"
+      severity: "P1"
+    outputs:
+      incident_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after report_incident
+    context_id: '{{incident_manager_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm incident status is open on app-node-2
+    node: app-node-2
+    context_id: '{{incident_manager_ctx}}'
+    method: get_incident
+    args:
+      incident_id: '{{incident_id}}'
+    outputs:
+      incident_status: result.output.status
+
+  - type: json_assert
+    name: report_incident produced an open incident on app-node-2
+    statements:
+      - 'json_equal({{incident_status}}, "open")'
+
+  # ── Exercise post_timeline_entry ─────────────────────────────────────────────
+
+  - type: call
+    name: Exercise post_timeline_entry on app-node-1
+    node: app-node-1
+    context_id: '{{incident_manager_ctx}}'
+    method: post_timeline_entry
+    args:
+      incident_id: '{{incident_id}}'
+      body: "Restarted pooler, connections recovering"
+      entry_type: "status_update"
+    outputs:
+      timeline_entry_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after post_timeline_entry
+    context_id: '{{incident_manager_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm timeline entry visible on app-node-2
+    node: app-node-2
+    context_id: '{{incident_manager_ctx}}'
+    method: get_timeline
+    args:
+      incident_id: '{{incident_id}}'
+    outputs:
+      timeline_entry_0: result.output.0
+
+  - type: json_assert
+    name: post_timeline_entry body reachable on app-node-2
+    statements:
+      - 'json_subset({{timeline_entry_0}}, {"body": "Restarted pooler, connections recovering"})'
+
+  # ── Exercise acknowledge_incident ─────────────────────────────────────────────
+
+  - type: call
+    name: Exercise acknowledge_incident on app-node-1
+    node: app-node-1
+    context_id: '{{incident_manager_ctx}}'
+    method: acknowledge_incident
+    args:
+      incident_id: '{{incident_id}}'
+
+  - type: wait_for_sync
+    name: Wait for sync after acknowledge_incident
+    context_id: '{{incident_manager_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm status is acknowledged on app-node-2
+    node: app-node-2
+    context_id: '{{incident_manager_ctx}}'
+    method: get_incident
+    args:
+      incident_id: '{{incident_id}}'
+    outputs:
+      ack_status: result.output.status
+
+  - type: json_assert
+    name: acknowledge_incident changed status to acknowledged on app-node-2
+    statements:
+      - 'json_equal({{ack_status}}, "acknowledged")'
+
+  # ── Exercise escalate_incident (separate incident — must be in open status) ──
+
+  - type: call
+    name: Report a second incident for escalation test
+    node: app-node-1
+    context_id: '{{incident_manager_ctx}}'
+    method: report_incident
+    args:
+      title: "API gateway returning 502 errors"
+      description: "Gateway returning 502 on all routes"
+      severity: "P2"
+    outputs:
+      incident_id_2: result.output
+
+  - type: call
+    name: Exercise escalate_incident on app-node-1
+    node: app-node-1
+    context_id: '{{incident_manager_ctx}}'
+    method: escalate_incident
+    args:
+      incident_id: '{{incident_id_2}}'
+      next_responder_id: "member-b2c1"
+    outputs:
+      escalation_tle_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after escalate_incident
+    context_id: '{{incident_manager_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm escalation timeline entry visible on app-node-2
+    node: app-node-2
+    context_id: '{{incident_manager_ctx}}'
+    method: get_timeline
+    args:
+      incident_id: '{{incident_id_2}}'
+    outputs:
+      escalation_entry: result.output.0
+
+  - type: json_assert
+    name: escalate_incident logged an escalation entry on app-node-2
+    statements:
+      - 'json_subset({{escalation_entry}}, {"entry_type": "escalation"})'
+
+  # ── Exercise resolve_incident (first incident is already acknowledged) ────────
+
+  - type: call
+    name: Exercise resolve_incident on app-node-1
+    node: app-node-1
+    context_id: '{{incident_manager_ctx}}'
+    method: resolve_incident
+    args:
+      incident_id: '{{incident_id}}'
+      root_cause: "connection leak in auth middleware"
+
+  - type: wait_for_sync
+    name: Wait for sync after resolve_incident
+    context_id: '{{incident_manager_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm status is resolved on app-node-2
+    node: app-node-2
+    context_id: '{{incident_manager_ctx}}'
+    method: get_incident
+    args:
+      incident_id: '{{incident_id}}'
+    outputs:
+      resolved_status: result.output.status
+
+  - type: json_assert
+    name: resolve_incident changed status to resolved on app-node-2
+    statements:
+      - 'json_equal({{resolved_status}}, "resolved")'
+
+  # ── Exercise create_postmortem ───────────────────────────────────────────────
+
+  - type: call
+    name: Exercise create_postmortem on app-node-1
+    node: app-node-1
+    context_id: '{{incident_manager_ctx}}'
+    method: create_postmortem
+    args:
+      incident_id: '{{incident_id}}'
+      summary: "Pool exhaustion caused 12 min outage"
+      root_cause: "Auth middleware leaked connections on timeout"
+      action_items: "1. Add connection timeout\n2. Add pool usage alert"
+    outputs:
+      postmortem_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after create_postmortem
+    context_id: '{{incident_manager_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm postmortem visible on app-node-2
+    node: app-node-2
+    context_id: '{{incident_manager_ctx}}'
+    method: get_postmortem
+    args:
+      incident_id: '{{incident_id}}'
+    outputs:
+      pm_summary: result.output.summary
+
+  - type: json_assert
+    name: create_postmortem summary reachable on app-node-2
+    statements:
+      - 'json_equal({{pm_summary}}, "Pool exhaustion caused 12 min outage")'
+
+  # ── Exercise update_postmortem ───────────────────────────────────────────────
+
+  - type: call
+    name: Exercise update_postmortem on app-node-1
+    node: app-node-1
+    context_id: '{{incident_manager_ctx}}'
+    method: update_postmortem
+    args:
+      postmortem_id: '{{postmortem_id}}'
+      summary: "Pool exhaustion caused 12 min outage for 30% of users"
+      root_cause: "Auth middleware leaked connections on timeout"
+      action_items: "1. Add connection timeout\n2. Add pool usage alert\n3. Runbook for manual pool reset"
+
+  - type: wait_for_sync
+    name: Wait for sync after update_postmortem
+    context_id: '{{incident_manager_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm updated postmortem summary on app-node-2
+    node: app-node-2
+    context_id: '{{incident_manager_ctx}}'
+    method: get_postmortem
+    args:
+      incident_id: '{{incident_id}}'
+    outputs:
+      pm_updated_summary: result.output.summary
+
+  - type: json_assert
+    name: update_postmortem new summary reachable on app-node-2
+    statements:
+      - 'json_equal({{pm_updated_summary}}, "Pool exhaustion caused 12 min outage for 30% of users")'
+
+  # ── Exercise set_oncall_slot ─────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise set_oncall_slot on app-node-1
+    node: app-node-1
+    context_id: '{{incident_manager_ctx}}'
+    method: set_oncall_slot
+    args:
+      member_name: "Alice Chen"
+      member_id: "member-a1"
+      start_time: 1719792000000
+      end_time: 1719878400000
+      order: 1
+    outputs:
+      slot_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after set_oncall_slot
+    context_id: '{{incident_manager_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm on-call slot visible on app-node-2
+    node: app-node-2
+    context_id: '{{incident_manager_ctx}}'
+    method: get_oncall_schedule
+    args: {}
+    outputs:
+      slot_0: result.output.0
+
+  - type: json_assert
+    name: set_oncall_slot created slot with correct member_name on app-node-2
+    statements:
+      - 'json_subset({{slot_0}}, {"member_name": "Alice Chen"})'
+
+  # ── Exercise remove_oncall_slot ──────────────────────────────────────────────
+
+  - type: call
+    name: Exercise remove_oncall_slot on app-node-1
+    node: app-node-1
+    context_id: '{{incident_manager_ctx}}'
+    method: remove_oncall_slot
+    args:
+      slot_id: '{{slot_id}}'
+
+  - type: wait_for_sync
+    name: Wait for sync after remove_oncall_slot
+    context_id: '{{incident_manager_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm schedule is empty on app-node-2 after remove
+    node: app-node-2
+    context_id: '{{incident_manager_ctx}}'
+    method: get_oncall_schedule
+    args: {}
+    outputs:
+      empty_schedule: result.output
+
+  - type: json_assert
+    name: remove_oncall_slot cleared the schedule on app-node-2
+    statements:
+      - 'json_equal({{empty_schedule}}, [])'
