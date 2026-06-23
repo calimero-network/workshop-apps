@@ -1,7 +1,7 @@
 {
   "appName": "ranked-vote",
-  "appVersion": "0.2.0",
-  "package": "com.calimero.ranked-vote",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.users.ranked-vote",
   "metadata": {
     "name": "ranked-vote",
     "description": "Group decision-making through ranked-choice voting where everyone ranks options and sees results together",
