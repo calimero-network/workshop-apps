@@ -23,13 +23,60 @@ test.describe(`ops team member: see every pending expense from the whole team in
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`the review dashboard shows all expenses with status 'pending', with the submitter's name and submission date`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`the review dashboard shows all expenses with status 'pending', with the submitter's name and submission date`, async ({ page }) => {
+    // Submit a pending expense first so the Review Queue has something to display
+    await page.getByPlaceholder('e.g. Travel').fill('DashboardCat');
+    await page.getByRole('button', { name: 'Add' }).click();
+    const catSelect = page.locator('select').nth(1);
+    await expect(catSelect).toContainText('DashboardCat', { timeout: 8_000 });
+    await page.getByPlaceholder('e.g. Flight to NYC').fill('Dashboard test expense');
+    await page.getByPlaceholder('0.00').fill('99');
+    await catSelect.selectOption('DashboardCat');
+    await page.getByRole('button', { name: 'Submit Expense' }).click();
+
+    // Navigate to Review Queue
+    await page.getByRole('button', { name: /Review Queue/ }).click();
+
+    // The heading and the pending expense should be visible
+    await expect(page.getByText('Review Queue')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('Dashboard test expense')).toBeVisible({ timeout: 8_000 });
+
+    // Status badge shows "pending"
+    await expect(page.getByText('pending').first()).toBeVisible({ timeout: 5_000 });
+
+    // Submission date is rendered (the DescRow's .date span, e.g. "Jun 23, 2026")
+    await expect(page.locator('.date').first()).toBeVisible({ timeout: 5_000 });
   });
 
-  test.skip(`when a new expense is submitted by any team member, it appears on the dashboard within 5s`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`when a new expense is submitted by any team member, it appears on the dashboard within 5s`, async ({ browser }) => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      await loginViaHash(pageA, 0);
+      await loginViaHash(pageB, 1);
+
+      // Node B (ops): open Review Queue first
+      await pageB.getByRole('button', { name: /Review Queue/ }).click();
+
+      // Node A: add category and submit a new expense
+      await pageA.getByPlaceholder('e.g. Travel').fill('CrossNodeCat');
+      await pageA.getByRole('button', { name: 'Add' }).click();
+      const catSelectA = pageA.locator('select').nth(1);
+      await expect(catSelectA).toContainText('CrossNodeCat', { timeout: 8_000 });
+      await pageA.getByPlaceholder('e.g. Flight to NYC').fill('Appeared on dashboard');
+      await pageA.getByPlaceholder('0.00').fill('33');
+      await catSelectA.selectOption('CrossNodeCat');
+      await pageA.getByRole('button', { name: 'Submit Expense' }).click();
+
+      // Node B: the new expense must appear in the review dashboard within 5s
+      await expect(pageB.getByText('Appeared on dashboard')).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await clearAuth(pageA);
+      await clearAuth(pageB);
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 });

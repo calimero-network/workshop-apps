@@ -23,8 +23,45 @@ test.describe(`anyone on the team: see a spending summary broken down by categor
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`the summary view shows total approved/reimbursed spend per category, updating live as expenses are approved`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`the summary view shows total approved/reimbursed spend per category, updating live as expenses are approved`, async ({ browser }) => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      await loginViaHash(pageA, 0);
+      await loginViaHash(pageB, 1);
+
+      // Verify the summary cards are always present on the Spending Summary tab
+      await pageB.getByRole('button', { name: /Spending Summary/ }).click();
+      await expect(pageB.getByText('Total Approved')).toBeVisible({ timeout: 5_000 });
+      await expect(pageB.getByText('Total Reimbursed')).toBeVisible({ timeout: 5_000 });
+      await expect(pageB.getByText('Pending Review')).toBeVisible({ timeout: 5_000 });
+      await expect(pageB.getByText('Spend by Category')).toBeVisible({ timeout: 5_000 });
+
+      // Node A: add category and submit an expense
+      await pageA.getByPlaceholder('e.g. Travel').fill('SummaryCat');
+      await pageA.getByRole('button', { name: 'Add' }).click();
+      const catSelectA = pageA.locator('select').nth(1);
+      await expect(catSelectA).toContainText('SummaryCat', { timeout: 8_000 });
+      await pageA.getByPlaceholder('e.g. Flight to NYC').fill('Summary test expense');
+      await pageA.getByPlaceholder('0.00').fill('150');
+      await catSelectA.selectOption('SummaryCat');
+      await pageA.getByRole('button', { name: 'Submit Expense' }).click();
+
+      // Node B: approve the expense via Review Queue so it counts toward approved spend
+      await pageB.getByRole('button', { name: /Review Queue/ }).click();
+      await expect(pageB.getByText('Summary test expense')).toBeVisible({ timeout: 8_000 });
+      await pageB.getByRole('button', { name: 'Approve' }).first().click();
+
+      // Node B: navigate to Spending Summary — "SummaryCat" row must appear in the table
+      await pageB.getByRole('button', { name: /Spending Summary/ }).click();
+      await expect(pageB.getByText('SummaryCat')).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await clearAuth(pageA);
+      await clearAuth(pageB);
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 });

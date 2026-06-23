@@ -23,13 +23,56 @@ test.describe(`team member: see all my submitted expenses and their current stat
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`the team member's expense list shows every expense they submitted, ordered by most recent first`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`the team member's expense list shows every expense they submitted, ordered by most recent first`, async ({ page }) => {
+    // Add a category, then submit an expense; it must appear in the My Expenses list
+    await page.getByPlaceholder('e.g. Travel').fill('ListTestCat');
+    await page.getByRole('button', { name: 'Add' }).click();
+    const categorySelect = page.locator('select').nth(1);
+    await expect(categorySelect).toContainText('ListTestCat', { timeout: 8_000 });
+
+    await page.getByPlaceholder('e.g. Flight to NYC').fill('My listed expense');
+    await page.getByPlaceholder('0.00').fill('42');
+    await categorySelect.selectOption('ListTestCat');
+    await page.getByRole('button', { name: 'Submit Expense' }).click();
+
+    // The submitted expense appears in the "My Expenses" list below the form
+    await expect(page.getByText('My listed expense')).toBeVisible({ timeout: 8_000 });
   });
 
-  test.skip(`each expense displays its current status (pending, approved, rejected, or reimbursed) and updates live when ops acts on it`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`each expense displays its current status (pending, approved, rejected, or reimbursed) and updates live when ops acts on it`, async ({ browser }) => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      await loginViaHash(pageA, 0);
+      await loginViaHash(pageB, 1);
+
+      // Node A: add category and submit expense
+      await pageA.getByPlaceholder('e.g. Travel').fill('StatusTestCat');
+      await pageA.getByRole('button', { name: 'Add' }).click();
+      const catSelectA = pageA.locator('select').nth(1);
+      await expect(catSelectA).toContainText('StatusTestCat', { timeout: 8_000 });
+      await pageA.getByPlaceholder('e.g. Flight to NYC').fill('Status update expense');
+      await pageA.getByPlaceholder('0.00').fill('60');
+      await catSelectA.selectOption('StatusTestCat');
+      await pageA.getByRole('button', { name: 'Submit Expense' }).click();
+
+      // Node A: expense list shows it as "pending"
+      await expect(pageA.getByText('pending')).toBeVisible({ timeout: 8_000 });
+
+      // Node B (ops): go to Review Queue, approve the expense
+      await pageB.getByRole('button', { name: /Review Queue/ }).click();
+      await expect(pageB.getByText('Status update expense')).toBeVisible({ timeout: 8_000 });
+      await pageB.getByRole('button', { name: 'Approve' }).first().click();
+
+      // Node A: My Expenses list must update to "approved" within 5s
+      await expect(pageA.getByText('approved')).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await clearAuth(pageA);
+      await clearAuth(pageB);
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 });

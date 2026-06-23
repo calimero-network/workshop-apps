@@ -23,13 +23,63 @@ test.describe(`ops team member: mark approved expenses as reimbursed`, () => {
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`only expenses with status 'approved' can be marked as reimbursed — attempts on pending or rejected expenses are rejected`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`only expenses with status 'approved' can be marked as reimbursed — attempts on pending or rejected expenses are rejected`, async ({ page }) => {
+    // Submit a pending expense; the ReviewDashboard only renders "Mark as Reimbursed"
+    // for approved expenses — so a pending expense must NOT show that button.
+    await page.getByPlaceholder('e.g. Travel').fill('ReimburseGateCat');
+    await page.getByRole('button', { name: 'Add' }).click();
+    const catSelect = page.locator('select').nth(1);
+    await expect(catSelect).toContainText('ReimburseGateCat', { timeout: 8_000 });
+    await page.getByPlaceholder('e.g. Flight to NYC').fill('Gate test expense');
+    await page.getByPlaceholder('0.00').fill('55');
+    await catSelect.selectOption('ReimburseGateCat');
+    await page.getByRole('button', { name: 'Submit Expense' }).click();
+    await expect(page.getByText('Gate test expense')).toBeVisible({ timeout: 8_000 });
+
+    // Navigate to Review Queue — expense is pending, so "Mark as Reimbursed" must be absent
+    await page.getByRole('button', { name: /Review Queue/ }).click();
+    await expect(page.getByText('Gate test expense')).toBeVisible({ timeout: 8_000 });
+    // Approve and Reject are present for pending expenses; Mark as Reimbursed is not
+    await expect(page.getByRole('button', { name: 'Approve' }).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('button', { name: 'Mark as Reimbursed' })).toBeHidden();
   });
 
-  test.skip(`after marking as reimbursed, the submitter sees the status change within 5s`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`after marking as reimbursed, the submitter sees the status change within 5s`, async ({ browser }) => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      await loginViaHash(pageA, 0);
+      await loginViaHash(pageB, 1);
+
+      // Node A: add category and submit expense
+      await pageA.getByPlaceholder('e.g. Travel').fill('ReimburseTestCat');
+      await pageA.getByRole('button', { name: 'Add' }).click();
+      const catSelectA = pageA.locator('select').nth(1);
+      await expect(catSelectA).toContainText('ReimburseTestCat', { timeout: 8_000 });
+      await pageA.getByPlaceholder('e.g. Flight to NYC').fill('To be reimbursed');
+      await pageA.getByPlaceholder('0.00').fill('200');
+      await catSelectA.selectOption('ReimburseTestCat');
+      await pageA.getByRole('button', { name: 'Submit Expense' }).click();
+      await expect(pageA.getByText('pending')).toBeVisible({ timeout: 8_000 });
+
+      // Node B: approve the expense first
+      await pageB.getByRole('button', { name: /Review Queue/ }).click();
+      await expect(pageB.getByText('To be reimbursed')).toBeVisible({ timeout: 8_000 });
+      await pageB.getByRole('button', { name: 'Approve' }).first().click();
+
+      // Node B: wait for "Mark as Reimbursed" to appear (expense now approved), then click it
+      await expect(pageB.getByRole('button', { name: 'Mark as Reimbursed' })).toBeVisible({ timeout: 8_000 });
+      await pageB.getByRole('button', { name: 'Mark as Reimbursed' }).click();
+
+      // Node A: My Expenses must show "reimbursed" status within 5s
+      await expect(pageA.getByText('reimbursed')).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await clearAuth(pageA);
+      await clearAuth(pageB);
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 });

@@ -23,13 +23,53 @@ test.describe(`team member: submit an expense with a description, amount, and ca
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`after a team member submits an expense, every ops team member sees it in the pending queue within 5s`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`after a team member submits an expense, every ops team member sees it in the pending queue within 5s`, async ({ browser }) => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      await loginViaHash(pageA, 0);
+      await loginViaHash(pageB, 1);
+
+      // Node A: add a category so the form category dropdown has an option
+      await pageA.getByPlaceholder('e.g. Travel').fill('E2ECategory');
+      await pageA.getByRole('button', { name: 'Add' }).click();
+      const categorySelect = pageA.locator('select').nth(1);
+      await expect(categorySelect).toContainText('E2ECategory', { timeout: 8_000 });
+
+      // Fill the expense form and submit
+      await pageA.getByPlaceholder('e.g. Flight to NYC').fill('Cross-node test expense');
+      await pageA.getByPlaceholder('0.00').fill('75');
+      await categorySelect.selectOption('E2ECategory');
+      await pageA.getByRole('button', { name: 'Submit Expense' }).click();
+
+      // Node B: navigate to Review Queue — the expense must appear within 5s
+      await pageB.getByRole('button', { name: /Review Queue/ }).click();
+      await expect(pageB.getByText('Cross-node test expense')).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await clearAuth(pageA);
+      await clearAuth(pageB);
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 
-  test.skip(`the expense must include a description, amount, and category — submissions missing any field are rejected`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`the expense must include a description, amount, and category — submissions missing any field are rejected`, async ({ page }) => {
+    // My Expenses is the default active tab; the submit form is already visible
+
+    // Submit with no fields — description is validated first
+    await page.getByRole('button', { name: 'Submit Expense' }).click();
+    await expect(page.getByText('Description is required.')).toBeVisible({ timeout: 5_000 });
+
+    // Add description, leave amount empty
+    await page.getByPlaceholder('e.g. Flight to NYC').fill('Some expense');
+    await page.getByRole('button', { name: 'Submit Expense' }).click();
+    await expect(page.getByText('Enter a valid amount.')).toBeVisible({ timeout: 5_000 });
+
+    // Add a valid amount, leave category unselected ("— select —")
+    await page.getByPlaceholder('0.00').fill('50');
+    await page.getByRole('button', { name: 'Submit Expense' }).click();
+    await expect(page.getByText('Select a category.')).toBeVisible({ timeout: 5_000 });
   });
 });

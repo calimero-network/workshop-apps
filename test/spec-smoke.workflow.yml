@@ -1,0 +1,338 @@
+name: team-expenses spec smoke
+description: >
+  Verify the expenses service bootstraps correctly and all mutate methods
+  (add_category, submit_expense, edit_expense, approve_expense,
+  mark_reimbursed, reject_expense) replicate state across two nodes.
+log_level: info
+
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:edge
+  base_port: 12428
+  base_rpc_port: 12528
+
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # ── Bootstrap: install bundle + namespace + context ─────────────────────────
+
+  - type: install_application
+    name: Install team-expenses bundle on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/team-expenses-0.2.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install team-expenses bundle on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/team-expenses-0.2.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create expenses context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: expenses
+    outputs:
+      expenses_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: join_context
+    name: app-node-2 joins expenses context
+    node: app-node-2
+    context_id: '{{expenses_ctx}}'
+
+  # ── Deterministic floor: parameterless views return empty lists initially ───
+
+  - type: call
+    name: list_my_expenses on app-node-1 (empty state)
+    node: app-node-1
+    context_id: '{{expenses_ctx}}'
+    method: list_my_expenses
+    args: {}
+    outputs:
+      my_expenses_empty: result.output
+
+  - type: json_assert
+    name: list_my_expenses returns empty list initially
+    statements:
+      - 'json_equal({{my_expenses_empty}}, [])'
+
+  - type: call
+    name: list_pending_expenses on app-node-1 (empty state)
+    node: app-node-1
+    context_id: '{{expenses_ctx}}'
+    method: list_pending_expenses
+    args: {}
+    outputs:
+      pending_empty: result.output
+
+  - type: json_assert
+    name: list_pending_expenses returns empty list initially
+    statements:
+      - 'json_equal({{pending_empty}}, [])'
+
+  - type: call
+    name: list_all_expenses on app-node-1 (empty state)
+    node: app-node-1
+    context_id: '{{expenses_ctx}}'
+    method: list_all_expenses
+    args: {}
+    outputs:
+      all_empty: result.output
+
+  - type: json_assert
+    name: list_all_expenses returns empty list initially
+    statements:
+      - 'json_equal({{all_empty}}, [])'
+
+  - type: call
+    name: list_categories on app-node-1 (empty state)
+    node: app-node-1
+    context_id: '{{expenses_ctx}}'
+    method: list_categories
+    args: {}
+    outputs:
+      categories_empty: result.output
+
+  - type: json_assert
+    name: list_categories returns empty list initially
+    statements:
+      - 'json_equal({{categories_empty}}, [])'
+
+  # ── Mutate: add_category ────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise add_category on app-node-1
+    node: app-node-1
+    context_id: '{{expenses_ctx}}'
+    method: add_category
+    args:
+      name: Travel
+    outputs:
+      cat_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for expenses sync after add_category
+    context_id: '{{expenses_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm category visible on app-node-2
+    node: app-node-2
+    context_id: '{{expenses_ctx}}'
+    method: list_categories
+    args: {}
+    outputs:
+      first_category: result.output.0
+
+  - type: json_assert
+    name: add_category produced a visible Category on app-node-2
+    statements:
+      - 'json_subset({{first_category}}, {"name": "Travel"})'
+
+  # ── Mutate: submit_expense ──────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise submit_expense on app-node-1
+    node: app-node-1
+    context_id: '{{expenses_ctx}}'
+    method: submit_expense
+    args:
+      description: Flight to NYC
+      amount: 35000
+      currency: USD
+      category: Travel
+    outputs:
+      expense_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for expenses sync after submit_expense
+    context_id: '{{expenses_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm expense visible on app-node-2 via list_pending_expenses
+    node: app-node-2
+    context_id: '{{expenses_ctx}}'
+    method: list_pending_expenses
+    args: {}
+    outputs:
+      first_pending: result.output.0
+
+  - type: json_assert
+    name: submit_expense produced a pending Expense visible on app-node-2
+    statements:
+      - 'json_subset({{first_pending}}, {"description": "Flight to NYC", "status": "pending"})'
+
+  # ── Mutate: edit_expense ────────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise edit_expense on app-node-1
+    node: app-node-1
+    context_id: '{{expenses_ctx}}'
+    method: edit_expense
+    args:
+      expense_id: '{{expense_id}}'
+      description: Flight to NYC (round trip)
+      amount: 42000
+      currency: USD
+      category: Travel
+
+  - type: wait_for_sync
+    name: Wait for expenses sync after edit_expense
+    context_id: '{{expenses_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm edit visible on app-node-2 via list_pending_expenses
+    node: app-node-2
+    context_id: '{{expenses_ctx}}'
+    method: list_pending_expenses
+    args: {}
+    outputs:
+      first_pending_edited: result.output.0
+
+  - type: json_assert
+    name: edit_expense updated description and amount on app-node-2
+    statements:
+      - 'json_subset({{first_pending_edited}}, {"description": "Flight to NYC (round trip)", "amount": 42000})'
+
+  # ── Mutate: approve_expense ─────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise approve_expense on app-node-1
+    node: app-node-1
+    context_id: '{{expenses_ctx}}'
+    method: approve_expense
+    args:
+      expense_id: '{{expense_id}}'
+      note: Looks good, receipt confirmed
+
+  - type: wait_for_sync
+    name: Wait for expenses sync after approve_expense
+    context_id: '{{expenses_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm approval visible on app-node-2 via list_all_expenses
+    node: app-node-2
+    context_id: '{{expenses_ctx}}'
+    method: list_all_expenses
+    args: {}
+    outputs:
+      first_expense_approved: result.output.0
+
+  - type: json_assert
+    name: approve_expense set status to approved on app-node-2
+    statements:
+      - 'json_subset({{first_expense_approved}}, {"status": "approved"})'
+
+  # ── Mutate: mark_reimbursed ─────────────────────────────────────────────────
+
+  - type: call
+    name: Exercise mark_reimbursed on app-node-1
+    node: app-node-1
+    context_id: '{{expenses_ctx}}'
+    method: mark_reimbursed
+    args:
+      expense_id: '{{expense_id}}'
+
+  - type: wait_for_sync
+    name: Wait for expenses sync after mark_reimbursed
+    context_id: '{{expenses_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm reimbursed status visible on app-node-2 via list_all_expenses
+    node: app-node-2
+    context_id: '{{expenses_ctx}}'
+    method: list_all_expenses
+    args: {}
+    outputs:
+      first_expense_reimbursed: result.output.0
+
+  - type: json_assert
+    name: mark_reimbursed set status to reimbursed on app-node-2
+    statements:
+      - 'json_subset({{first_expense_reimbursed}}, {"status": "reimbursed"})'
+
+  # ── Mutate: reject_expense (on a second expense) ────────────────────────────
+
+  - type: call
+    name: Submit a second expense to test rejection
+    node: app-node-1
+    context_id: '{{expenses_ctx}}'
+    method: submit_expense
+    args:
+      description: Hotel in Paris
+      amount: 18000
+      currency: EUR
+      category: Travel
+    outputs:
+      expense_id_2: result.output
+
+  - type: wait_for_sync
+    name: Wait for expenses sync after second submit_expense
+    context_id: '{{expenses_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Exercise reject_expense on app-node-1
+    node: app-node-1
+    context_id: '{{expenses_ctx}}'
+    method: reject_expense
+    args:
+      expense_id: '{{expense_id_2}}'
+      note: Missing receipt — please resubmit with attachment
+
+  - type: wait_for_sync
+    name: Wait for expenses sync after reject_expense
+    context_id: '{{expenses_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm no pending expenses remain after rejection on app-node-2
+    node: app-node-2
+    context_id: '{{expenses_ctx}}'
+    method: list_pending_expenses
+    args: {}
+    outputs:
+      pending_after_reject: result.output
+
+  - type: json_assert
+    name: reject_expense removed the expense from the pending list on app-node-2
+    statements:
+      - 'json_equal({{pending_after_reject}}, [])'

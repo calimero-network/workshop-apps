@@ -23,13 +23,52 @@ test.describe(`ops team member: approve or reject an expense with an optional no
     await expect(errorBanner).toBeHidden({ timeout: 5_000 }).catch(() => {});
   });
 
-  test.skip(`after ops approves or rejects an expense, the submitter sees the updated status and note within 5s`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  test(`after ops approves or rejects an expense, the submitter sees the updated status and note within 5s`, async ({ browser }) => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    try {
+      await loginViaHash(pageA, 0);
+      await loginViaHash(pageB, 1);
+
+      // Node A: add category and submit expense
+      await pageA.getByPlaceholder('e.g. Travel').fill('ApproveTestCat');
+      await pageA.getByRole('button', { name: 'Add' }).click();
+      const catSelectA = pageA.locator('select').nth(1);
+      await expect(catSelectA).toContainText('ApproveTestCat', { timeout: 8_000 });
+      await pageA.getByPlaceholder('e.g. Flight to NYC').fill('Awaiting approval');
+      await pageA.getByPlaceholder('0.00').fill('120');
+      await catSelectA.selectOption('ApproveTestCat');
+      await pageA.getByRole('button', { name: 'Submit Expense' }).click();
+      // Confirm submitted (pending badge visible in My Expenses)
+      await expect(pageA.getByText('pending')).toBeVisible({ timeout: 8_000 });
+
+      // Node B (ops): go to Review Queue, add a reviewer note, approve
+      await pageB.getByRole('button', { name: /Review Queue/ }).click();
+      await expect(pageB.getByText('Awaiting approval')).toBeVisible({ timeout: 8_000 });
+      await pageB.getByPlaceholder('Reviewer note (optional)').first().fill('Looks good, approved');
+      await pageB.getByRole('button', { name: 'Approve' }).first().click();
+
+      // Node A: My Expenses list must show "approved" status and the reviewer note within 5s
+      await expect(pageA.getByText('approved')).toBeVisible({ timeout: 5_000 });
+      await expect(pageA.getByText(/Note: Looks good, approved/)).toBeVisible({ timeout: 5_000 });
+    } finally {
+      await clearAuth(pageA);
+      await clearAuth(pageB);
+      await ctxA.close();
+      await ctxB.close();
+    }
   });
 
-  test.skip(`only ops team members can approve or reject — attempts by regular team members are rejected`, async ({ page: _page }) => {
-    // TODO: verifier-writer turns this skip into a real assertion using selectors
-    // from the frontend the frontend-writer produced.
+  // [Verifier] NOTE: The ReviewDashboard renders Approve/Reject buttons for all users on
+  // pending expenses with no frontend-level role check — role enforcement is in the backend.
+  // Testing a UI-observable rejection requires a guaranteed non-ops node at setup time,
+  // which the test harness does not currently expose. Marked fixme to surface the gap.
+  test.fixme(`only ops team members can approve or reject — attempts by regular team members are rejected`, async ({ page: _page }) => {
+    // Requires: node 0 configured as a regular member (non-admin) at workspace creation time.
+    // Flow: node 0 submits expense; node 0 navigates to Review Queue; node 0 clicks Approve;
+    // backend returns an error; ReviewDashboard renders the error via errors[exp.id] state.
+    // Until role-configuration is available via the test harness this cannot be wired up.
   });
 });

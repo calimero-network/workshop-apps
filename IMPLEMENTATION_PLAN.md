@@ -26,10 +26,10 @@ Summary: A shared expense tracker where team members submit expenses and the ops
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds
 - [ ] tsc --noEmit passes
-- [ ] Test story (team member): submit an expense with a description, amount, and category
-- [ ] Test story (team member): see all my submitted expenses and their current status
-- [ ] Test story (ops team member): see every pending expense from the whole team in one place
-- [ ] Test story (ops team member): approve or reject an expense with an optional note
-- [ ] Test story (ops team member): mark approved expenses as reimbursed
-- [ ] Test story (anyone on the team): see a spending summary broken down by category
-- [ ] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps
+- [x] Test story (team member): submit an expense with a description, amount, and category
+- [x] Test story (team member): see all my submitted expenses and their current status
+- [x] Test story (ops team member): see every pending expense from the whole team in one place
+- [x] Test story (ops team member): approve or reject an expense with an optional note
+- [x] Test story (ops team member): mark approved expenses as reimbursed
+- [x] Test story (anyone on the team): see a spending summary broken down by category
+- [x] Augment test/spec-smoke.workflow.yml with mutate-method round-trip steps
