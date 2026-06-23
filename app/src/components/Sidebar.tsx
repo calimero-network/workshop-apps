@@ -3,17 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { C, useTheme, MoonIcon } from '../theme';
 import { useMero, CalimeroLogo, type GroupMember } from '@calimero-network/mero-react';
-import { RoomSummary } from '../api/lobby/LobbyClient';
-import type { LobbyRecord } from '../hooks/useChatLobby';
+import type { WorkspaceRecord } from '../hooks/useIncidentWorkspace';
 import MemberPopup from './MemberPopup';
 
 const MAX_NAME_LEN = 20;
 const DOCS_URL = 'https://docs.calimero.network';
 
+// Accept the old RoomSummary-typed props as `never[]` for compat with unused imports
+// but the component ignores them. Incident nav is driven by activeView.
 
 interface SidebarProps {
   // Workspace selector
-  workspaces: LobbyRecord[];
+  workspaces: WorkspaceRecord[];
   selectedNamespaceId: string | null;
   onSelectWorkspace: (nsId: string) => void;
   onCreateWorkspace: () => void;
@@ -22,18 +23,19 @@ interface SidebarProps {
   // Member directory
   members: GroupMember[];
   selfIdentity: string | null;
-  onlineMembers: Set<string>;
-  memberNames: Record<string, string>;
-  onSetName: (name: string) => Promise<void>;
+  onlineMembers: Set<string>;          // kept for signature compat; unused (no presence in spec)
+  memberNames: Record<string, string>; // kept for signature compat; unused
+  onSetName: (name: string) => Promise<void>; // kept for compat; unused
 
-  // Room list
-  rooms: RoomSummary[];
+  // Room props kept for backwards compat (ChatPage passes empty arrays) — ignored
+  rooms: unknown[];
   selectedRoomId: string | null;
-  onSelectRoom: (room: RoomSummary) => void;
+  onSelectRoom: (room: unknown) => void;
   onCreateRoom: () => void;
+
   onInvite: () => void;
 
-  // Admin actions (workspace role mgmt). Gated on viewerIsAdmin inside the popup.
+  // Admin actions
   viewerIsAdmin: boolean;
   onSetMemberRole: (identity: string, role: 'Admin' | 'Member') => Promise<void>;
   onRemoveMember: (identity: string) => Promise<void>;
@@ -41,6 +43,12 @@ interface SidebarProps {
   // Layout
   collapsed: boolean;
   onToggleCollapse: () => void;
+
+  // Incident-command nav
+  activeView?: 'dashboard' | 'detail' | 'postmortem' | 'oncall';
+  onSetActiveView?: (view: 'dashboard' | 'detail' | 'postmortem' | 'oncall') => void;
+  onCallName?: string | null;
+  openIncidentCount?: number;
 }
 
 function shortenId(id: string): string {
@@ -61,60 +69,34 @@ export default function Sidebar({
   workspaceAlias,
   members,
   selfIdentity,
-  onlineMembers,
-  memberNames,
-  onSetName,
-  rooms,
-  selectedRoomId,
-  onSelectRoom,
-  onCreateRoom,
   onInvite,
   viewerIsAdmin,
   onSetMemberRole,
   onRemoveMember,
   collapsed,
   onToggleCollapse,
+  activeView = 'dashboard',
+  onSetActiveView,
+  onCallName,
+  openIncidentCount = 0,
 }: SidebarProps) {
   const navigate = useNavigate();
   const { logout } = useMero();
   const { theme, toggle: toggleTheme } = useTheme();
 
-  // Editable display name for self. Names are author-owned, so the only
-  // source of `persistedName` change is our own committed write — sync the
-  // draft whenever the backend value changes. Don't gate this on a local
-  // `isEditing` flag; flipping it during commit re-fires the effect and
-  // reverts the optimistic value before the roundtrip lands.
-  const persistedName = (selfIdentity && memberNames[selfIdentity]) || '';
-  const [draftName, setDraftName] = useState(persistedName);
-
-  // Member whose identity popup is open (key + copy).
   const [popupMember, setPopupMember] = useState<
     { identity: string; alias?: string; role?: string; online: boolean; isSelf: boolean } | null
   >(null);
 
-  useEffect(() => {
-    setDraftName(persistedName);
-  }, [persistedName]);
-
-  const commitName = async () => {
-    const trimmed = draftName.trim().slice(0, MAX_NAME_LEN);
-    setDraftName(trimmed);
-    if (trimmed === persistedName) return;
-    try { await onSetName(trimmed); } catch { /* keep draft on failure */ }
-  };
-
-  const renderMemberLabel = (identity: string, alias?: string) =>
-    memberNames[identity] || alias || shortenId(identity);
-
   const memberCount = members.length + (selfIdentity ? 1 : 0);
-
-  // Authed users can't view the landing (route guard redirects them back), so
-  // both "back to landing" and "log out" sign out first, then return to the
-  // landing page (and stop there).
   const backToLanding = () => { logout(); navigate('/', { replace: true }); };
   const openDocs = () => window.open(DOCS_URL, '_blank', 'noopener,noreferrer');
 
-  /* Collapsed rail — a slim icon strip so the chat takes the full width. */
+  const navTo = (view: 'dashboard' | 'detail' | 'postmortem' | 'oncall') => {
+    onSetActiveView?.(view);
+  };
+
+  /* Collapsed rail */
   if (collapsed) {
     return (
       <Rail>
@@ -122,7 +104,8 @@ export default function Sidebar({
           <Chevron dir="right" />
         </RailBtn>
         <span className="logo"><CalimeroLogo size={22} color={C.greenInk} /></span>
-        <RailBtn onClick={onCreateRoom} title="New room" aria-label="New room"><PlusIcon /></RailBtn>
+        <RailBtn onClick={() => navTo('dashboard')} title="Dashboard" aria-label="Dashboard"><DashIcon /></RailBtn>
+        <RailBtn onClick={() => navTo('oncall')} title="On-Call" aria-label="On-Call"><OnCallIcon /></RailBtn>
         <div className="spacer" />
         <RailBtn onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme"><MoonIcon filled={theme === 'dark'} /></RailBtn>
         <RailBtn onClick={openDocs} title="Docs" aria-label="Docs"><BookIcon /></RailBtn>
@@ -136,7 +119,7 @@ export default function Sidebar({
       {/* Workspace header */}
       <Header>
         <div className="info">
-          <h2 title={workspaceAlias || 'Chat'}>{workspaceAlias || 'Chat'}</h2>
+          <h2 title={workspaceAlias || 'Incident Command'}>{workspaceAlias || 'Incident Command'}</h2>
           <span className="count">{memberCount} member{memberCount === 1 ? '' : 's'}</span>
         </div>
         <IconBtn onClick={onToggleCollapse} title="Collapse sidebar" aria-label="Collapse sidebar">
@@ -144,8 +127,16 @@ export default function Sidebar({
         </IconBtn>
       </Header>
 
+      {/* On-call badge */}
+      {onCallName && (
+        <OnCallBadge>
+          <OnCallDot />
+          <span>On-call: <strong>{onCallName}</strong></span>
+        </OnCallBadge>
+      )}
+
       <Scroll>
-        {/* Workspace list (always visible — switching is just a transition) */}
+        {/* Workspace list */}
         <Block>
           <Label>Workspaces</Label>
           {workspaces.map((ws) => (
@@ -161,87 +152,54 @@ export default function Sidebar({
           <AddRow onClick={onCreateWorkspace} title="Create a new workspace">+ New workspace</AddRow>
         </Block>
 
+        {/* Incident navigation */}
+        <Block>
+          <Label>Views</Label>
+          <NavRow $active={activeView === 'dashboard'} onClick={() => navTo('dashboard')}>
+            <DashIcon />
+            <span>Incident Dashboard</span>
+            {openIncidentCount > 0 && <NavBadge>{openIncidentCount}</NavBadge>}
+          </NavRow>
+          <NavRow $active={activeView === 'oncall'} onClick={() => navTo('oncall')}>
+            <OnCallIcon />
+            <span>On-Call Schedule</span>
+          </NavRow>
+        </Block>
+
         {/* Members */}
         <Block>
           <Label>Members</Label>
-
-          {/* Self — editable display name */}
           {selfIdentity && (
-            <MemberRow>
-              <Avatar
-                $online
-                $clickable
-                title="View your identity"
-                onClick={() => setPopupMember({ identity: selfIdentity, alias: persistedName || undefined, role: 'You', online: true, isSelf: true })}
-              >
-                {initialOf(draftName || shortenId(selfIdentity))}
-              </Avatar>
-              <NameInput
-                value={draftName}
-                onChange={(e) => setDraftName(e.target.value)}
-                onBlur={commitName}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
-                  if (e.key === 'Escape') {
-                    setDraftName(persistedName);
-                    (e.currentTarget as HTMLInputElement).blur();
-                  }
-                }}
-                maxLength={MAX_NAME_LEN}
-                placeholder={shortenId(selfIdentity)}
-                aria-label="Your display name"
-              />
-              <span className="you">you</span>
+            <MemberRow
+              $clickable
+              onClick={() => setPopupMember({ identity: selfIdentity, role: 'You', online: true, isSelf: true })}
+            >
+              <Avatar $online><span>{initialOf(shortenId(selfIdentity))}</span></Avatar>
+              <span className="name">{shortenId(selfIdentity)}</span>
+              <YouBadge>you</YouBadge>
             </MemberRow>
           )}
-
-          {/* Other members */}
           {members.map((m) => {
-            const online = onlineMembers.has(m.identity);
-            const label = renderMemberLabel(m.identity, m.name);
-            const alias = memberNames[m.identity] || m.name;
+            const label = m.name || shortenId(m.identity);
             return (
               <MemberRow
                 key={m.identity}
                 $clickable
-                title="View identity"
-                onClick={() => setPopupMember({ identity: m.identity, alias, role: m.role, online, isSelf: false })}
+                onClick={() => setPopupMember({ identity: m.identity, alias: m.name || undefined, role: m.role, online: false, isSelf: false })}
               >
-                <Avatar $online={online}>{initialOf(label)}</Avatar>
+                <Avatar $online={false}><span>{initialOf(label)}</span></Avatar>
                 <span className="name">{label}</span>
                 <KeyHint aria-hidden>↗</KeyHint>
               </MemberRow>
             );
           })}
+
+          <ActionRow>
+            <InviteBtn onClick={onInvite}>+ Invite</InviteBtn>
+          </ActionRow>
         </Block>
-
-        {/* Room actions */}
-        <ActionBar>
-          <PrimaryBtn onClick={onCreateRoom}>+ Room</PrimaryBtn>
-          <SecondaryBtn onClick={onInvite}>Invite</SecondaryBtn>
-        </ActionBar>
-
-        {/* Room list */}
-        <RoomList>
-          <Label style={{ margin: '4px 8px 6px' }}>Rooms</Label>
-          {rooms.length === 0 && <Empty>No rooms yet</Empty>}
-          {rooms.map((room) => (
-            <RoomRow
-              key={room.room_id}
-              data-testid={`sidebar-room-${room.name}`}
-              $active={room.room_id === selectedRoomId}
-              onClick={() => onSelectRoom(room)}
-            >
-              <div className="name"># {room.name}</div>
-              {/* Rooms auto-join every workspace member, so a room's membership
-                  is the workspace membership (live count, not the stored one). */}
-              <div className="meta">{memberCount} member{memberCount !== 1 ? 's' : ''}</div>
-            </RoomRow>
-          ))}
-        </RoomList>
       </Scroll>
 
-      {/* Footer — links + logout */}
       <Footer>
         <div className="links">
           <a href={DOCS_URL} target="_blank" rel="noreferrer">Docs ↗</a>
@@ -278,9 +236,21 @@ function Chevron({ dir }: { dir: 'left' | 'right' }) {
     </svg>
   );
 }
-const PlusIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M12 5v14M5 12h14" /></svg>
-);
+function DashIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+      <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
+    </svg>
+  );
+}
+function OnCallIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.5 12 19.79 19.79 0 0 1 1.48 3.46 2 2 0 0 1 3.5 1.24h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.91A16 16 0 0 0 16 17l.91-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+    </svg>
+  );
+}
 const BookIcon = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
 );
@@ -292,75 +262,52 @@ const LogoutIcon = () => (
 const sidebarFont = `font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased;`;
 
 const Root = styled.div`
-  width: 264px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  background: ${C.paper};
-  border-right: 1px solid ${C.line};
-  ${sidebarFont}
+  width: 264px; flex-shrink: 0; display: flex; flex-direction: column;
+  background: ${C.paper}; border-right: 1px solid ${C.line}; ${sidebarFont}
 `;
 const Rail = styled.div`
-  width: 56px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 0;
-  background: ${C.paper};
-  border-right: 1px solid ${C.line};
+  width: 56px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
+  gap: 8px; padding: 12px 0; background: ${C.paper}; border-right: 1px solid ${C.line};
   ${sidebarFont}
   .logo { display: flex; margin: 4px 0 6px; }
   .spacer { flex: 1; }
 `;
 const RailBtn = styled.button`
-  width: 38px; height: 38px;
-  display: grid; place-items: center;
-  color: ${C.ink};
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  cursor: pointer;
+  width: 38px; height: 38px; display: grid; place-items: center; color: ${C.ink};
+  background: transparent; border: 1px solid transparent; border-radius: 10px; cursor: pointer;
   transition: background 0.14s, color 0.14s, border-color 0.14s;
   &:hover { background: ${C.paper2}; border-color: ${C.line}; }
-  &.danger:hover { color: ${C.danger}; background: rgba(210,59,47,0.08); border-color: rgba(210,59,47,0.25); }
+  &.danger:hover { color: ${C.danger}; background: rgba(220,38,38,0.08); border-color: rgba(220,38,38,0.25); }
 `;
 const Header = styled.div`
-  padding: 14px 14px 14px 16px;
-  border-bottom: 1px solid ${C.line};
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  padding: 14px 14px 14px 16px; border-bottom: 1px solid ${C.line};
+  display: flex; align-items: center; gap: 8px;
   .info { min-width: 0; flex: 1; }
-  h2 {
-    font-size: 15px; font-weight: 800; letter-spacing: -0.4px; color: ${C.ink};
-    margin: 0 0 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
+  h2 { font-size: 15px; font-weight: 800; letter-spacing: -0.4px; color: ${C.ink};
+    margin: 0 0 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .count { font-size: 12.5px; color: ${C.mutedSoft}; }
 `;
+const OnCallBadge = styled.div`
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 14px; border-bottom: 1px solid ${C.line};
+  font-size: 12px; color: #15803d; background: rgba(22,163,74,0.06);
+`;
+const OnCallDot = styled.span`
+  width: 7px; height: 7px; border-radius: 50%; background: #16A34A; flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(22,163,74,0.2);
+`;
 const IconBtn = styled.button`
-  flex-shrink: 0;
-  width: 32px; height: 32px;
-  display: grid; place-items: center;
-  color: ${C.muted};
-  background: transparent;
-  border: 1px solid ${C.line};
-  border-radius: 9px;
-  cursor: pointer;
+  flex-shrink: 0; width: 32px; height: 32px; display: grid; place-items: center;
+  color: ${C.muted}; background: transparent; border: 1px solid ${C.line};
+  border-radius: 9px; cursor: pointer;
   transition: background 0.14s, color 0.14s, border-color 0.14s;
   &:hover { background: ${C.paper2}; color: ${C.ink}; border-color: ${C.lineDark}; }
 `;
 const Scroll = styled.div`
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  min-height: 0;
+  flex: 1; display: flex; flex-direction: column; overflow-y: auto; min-height: 0;
 `;
 const Block = styled.div`
-  padding: 10px 8px;
-  border-bottom: 1px solid ${C.line};
+  padding: 10px 8px; border-bottom: 1px solid ${C.line};
 `;
 const Label = styled.div`
   font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
@@ -369,11 +316,11 @@ const Label = styled.div`
 const Row = styled.div<{ $active?: boolean }>`
   padding: 7px 10px; border-radius: 9px; cursor: pointer; font-size: 13px;
   font-weight: ${(p) => (p.$active ? 600 : 500)};
-  color: ${(p) => (p.$active ? C.greenInk : C.muted)};
-  background: ${(p) => (p.$active ? 'rgba(164,255,17,0.16)' : 'transparent')};
+  color: ${(p) => (p.$active ? '#DC2626' : C.muted)};
+  background: ${(p) => (p.$active ? 'rgba(220,38,38,0.1)' : 'transparent')};
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   transition: background 0.14s, color 0.14s;
-  &:hover { background: ${(p) => (p.$active ? 'rgba(164,255,17,0.2)' : C.paper2)}; color: ${C.ink}; }
+  &:hover { background: ${(p) => (p.$active ? 'rgba(220,38,38,0.14)' : C.paper2)}; color: ${C.ink}; }
 `;
 const AddRow = styled.div`
   margin-top: 2px; padding: 7px 10px; border-radius: 9px; cursor: pointer;
@@ -381,79 +328,54 @@ const AddRow = styled.div`
   transition: background 0.14s;
   &:hover { background: rgba(164,255,17,0.12); }
 `;
+const NavRow = styled.div<{ $active?: boolean }>`
+  padding: 8px 10px; border-radius: 9px; cursor: pointer; margin-bottom: 2px;
+  display: flex; align-items: center; gap: 8px; font-size: 13px;
+  font-weight: ${(p) => (p.$active ? 700 : 500)};
+  color: ${(p) => (p.$active ? '#DC2626' : C.muted)};
+  background: ${(p) => (p.$active ? 'rgba(220,38,38,0.1)' : 'transparent')};
+  transition: background 0.14s, color 0.14s;
+  &:hover { background: ${(p) => (p.$active ? 'rgba(220,38,38,0.14)' : C.paper2)}; color: ${C.ink}; }
+  span { flex: 1; }
+`;
+const NavBadge = styled.span`
+  flex-shrink: 0; min-width: 18px; height: 18px; border-radius: 999px; font-size: 10px; font-weight: 800;
+  background: #DC2626; color: #fff; display: grid; place-items: center; padding: 0 5px;
+`;
 const MemberRow = styled.div<{ $clickable?: boolean }>`
   padding: 5px 8px; border-radius: 9px; margin-bottom: 1px;
   display: flex; align-items: center; gap: 9px;
   cursor: ${(p) => (p.$clickable ? 'pointer' : 'default')};
   .name { flex: 1; font-size: 13px; color: ${C.muted}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .you { margin-left: auto; font-size: 10.5px; font-weight: 600; color: ${C.greenDeep}; background: rgba(164,255,17,0.14); padding: 2px 7px; border-radius: 999px; }
   &:hover { background: ${C.paper2}; }
 `;
 const KeyHint = styled.span`
   margin-left: auto; font-size: 11px; color: ${C.mutedSoft}; opacity: 0; transition: opacity 0.14s;
   ${MemberRow}:hover & { opacity: 0.75; }
 `;
-const Avatar = styled.span<{ $online?: boolean; $clickable?: boolean }>`
+const YouBadge = styled.span`
+  margin-left: auto; font-size: 10.5px; font-weight: 600; color: ${C.greenDeep};
+  background: rgba(164,255,17,0.14); padding: 2px 7px; border-radius: 999px;
+`;
+const Avatar = styled.span<{ $online?: boolean }>`
   position: relative; width: 24px; height: 24px; flex-shrink: 0;
   display: grid; place-items: center; border-radius: 50%;
   font-size: 11px; font-weight: 700; color: ${(p) => (p.$online ? C.onAccent : C.ink)};
-  cursor: ${(p) => (p.$clickable ? 'pointer' : 'inherit')};
   background: ${(p) => (p.$online ? `linear-gradient(135deg, ${C.green}, #cde88a)` : C.paper2)};
   border: 1px solid ${(p) => (p.$online ? 'transparent' : C.line)};
-  &::after {
-    content: ''; position: absolute; right: -1px; bottom: -1px;
-    width: 8px; height: 8px; border-radius: 50%;
-    border: 1.5px solid ${C.paper};
-    background: ${(p) => (p.$online ? C.green : C.off)};
-  }
 `;
-const NameInput = styled.input`
-  flex: 1; min-width: 0;
-  background: transparent; border: none; outline: none;
-  color: ${C.ink}; font-size: 13px; font-weight: 600;
-  padding: 4px 6px; border-radius: 7px;
-  transition: background 0.14s, box-shadow 0.14s;
-  &::placeholder { color: ${C.mutedSoft}; font-weight: 500; }
-  &:focus { background: ${C.paper2}; box-shadow: inset 0 0 0 1px ${C.line}; }
+const ActionRow = styled.div`
+  padding: 8px 0 4px; display: flex; gap: 8px;
 `;
-const ActionBar = styled.div`
-  padding: 10px 12px; display: flex; gap: 8px; border-bottom: 1px solid ${C.line};
-`;
-const baseBtn = `
-  flex: 1; padding: 9px 10px; font-size: 13px; font-weight: 600; border-radius: 10px; cursor: pointer;
-  transition: background 0.16s, box-shadow 0.18s, transform 0.14s, border-color 0.16s;
-`;
-const PrimaryBtn = styled.button`
-  ${baseBtn}
-  color: ${C.onAccent}; background: ${C.green}; border: 1px solid #93e60c;
-  &:hover { background: ${C.greenHover}; box-shadow: 0 8px 22px rgba(164,255,17,0.4); transform: translateY(-1px); }
-`;
-const SecondaryBtn = styled.button`
-  ${baseBtn}
+const InviteBtn = styled.button`
+  flex: 1; padding: 8px 10px; font-size: 13px; font-weight: 600; border-radius: 9px; cursor: pointer;
   color: ${C.ink}; background: ${C.paper}; border: 1px solid ${C.line};
+  transition: background 0.16s, border-color 0.16s;
   &:hover { background: ${C.paper2}; border-color: ${C.lineDark}; }
 `;
-const RoomList = styled.div`
-  flex: 1; padding: 8px 8px 12px;
-`;
-const Empty = styled.div`
-  padding: 18px 12px; text-align: center; font-size: 12.5px; color: ${C.mutedSoft};
-`;
-const RoomRow = styled.div<{ $active?: boolean }>`
-  padding: 9px 11px; border-radius: 10px; cursor: pointer; margin-bottom: 2px;
-  background: ${(p) => (p.$active ? 'rgba(164,255,17,0.16)' : 'transparent')};
-  transition: background 0.14s;
-  &:hover { background: ${(p) => (p.$active ? 'rgba(164,255,17,0.2)' : C.paper2)}; }
-  .name { font-size: 13.5px; font-weight: ${(p) => (p.$active ? 700 : 600)}; color: ${(p) => (p.$active ? C.greenInk : C.ink)}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .meta { font-size: 11.5px; color: ${C.mutedSoft}; margin-top: 1px; }
-`;
 const Footer = styled.div`
-  flex-shrink: 0;
-  padding: 12px;
-  border-top: 1px solid ${C.line};
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  flex-shrink: 0; padding: 12px; border-top: 1px solid ${C.line};
+  display: flex; flex-direction: column; gap: 10px;
   .links { display: flex; align-items: center; gap: 14px; padding: 0 2px; }
   .links a, .links button {
     font-size: 12.5px; font-weight: 600; color: ${C.muted};
@@ -463,18 +385,15 @@ const Footer = styled.div`
   .links a:hover, .links button:hover { color: ${C.greenDeep}; }
 `;
 const ThemeToggle = styled.button`
-  margin-left: auto;
-  display: grid; place-items: center;
-  width: 28px; height: 28px; border-radius: 8px;
-  color: ${C.muted}; background: transparent; border: 1px solid ${C.line};
+  margin-left: auto; display: grid; place-items: center; width: 28px; height: 28px;
+  border-radius: 8px; color: ${C.muted}; background: transparent; border: 1px solid ${C.line};
   cursor: pointer; transition: color 0.14s, border-color 0.14s, background 0.14s;
   &:hover { color: ${C.greenDeep}; border-color: ${C.lineDark}; background: ${C.paper2}; }
 `;
 const LogoutBtn = styled.button`
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  width: 100%; padding: 9px 12px;
-  font-size: 13px; font-weight: 600; color: ${C.ink};
+  width: 100%; padding: 9px 12px; font-size: 13px; font-weight: 600; color: ${C.ink};
   background: ${C.paper}; border: 1px solid ${C.line}; border-radius: 10px; cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
-  &:hover { background: rgba(210,59,47,0.06); border-color: rgba(210,59,47,0.3); color: ${C.danger}; }
+  &:hover { background: rgba(220,38,38,0.06); border-color: rgba(220,38,38,0.3); color: ${C.danger}; }
 `;

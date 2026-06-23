@@ -24,11 +24,11 @@ Summary: PagerDuty-style incident management where teams report, triage, resolve
 - [x] Implement view: [incident_manager] get_oncall_schedule() → app::Result<Vec<OnCallSlot>>
 
 ## Frontend (app/)
-- [ ] Screen: IncidentDashboard — Live list of all open/acknowledged incidents sorted by severity, with a big 'Report Incident' button and current on-call badge
-- [ ] Screen: IncidentDetailPage — Full incident view with status controls (acknowledge / escalate / resolve), live timeline feed, and link to postmortem
-- [ ] Screen: PostmortemEditor — Collaborative editor for summary, root cause, and action items tied to a resolved incident
-- [ ] Screen: OnCallSchedule — Visual rotation schedule showing who's on call now and upcoming slots, editable by team lead
-- [ ] Apply designTheme tokens
+- [x] Screen: IncidentDashboard — Live list of all open/acknowledged incidents sorted by severity, with a big 'Report Incident' button and current on-call badge
+- [x] Screen: IncidentDetailPage — Full incident view with status controls (acknowledge / escalate / resolve), live timeline feed, and link to postmortem
+- [x] Screen: PostmortemEditor — Collaborative editor for summary, root cause, and action items tied to a resolved incident
+- [x] Screen: OnCallSchedule — Visual rotation schedule showing who's on call now and upcoming slots, editable by team lead
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds

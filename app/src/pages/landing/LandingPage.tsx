@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: "\u{1F6A8}", title: "Instant incident visibility", body: "Report a P1 and every team member sees it within seconds \u2014 sorted by severity, filtered by status, always live." },
+  { icon: "\u{1F512}", title: "No central server", body: "Incident data lives on your own nodes \u2014 no SaaS vendor holds your postmortems, timelines, or on-call schedule." },
+  { icon: "\u{1F4CB}", title: "Collaborative postmortems", body: "Write and edit the postmortem together after resolution. CRDT sync means no merge conflicts \u2014 everyone sees the latest instantly." },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['Who can see our incidents?', 'Only the team members you invite. Incident data lives in a Calimero context on nodes you control — no external party can read it.'],
+  ['What happens if a node goes offline?', 'Incidents reported while offline are stored locally and sync automatically once the node reconnects. No incident data is lost.'],
+  ['Can multiple people edit a postmortem at once?', 'Yes. Postmortem fields use CRDT (Last-Write-Wins Register) semantics — concurrent edits merge automatically without conflicts.'],
+  ['How does on-call scheduling work?', 'Team leads add on-call slots with a responder name, ID, and time window. The dashboard highlights the current on-call person and the next in rotation.'],
+  ['Do I need a central server or PagerDuty account?', 'No. The entire system runs peer-to-peer on Calimero nodes. There is no SaaS subscription, no vendor lock-in, and no outage dependency.'],
+  ['What is a Calimero context?', 'A context is a shared, encrypted, peer-to-peer space. All team members in a context see the same incident state in real time — synced directly between their nodes.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -100,42 +100,54 @@ function R({
 }
 
 const STEPS = [
-  { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node your team controls. Credentials and incident data never leave your infrastructure.' },
+  { k: '02', t: 'Create a workspace', d: 'Spin up an incident command context for your team. Shared state is synced peer-to-peer — no central database.' },
+  { k: '03', t: 'Invite responders', d: 'Share an invitation link. On-call engineers join instantly and see every live incident, timeline, and postmortem.' },
+  { k: '04', t: 'Respond & learn', d: 'Triage, acknowledge, escalate, resolve. Collaborative postmortems stay with your team — private and conflict-free.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── Incident live preview: P1 reported → acknowledged → timeline → resolved ── */
+type IncidentStep = { phase: 'open' | 'ack' | 'timeline1' | 'timeline2' | 'resolved'; label: string };
+const INCIDENT_SCRIPT: IncidentStep[] = [
+  { phase: 'open',      label: '🚨 P1 reported — DB pool exhausted' },
+  { phase: 'ack',       label: '🧑‍✈️ Alice acknowledged · commander set' },
+  { phase: 'timeline1', label: '📝 Restarting connection pooler…' },
+  { phase: 'timeline2', label: '📝 Connections recovering — 40 of 60 up' },
+  { phase: 'resolved',  label: '✅ Resolved · root cause tagged' },
 ];
+
+const SEV_COLORS: Record<string, string> = {
+  open: '#DC2626', ack: '#CA8A04', timeline1: '#CA8A04', timeline2: '#CA8A04', resolved: '#16A34A',
+};
+const STATUS_LABELS: Record<string, string> = {
+  open: 'open', ack: 'acknowledged', timeline1: 'acknowledged', timeline2: 'acknowledged', resolved: 'resolved',
+};
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [phase, setPhase] = useState<IncidentStep['phase'] | null>(null);
+  const [entries, setEntries] = useState<string[]>([]);
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
-    const timers: number[] = [];
-    const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
+
     const run = () => {
-      setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
-          setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
-        });
-      });
+      setPhase(null); setEntries([]);
+      at(400,  () => { setPhase('open');      bump(); });
+      at(1800, () => { setPhase('ack');        bump(); });
+      at(3200, () => { setPhase('timeline1'); setEntries(['Restarting connection pooler…']); bump(); });
+      at(4600, () => { setPhase('timeline2'); setEntries(['Restarting connection pooler…', 'Connections recovering — 40 of 60 up']); bump(); });
+      at(6000, () => { setPhase('resolved');  bump(); });
     };
+    const bump = () => { setPulse(true); setTimeout(() => setPulse(false), 400); };
     run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
-    return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
+    const loop = setInterval(run, 8000);
+    return () => { timers.forEach(clearTimeout); clearInterval(loop); };
   }, []);
+
+  const statusColor = phase ? SEV_COLORS[phase] : '#888';
+  const statusLabel = phase ? STATUS_LABELS[phase] : '—';
 
   return (
     <Preview aria-hidden="true">
@@ -147,17 +159,34 @@ function LivePreview() {
         <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
       </div>
       <div className="body">
-        <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
+        <div className="inc-card">
+          <div className="inc-top">
+            <span className="sev" style={{ color: '#DC2626', borderColor: '#DC262630', background: 'rgba(220,38,38,0.1)' }}>P1</span>
+            <span className="status" style={{ color: statusColor }}>
+              <span className="dot" style={{ background: statusColor }} />
+              {statusLabel}
+            </span>
+          </div>
+          <div className="inc-title">DB connection pool exhausted</div>
+          {phase && phase !== 'open' && (
+            <div className="inc-cmd">🧑‍✈️ Alice Chen · commander</div>
+          )}
         </div>
-        <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
-            </div>
-          ))}
-        </div>
+
+        {entries.length > 0 && (
+          <div className="timeline">
+            {entries.map((e, i) => (
+              <div key={i} className="tl-row">
+                <span className="tl-dot" />
+                <span className="tl-text">{e}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {phase === 'resolved' && (
+          <div className="resolved-box">✅ Resolved · root cause: connection leak in auth middleware</div>
+        )}
       </div>
     </Preview>
   );
@@ -213,8 +242,8 @@ export default function LandingPage() {
           <Eyebrow>
             <CalimeroLogo size={13} color={C.greenDeep} /> Powered by Calimero
           </Eyebrow>
-          <H1>{APP_DISPLAY_NAME}</H1>
-          <Lede>{APP_DESCRIPTION}</Lede>
+          <H1>Incident command.<br />No vendor, no outage.</H1>
+          <Lede>Report, triage, resolve, and postmortem — together. Peer-to-peer incident management that runs on infrastructure you control.</Lede>
           <Cta>
             <ConnectButton />
             <GhostBtn onClick={() => window.open('https://docs.calimero.network', '_blank', 'noopener,noreferrer')}>
@@ -222,8 +251,8 @@ export default function LandingPage() {
             </GhostBtn>
           </Cta>
           <TrustRow>
-            <span>Private by design</span><i />
-            <span>Real-time sync</span><i />
+            <span>No SaaS dependency</span><i />
+            <span>Live CRDT sync</span><i />
             <span>Peer-to-peer</span>
           </TrustRow>
         </HeroInner>
@@ -235,8 +264,8 @@ export default function LandingPage() {
         <Inner>
           <R v="up">
             <Kicker>How it works</Kicker>
-            <H2>From your node to a shared app — in four moves</H2>
-            <Sub>No accounts, no servers, no setup friction. Connect a node and you’re collaborating.</Sub>
+            <H2>From your node to a live incident command — in four steps</H2>
+            <Sub>No PagerDuty account, no SaaS subscription, no outage dependency. Connect a node and your team is coordinating.</Sub>
           </R>
           <Pipeline>
             <span className="track" />
@@ -293,8 +322,8 @@ export default function LandingPage() {
       {/* ── final CTA ──────────────────────────────────────────── */}
       <CtaBand>
         <R v="zoom">
-          <h2>Connect your node to get started.</h2>
-          <p>It takes seconds — your data never leaves your control.</p>
+          <h2>Your incident command, on your infrastructure.</h2>
+          <p>Connect a node, invite your team, and never rely on a third-party pager service again.</p>
           <div className="btn"><ConnectButton /></div>
         </R>
       </CtaBand>
@@ -304,7 +333,7 @@ export default function LandingPage() {
         <div className="top">
           <div className="brand">
             <span className="wm"><span className="mk"><CalimeroLogo size={20} color={C.green} /></span> {APP_DISPLAY_NAME}</span>
-            <p>Private. Real-time. Yours.</p>
+            <p>Incident command on your terms.</p>
           </div>
           <div className="cols">
             <div>
@@ -531,24 +560,30 @@ const Preview = styled.div`
     }
     em.on { color: ${C.green}; }
   }
-  .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
-  .peers { display: flex; align-items: center; gap: 0; }
-  .peers i {
-    width: 22px; height: 22px; border-radius: 50%;
-    display: grid; place-items: center;
-    font-size: 10px; font-weight: 700; color: ${C.ink};
-    background: linear-gradient(135deg, ${C.green}, #cde88a);
-    border: 1.5px solid ${C.ink};
-    margin-left: -6px;
+  .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 12px; }
+  .inc-card {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px; padding: 12px 14px;
+    animation: ${rowIn} 0.34s cubic-bezier(0.22,1,0.36,1) both;
   }
-  .peers i:first-child { margin-left: 0; }
-  .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
-  .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+  .inc-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .sev {
+    font-size: 10px; font-weight: 800; letter-spacing: 0.06em;
+    padding: 2px 7px; border-radius: 5px; border: 1px solid;
+  }
+  .status { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; transition: color 0.4s; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; transition: background 0.4s; }
+  .inc-title { font-size: 12.5px; font-weight: 700; color: #e8f0e4; margin-bottom: 4px; }
+  .inc-cmd { font-size: 11px; color: ${C.mutedSoft}; animation: ${rowIn} 0.34s cubic-bezier(0.22,1,0.36,1) both; }
+  .timeline { display: flex; flex-direction: column; gap: 7px; }
+  .tl-row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22,1,0.36,1) both; }
+  .tl-dot { width: 7px; height: 7px; border-radius: 50%; background: #CA8A04; flex-shrink: 0; margin-top: 4px; }
+  .tl-text { font-size: 11.5px; color: #c8d6c3; line-height: 1.4; }
+  .resolved-box {
+    font-size: 11.5px; color: #86efac; padding: 9px 12px; border-radius: 9px;
+    background: rgba(22,163,74,0.14); border: 1px solid rgba(22,163,74,0.3);
+    animation: ${rowIn} 0.34s cubic-bezier(0.22,1,0.36,1) both;
+  }
 `;
 
 /* sections */

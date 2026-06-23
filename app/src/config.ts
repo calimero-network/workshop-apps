@@ -60,9 +60,18 @@ function requireService(id: string): string {
 }
 
 export const SERVICE_NAME = {
-  /** Workspace-level service (lobby in chat): names, presence, directory listing. */
-  get directory(): string { return requireService('directory'); },
-  /** Per-context service (room in chat): the actual per-instance state. */
+  /** Workspace-level service: the primary (or only) service for this app.
+   *  Falls back to the first declared service when no entry has id="directory"
+   *  (single-service apps that declare services without explicit id fields). */
+  get directory(): string {
+    const byRole = byId('directory');
+    if (byRole) return byRole.name;
+    // Single-service fallback: the first entry in the services array IS the workspace service.
+    const first = (raw as StudioConfig).services[0];
+    if (first) return first.name;
+    throw new Error('studio.config.json: services[] is empty — at least one service is required');
+  },
+  /** Per-context service (per-instance state). Null for single-service specs. */
   get instance(): string | null {
     const svc = byId('instance');
     return svc ? svc.name : null;
