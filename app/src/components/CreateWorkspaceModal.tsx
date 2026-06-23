@@ -47,7 +47,7 @@ export default function CreateWorkspaceModal({ onCreate, onClose }: CreateWorksp
         </IconBadge>
 
         <h3 id="cw-title">New workspace</h3>
-        <p className="sub">Name your workspace — you can invite teammates and create rooms after it's created.</p>
+        <p className="sub">Name your workspace — you can invite teammates after it's created.</p>
 
         <Field>
           <label htmlFor="cw-name">Workspace name</label>

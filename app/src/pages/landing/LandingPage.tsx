@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: "\u{1F4CB}", title: "Submit & track instantly", body: "Team members submit expenses with description, amount, and category. Status updates appear live across all connected nodes within seconds." },
+  { icon: "\u2705", title: "Structured ops review", body: "Ops members approve, reject with notes, or mark expenses as reimbursed \u2014 all enforced on the backend. Non-ops submissions are rejected." },
+  { icon: "\u{1F4CA}", title: "Live spending dashboard", body: "See totals broken down by category and status the moment expenses are approved. No refresh needed \u2014 CRDT sync keeps everyone current." },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['Who can approve or reject expenses?', 'Only ops team members can approve or reject — the backend enforces this. Regular team members can submit and view their own expenses, but review actions are rejected if attempted by non-ops identities.'],
+  ['How fast do status updates propagate?', 'Within 5 seconds across all connected nodes. Calimero\'s CRDT sync pushes state changes directly between peers — no polling, no central server relay.'],
+  ['Where does our expense data live?', 'On your own nodes, as CRDT state that merges conflict-free across peers. No third-party server holds your financial data. Take a node offline and the data goes with it; bring it back and it re-syncs.'],
+  ['What is a workspace?', 'A workspace is a shared Calimero namespace. Your team joins one workspace via invitation link, and all expense submissions, reviews, and history live inside that shared context.'],
+  ['Can I edit a submitted expense?', 'Yes — but only while the expense is still pending. Once ops approves or rejects it, the record is locked to preserve the audit trail.'],
+  ['Do I need a crypto wallet?', 'No. You connect with a Calimero node identity. There is no token, no wallet, and no gas fee — just your node and the team you invite.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -100,40 +100,62 @@ function R({
 }
 
 const STEPS = [
-  { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '01', t: 'Connect your node', d: 'Point the app at your Calimero node. Your team\'s financial records never leave nodes you control.' },
+  { k: '02', t: 'Create a workspace', d: 'Bootstrap a shared expense context. All members see the same ledger, synced via CRDT — no spreadsheet conflicts.' },
+  { k: '03', t: 'Submit expenses', d: 'Team members submit expenses with description, amount, and category. They appear in the ops review queue within 5 seconds.' },
+  { k: '04', t: 'Review & reimburse', d: 'Ops approves or rejects with notes, then marks approved items as reimbursed. Every status change propagates live.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: expense lifecycle (submit → approve → reimburse) ── */
+type ExpItem = { id: number; desc: string; amount: string; status: 'pending' | 'approved' | 'reimbursed' };
+
+const INITIAL_EXPENSES: ExpItem[] = [
+  { id: 1, desc: 'Flight to NYC', amount: '$350.00', status: 'reimbursed' },
+  { id: 2, desc: 'Hotel — 2 nights', amount: '$218.50', status: 'approved' },
 ];
+
+const STATUS_BG_PREVIEW: Record<string, string> = {
+  pending: 'rgba(234,179,8,0.2)',
+  approved: 'rgba(5,150,105,0.2)',
+  reimbursed: 'rgba(59,130,246,0.2)',
+};
+const STATUS_FG_PREVIEW: Record<string, string> = {
+  pending: '#b45309',
+  approved: '#065f46',
+  reimbursed: '#1e40af',
+};
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [expenses, setExpenses] = useState<ExpItem[]>(INITIAL_EXPENSES);
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
     const timers: number[] = [];
     const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
+    const flash = () => { setPulse(true); at(400, () => setPulse(false)); };
+
     const run = () => {
-      setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
-          setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
-        });
+      setExpenses(INITIAL_EXPENSES);
+
+      // Step 1: new expense submitted
+      at(1200, () => {
+        setExpenses((p) => [...p, { id: 3, desc: 'SaaS subscription', amount: '$49.00', status: 'pending' }]);
+        flash();
+      });
+      // Step 2: ops approves it
+      at(2800, () => {
+        setExpenses((p) => p.map((e) => e.id === 3 ? { ...e, status: 'approved' } : e));
+        flash();
+      });
+      // Step 3: marked reimbursed
+      at(4400, () => {
+        setExpenses((p) => p.map((e) => e.id === 3 ? { ...e, status: 'reimbursed' } : e));
+        flash();
       });
     };
+
     run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
+    const loop = window.setInterval(run, 6500);
     return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
   }, []);
 
@@ -147,14 +169,20 @@ function LivePreview() {
         <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
       </div>
       <div className="body">
-        <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
+        <div className="exp-header">
+          <span>Description</span><span>Amount</span><span>Status</span>
         </div>
-        <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+        <div className="exp-list">
+          {expenses.map((exp) => (
+            <div key={exp.id} className="exp-row">
+              <span className="exp-desc">{exp.desc}</span>
+              <span className="exp-amt">{exp.amount}</span>
+              <span
+                className="exp-status"
+                style={{ background: STATUS_BG_PREVIEW[exp.status], color: STATUS_FG_PREVIEW[exp.status] }}
+              >
+                {exp.status}
+              </span>
             </div>
           ))}
         </div>
@@ -235,8 +263,8 @@ export default function LandingPage() {
         <Inner>
           <R v="up">
             <Kicker>How it works</Kicker>
-            <H2>From your node to a shared app — in four moves</H2>
-            <Sub>No accounts, no servers, no setup friction. Connect a node and you’re collaborating.</Sub>
+            <H2>From expense submission to reimbursed — in four steps</H2>
+            <Sub>No central server, no spreadsheets. Connect a node, invite your team, and track every expense in real time.</Sub>
           </R>
           <Pipeline>
             <span className="track" />
@@ -259,7 +287,7 @@ export default function LandingPage() {
         <Inner>
           <R v="up">
             <Kicker>Why it’s different</Kicker>
-            <H2>Built on the Calimero network</H2>
+            <H2>Expense management without a central authority</H2>
           </R>
           <Cards>
             {FEATURES.map((f, i) => (
@@ -280,7 +308,7 @@ export default function LandingPage() {
         <Inner style={{ maxWidth: 760 }}>
           <R v="up">
             <Kicker>FAQ</Kicker>
-            <H2>Nodes, contexts &amp; your data</H2>
+            <H2>Common questions about team-expenses</H2>
           </R>
           <FaqList>
             {FAQS.map(([q, a], i) => (
@@ -293,8 +321,8 @@ export default function LandingPage() {
       {/* ── final CTA ──────────────────────────────────────────── */}
       <CtaBand>
         <R v="zoom">
-          <h2>Connect your node to get started.</h2>
-          <p>It takes seconds — your data never leaves your control.</p>
+          <h2>Bring expense tracking under your control.</h2>
+          <p>Connect your node and invite your team — no accounts, no third-party servers, no wait.</p>
           <div className="btn"><ConnectButton /></div>
         </R>
       </CtaBand>
@@ -531,24 +559,30 @@ const Preview = styled.div`
     }
     em.on { color: ${C.green}; }
   }
-  .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
-  .peers { display: flex; align-items: center; gap: 0; }
-  .peers i {
-    width: 22px; height: 22px; border-radius: 50%;
-    display: grid; place-items: center;
-    font-size: 10px; font-weight: 700; color: ${C.ink};
-    background: linear-gradient(135deg, ${C.green}, #cde88a);
-    border: 1.5px solid ${C.ink};
-    margin-left: -6px;
+  .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 10px; }
+  .exp-header {
+    display: grid; grid-template-columns: 1fr auto auto;
+    gap: 10px; padding: 0 4px 8px;
+    border-bottom: 1px solid rgba(164,255,17,0.14);
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+    color: ${C.mutedSoft};
   }
-  .peers i:first-child { margin-left: 0; }
-  .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
-  .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+  .exp-list { display: flex; flex-direction: column; gap: 7px; }
+  .exp-row {
+    display: grid; grid-template-columns: 1fr auto auto;
+    align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(164,255,17,0.1);
+    animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .exp-desc { font-size: 12px; color: #dfe7db; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .exp-amt { font-size: 13px; font-weight: 700; color: ${C.green}; white-space: nowrap; }
+  .exp-status {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+    transition: background 0.4s, color 0.4s;
+  }
 `;
 
 /* sections */

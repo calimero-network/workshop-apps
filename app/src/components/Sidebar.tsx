@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { C, useTheme, MoonIcon } from '../theme';
 import { useMero, CalimeroLogo, type GroupMember } from '@calimero-network/mero-react';
-import { RoomSummary } from '../api/lobby/LobbyClient';
 import type { LobbyRecord } from '../hooks/useChatLobby';
 import MemberPopup from './MemberPopup';
 
@@ -26,11 +25,6 @@ interface SidebarProps {
   memberNames: Record<string, string>;
   onSetName: (name: string) => Promise<void>;
 
-  // Room list
-  rooms: RoomSummary[];
-  selectedRoomId: string | null;
-  onSelectRoom: (room: RoomSummary) => void;
-  onCreateRoom: () => void;
   onInvite: () => void;
 
   // Admin actions (workspace role mgmt). Gated on viewerIsAdmin inside the popup.
@@ -64,10 +58,6 @@ export default function Sidebar({
   onlineMembers,
   memberNames,
   onSetName,
-  rooms,
-  selectedRoomId,
-  onSelectRoom,
-  onCreateRoom,
   onInvite,
   viewerIsAdmin,
   onSetMemberRole,
@@ -122,7 +112,7 @@ export default function Sidebar({
           <Chevron dir="right" />
         </RailBtn>
         <span className="logo"><CalimeroLogo size={22} color={C.greenInk} /></span>
-        <RailBtn onClick={onCreateRoom} title="New room" aria-label="New room"><PlusIcon /></RailBtn>
+        <RailBtn onClick={onInvite} title="Invite member" aria-label="Invite member"><PlusIcon /></RailBtn>
         <div className="spacer" />
         <RailBtn onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme"><MoonIcon filled={theme === 'dark'} /></RailBtn>
         <RailBtn onClick={openDocs} title="Docs" aria-label="Docs"><BookIcon /></RailBtn>
@@ -136,7 +126,7 @@ export default function Sidebar({
       {/* Workspace header */}
       <Header>
         <div className="info">
-          <h2 title={workspaceAlias || 'Chat'}>{workspaceAlias || 'Chat'}</h2>
+          <h2 title={workspaceAlias || 'Expenses'}>{workspaceAlias || 'Expenses'}</h2>
           <span className="count">{memberCount} member{memberCount === 1 ? '' : 's'}</span>
         </div>
         <IconBtn onClick={onToggleCollapse} title="Collapse sidebar" aria-label="Collapse sidebar">
@@ -215,30 +205,10 @@ export default function Sidebar({
           })}
         </Block>
 
-        {/* Room actions */}
+        {/* Workspace actions */}
         <ActionBar>
-          <PrimaryBtn onClick={onCreateRoom}>+ Room</PrimaryBtn>
-          <SecondaryBtn onClick={onInvite}>Invite</SecondaryBtn>
+          <SecondaryBtn onClick={onInvite}>Invite member</SecondaryBtn>
         </ActionBar>
-
-        {/* Room list */}
-        <RoomList>
-          <Label style={{ margin: '4px 8px 6px' }}>Rooms</Label>
-          {rooms.length === 0 && <Empty>No rooms yet</Empty>}
-          {rooms.map((room) => (
-            <RoomRow
-              key={room.room_id}
-              data-testid={`sidebar-room-${room.name}`}
-              $active={room.room_id === selectedRoomId}
-              onClick={() => onSelectRoom(room)}
-            >
-              <div className="name"># {room.name}</div>
-              {/* Rooms auto-join every workspace member, so a room's membership
-                  is the workspace membership (live count, not the stored one). */}
-              <div className="meta">{memberCount} member{memberCount !== 1 ? 's' : ''}</div>
-            </RoomRow>
-          ))}
-        </RoomList>
       </Scroll>
 
       {/* Footer — links + logout */}

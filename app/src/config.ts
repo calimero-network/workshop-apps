@@ -49,20 +49,24 @@ export const THEME = config.theme;
 const byId = (id: string) => config.services.find((s) => s.id === id);
 
 /** Maps service-role id → wire name (`serviceName` for createContext etc.).
- *  Throws at startup if a referenced role isn't declared, so a misconfigured
- *  studio.config.json fails loudly instead of silently producing `undefined`. */
+ *  For single-service apps the services[] entries may omit the `id` field;
+ *  in that case 'directory' falls back to the first (and only) service.
+ *  Throws at startup only when neither an id match nor a fallback is found. */
 function requireService(id: string): string {
   const svc = byId(id);
-  if (!svc) {
-    throw new Error(`studio.config.json: services[] missing entry for id="${id}"`);
+  if (svc) return svc.name;
+  // Single-service fallback: the coordinator may omit 'id' when there is only
+  // one service and it acts as the workspace-level directory.
+  if (id === 'directory' && config.services.length > 0) {
+    return config.services[0].name;
   }
-  return svc.name;
+  throw new Error(`studio.config.json: services[] missing entry for id="${id}"`);
 }
 
 export const SERVICE_NAME = {
-  /** Workspace-level service (lobby in chat): names, presence, directory listing. */
+  /** Workspace-level service: the shared context created per namespace. */
   get directory(): string { return requireService('directory'); },
-  /** Per-context service (room in chat): the actual per-instance state. */
+  /** Per-context service for multi-service specs; null for single-service specs. */
   get instance(): string | null {
     const svc = byId('instance');
     return svc ? svc.name : null;
