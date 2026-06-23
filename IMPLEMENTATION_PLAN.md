@@ -18,10 +18,10 @@ Summary: A shared expense tracker where team members submit expenses and the ops
 - [x] Implement view: [expenses] list_categories() → app::Result<Vec<Category>>
 
 ## Frontend (app/)
-- [ ] Screen: SubmitExpensePage — Form to submit a new expense with category picker, plus a list of the current user's expenses and their statuses
-- [ ] Screen: ReviewDashboard — Ops view showing all pending expenses with approve/reject/reimburse actions and reviewer note field
-- [ ] Screen: SpendingSummary — Overview of team spending broken down by category and status, with totals
-- [ ] Apply designTheme tokens
+- [x] Screen: SubmitExpensePage — Form to submit a new expense with category picker, plus a list of the current user's expenses and their statuses
+- [x] Screen: ReviewDashboard — Ops view showing all pending expenses with approve/reject/reimburse actions and reviewer note field
+- [x] Screen: SpendingSummary — Overview of team spending broken down by category and status, with totals
+- [x] Apply designTheme tokens
 
 ## Verification
 - [ ] cargo build --target wasm32-unknown-unknown succeeds
