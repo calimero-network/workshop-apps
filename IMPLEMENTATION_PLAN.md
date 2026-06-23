@@ -15,9 +15,9 @@ Summary: A simple, shared sales pipeline for small teams to track leads through 
 - [x] Implement view: [pipeline] list_closed_leads() → app::Result<Vec<Lead>>
 
 ## Frontend (app/)
-- [ ] Screen: PipelineBoard — Kanban-style board with leads as cards grouped into stage columns, showing deal values and drag-to-move
-- [ ] Screen: ClosedDeals — Summary list of Won and Lost deals with totals and outcome filters
-- [ ] Apply designTheme tokens
+- [x] Screen: PipelineBoard — Kanban-style board with leads as cards grouped into stage columns, showing deal values and drag-to-move
+- [x] Screen: ClosedDeals — Summary list of Won and Lost deals with totals and outcome filters
+- [x] Apply designTheme tokens
 
 ## Verification
 - [x] cargo build --target wasm32-unknown-unknown succeeds

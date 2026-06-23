@@ -5,7 +5,7 @@ import { ToastProvider } from '@calimero-network/mero-ui';
 
 import LandingPage from './pages/landing/LandingPage';
 import LoginPage from './pages/login/LoginPage';
-import ChatPage from './pages/chat/ChatPage';
+import DealFlowPage from './pages/deal-flow/DealFlowPage';
 import { APP_PACKAGE, APP_ROUTE } from './config';
 
 /**
@@ -55,7 +55,7 @@ export default function App() {
                 SSO skip) are redirected straight into the app. */}
             <Route path="/" element={<RedirectIfAuthed><LandingPage /></RedirectIfAuthed>} />
             <Route path="/login" element={<RedirectIfAuthed><LoginPage /></RedirectIfAuthed>} />
-            <Route path={APP_ROUTE} element={<RequireAuth><ChatPage /></RequireAuth>} />
+            <Route path={APP_ROUTE} element={<RequireAuth><DealFlowPage /></RequireAuth>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

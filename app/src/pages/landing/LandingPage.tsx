@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '📋', title: 'Kanban pipeline board', body: 'Drag leads across custom stages — New, Contacted, Proposal, and beyond. Every move syncs to the whole team instantly.' },
+  { icon: '🔐', title: 'Private by design', body: 'Your pipeline lives on your own node. No SaaS vendor holds your deal data — you own the keys and the records.' },
+  { icon: '🚀', title: 'Real-time team sync', body: 'CRDT state merges conflict-free across every peer. Add a lead and every teammate sees it within 5 seconds.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['What is a node?', 'A node (merod) is the runtime that stores your pipeline data and runs the deal-flow logic. You run your own — locally or on your own server — so your leads and deal values never touch a third-party database.'],
+  ['Where does my CRM data live?', 'On your own node, in CRDT collections that merge conflict-free when peers sync. There is no central SaaS database — your pipeline is yours, permanently.'],
+  ['What is a pipeline context?', 'A context is a shared encrypted workspace that your team joins by invitation. Everyone in the context sees the same pipeline board in real time, synced peer-to-peer.'],
+  ['How does my team join?', 'Connect your nodes, then share an invitation link. Teammates join the pipeline workspace instantly — no email sign-up, no accounts, no per-seat billing.'],
+  ['Can I customise the stages?', 'Yes. The team lead can replace the default New → Contacted → Proposal → Won / Lost stages with any stages that match your actual sales process. Changes sync to everyone within 5 seconds.'],
+  ['Is the pipeline data private?', 'Completely. Deal values, contact names, and company data stay on your node and propagate only to nodes you invited. No vendor, no analytics platform, and no cloud provider has access.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -100,41 +100,66 @@ function R({
 }
 
 const STEPS = [
-  { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '01', t: 'Connect your node', d: 'Point deal-flow at the Calimero node you control. Your identity, keys, and deal data stay on your own machine.' },
+  { k: '02', t: 'Create a pipeline', d: 'Set up a workspace with your custom stages — New, Contacted, Proposal, or whatever fits your sales process.' },
+  { k: '03', t: 'Invite your team', d: 'Share an invitation link. Teammates join instantly and see the same live pipeline board — no sign-up needed.' },
+  { k: '04', t: 'Track & close deals', d: 'Add leads, move them across stages, and mark them Won or Lost. Every change syncs in real time across all nodes.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: a kanban board with leads moving across stages ── */
+type KanbanStep =
+  | { type: 'add'; leadId: number; name: string; company: string; value: string; stage: string }
+  | { type: 'move'; leadId: number; from: string; to: string }
+  | { type: 'close'; leadId: number; outcome: 'Won' | 'Lost' };
+
+const KANBAN_STAGES = ['New', 'Contacted', 'Proposal'];
+
+const KANBAN_SCRIPT: KanbanStep[] = [
+  { type: 'add', leadId: 1, name: 'Sarah Chen', company: 'Acme Corp', value: '$25K', stage: 'New' },
+  { type: 'add', leadId: 2, name: 'Tom Park', company: 'Beta Inc', value: '$12K', stage: 'New' },
+  { type: 'move', leadId: 1, from: 'New', to: 'Contacted' },
+  { type: 'move', leadId: 1, from: 'Contacted', to: 'Proposal' },
+  { type: 'close', leadId: 1, outcome: 'Won' },
 ];
+
+interface KanbanLead { id: number; name: string; company: string; value: string; stage: string }
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [leads, setLeads] = useState<KanbanLead[]>([]);
+  const [closedLeads, setClosedLeads] = useState<{ name: string; outcome: 'Won' | 'Lost' }[]>([]);
   const [pulse, setPulse] = useState(false);
+  const [lastEvent, setLastEvent] = useState('');
 
   useEffect(() => {
     const timers: number[] = [];
     const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
     const run = () => {
-      setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
+      setLeads([]);
+      setClosedLeads([]);
+      setLastEvent('');
+      KANBAN_SCRIPT.forEach((step, i) => {
+        at(600 + i * 1400, () => {
           setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
+          if (step.type === 'add') {
+            setLeads((prev) => [...prev, { id: step.leadId, name: step.name, company: step.company, value: step.value, stage: step.stage }]);
+            setLastEvent(`${step.name} added`);
+          } else if (step.type === 'move') {
+            setLeads((prev) => prev.map((l) => l.id === step.leadId ? { ...l, stage: step.to } : l));
+            setLastEvent(`moved → ${step.to}`);
+          } else if (step.type === 'close') {
+            const lead = leads.find((l) => l.id === step.leadId);
+            setLeads((prev) => prev.filter((l) => l.id !== step.leadId));
+            setClosedLeads((prev) => [...prev, { name: lead?.name ?? 'Lead', outcome: step.outcome }]);
+            setLastEvent(`closed as ${step.outcome} ✓`);
+          }
+          at(600 + i * 1400 + 400, () => setPulse(false));
         });
       });
     };
     run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
+    const loop = window.setInterval(run, KANBAN_SCRIPT.length * 1400 + 2400);
     return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -144,20 +169,38 @@ function LivePreview() {
         <s style={{ background: '#ffbd2e' }} />
         <s style={{ background: C.green }} />
         <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · your node</span>
-        <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
+        <em className={pulse ? 'on' : ''}>{pulse ? `● ${lastEvent}` : '● live'}</em>
       </div>
-      <div className="body">
-        <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
-        </div>
-        <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+      <div className="kanban-body">
+        {KANBAN_STAGES.map((stage) => {
+          const stageLeads = leads.filter((l) => l.stage === stage);
+          return (
+            <div key={stage} className="kb-col">
+              <div className="kb-header">{stage}</div>
+              <div className="kb-cards">
+                {stageLeads.map((l) => (
+                  <div key={l.id} className="kb-card">
+                    <div className="kb-name">{l.name}</div>
+                    <div className="kb-meta">{l.company}</div>
+                    <div className="kb-value">{l.value}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
+          );
+        })}
+        {closedLeads.length > 0 && (
+          <div className="kb-col kb-closed">
+            <div className="kb-header won">Won ✓</div>
+            <div className="kb-cards">
+              {closedLeads.filter((l) => l.outcome === 'Won').map((l, i) => (
+                <div key={i} className="kb-card won-card">
+                  <div className="kb-name">{l.name}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </Preview>
   );
@@ -222,9 +265,9 @@ export default function LandingPage() {
             </GhostBtn>
           </Cta>
           <TrustRow>
-            <span>Private by design</span><i />
-            <span>Real-time sync</span><i />
-            <span>Peer-to-peer</span>
+            <span>Own your pipeline data</span><i />
+            <span>Real-time team sync</span><i />
+            <span>No SaaS lock-in</span>
           </TrustRow>
         </HeroInner>
         <PreviewWrap><LivePreview /></PreviewWrap>
@@ -235,8 +278,8 @@ export default function LandingPage() {
         <Inner>
           <R v="up">
             <Kicker>How it works</Kicker>
-            <H2>From your node to a shared app — in four moves</H2>
-            <Sub>No accounts, no servers, no setup friction. Connect a node and you’re collaborating.</Sub>
+            <H2>From your node to a shared sales pipeline — in four moves</H2>
+            <Sub>No SaaS accounts, no per-seat billing, no setup friction. Connect a node and your whole team is tracking deals.</Sub>
           </R>
           <Pipeline>
             <span className="track" />
@@ -258,8 +301,8 @@ export default function LandingPage() {
       <Section id="features">
         <Inner>
           <R v="up">
-            <Kicker>Why it’s different</Kicker>
-            <H2>Built on the Calimero network</H2>
+            <Kicker>Why it's different</Kicker>
+            <H2>A CRM that's actually yours</H2>
           </R>
           <Cards>
             {FEATURES.map((f, i) => (
@@ -293,8 +336,8 @@ export default function LandingPage() {
       {/* ── final CTA ──────────────────────────────────────────── */}
       <CtaBand>
         <R v="zoom">
-          <h2>Connect your node to get started.</h2>
-          <p>It takes seconds — your data never leaves your control.</p>
+          <h2>Your pipeline. Your data. Your node.</h2>
+          <p>Connect in seconds — no SaaS account, no per-seat fees, no data leaving your control.</p>
           <div className="btn"><ConnectButton /></div>
         </R>
       </CtaBand>
@@ -304,7 +347,7 @@ export default function LandingPage() {
         <div className="top">
           <div className="brand">
             <span className="wm"><span className="mk"><CalimeroLogo size={20} color={C.green} /></span> {APP_DISPLAY_NAME}</span>
-            <p>Private. Real-time. Yours.</p>
+            <p>Private. Real-time. On your node.</p>
           </div>
           <div className="cols">
             <div>
@@ -531,24 +574,25 @@ const Preview = styled.div`
     }
     em.on { color: ${C.green}; }
   }
-  .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
-  .peers { display: flex; align-items: center; gap: 0; }
-  .peers i {
-    width: 22px; height: 22px; border-radius: 50%;
-    display: grid; place-items: center;
-    font-size: 10px; font-weight: 700; color: ${C.ink};
-    background: linear-gradient(135deg, ${C.green}, #cde88a);
-    border: 1.5px solid ${C.ink};
-    margin-left: -6px;
+  .kanban-body { padding: 12px; display: flex; gap: 8px; min-height: 230px; align-items: flex-start; overflow-x: auto; }
+  .kb-col { flex: 0 0 100px; display: flex; flex-direction: column; gap: 5px; }
+  .kb-col.kb-closed { flex: 0 0 90px; }
+  .kb-header {
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+    color: ${C.mutedSoft}; padding: 4px 6px; border-radius: 5px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
   }
-  .peers i:first-child { margin-left: 0; }
-  .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
-  .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+  .kb-header.won { color: ${C.green}; background: rgba(164,255,17,0.12); border-color: rgba(164,255,17,0.3); }
+  .kb-cards { display: flex; flex-direction: column; gap: 5px; min-height: 40px; }
+  .kb-card {
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 7px; padding: 7px 8px;
+    animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .kb-card.won-card { background: rgba(164,255,17,0.13); border-color: rgba(164,255,17,0.3); }
+  .kb-name { font-size: 10px; font-weight: 700; color: #e8f0e9; }
+  .kb-meta { font-size: 9px; color: ${C.mutedSoft}; margin-top: 2px; }
+  .kb-value { font-size: 10px; font-weight: 700; color: ${C.green}; margin-top: 4px; }
 `;
 
 /* sections */
