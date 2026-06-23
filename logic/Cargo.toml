@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "crates/types",
-    "crates/incident-manager"
+    "crates/incident_manager"
 ]
 resolver = "2"
 
