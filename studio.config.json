@@ -1,0 +1,22 @@
+{
+  "appName": "team-kudos",
+  "appVersion": "0.2.0",
+  "package": "com.calimero.team-kudos",
+  "metadata": {
+    "name": "team-kudos",
+    "description": "Live team appreciation board where members post and see kudos in real time",
+    "author": "Calimero",
+    "route": "/team-kudos"
+  },
+  "theme": {
+    "primaryColor": "#F59E0B",
+    "accentColor": "#10B981",
+    "style": "warm-celebratory"
+  },
+  "services": [
+    {
+      "name": "kudos",
+      "crate": "team-kudos-kudos"
+    }
+  ]
+}
