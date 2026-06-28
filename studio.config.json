@@ -1,0 +1,22 @@
+{
+  "appName": "governance-board",
+  "appVersion": "0.2.0",
+  "package": "com.calimero.governance-board",
+  "metadata": {
+    "name": "governance-board",
+    "description": "Multi-topic governance with proposals, comments, and transparent per-voter tallies",
+    "author": "Calimero",
+    "route": "/governance-board"
+  },
+  "theme": {
+    "primaryColor": "#1F2937",
+    "accentColor": "#3B82F6",
+    "style": "modern-civic"
+  },
+  "services": [
+    {
+      "name": "governance",
+      "crate": "governance-board-governance"
+    }
+  ]
+}
