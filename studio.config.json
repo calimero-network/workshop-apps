@@ -1,0 +1,22 @@
+{
+  "appName": "governance-board",
+  "appVersion": "0.2.0",
+  "package": "com.calimero.governance-board",
+  "metadata": {
+    "name": "governance-board",
+    "description": "Collaborative proposal voting with topic spaces, live vote tallies, and member discussion",
+    "author": "Calimero",
+    "route": "/governance-board"
+  },
+  "theme": {
+    "primaryColor": "#1E40AF",
+    "accentColor": "#F59E0B",
+    "style": "civic-professional"
+  },
+  "services": [
+    {
+      "name": "governance",
+      "crate": "governance-board-governance"
+    }
+  ]
+}
