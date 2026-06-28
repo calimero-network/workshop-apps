@@ -1,0 +1,28 @@
+{
+  "appName": "governance-board",
+  "appVersion": "0.2.0",
+  "package": "com.calimero.governance-board",
+  "metadata": {
+    "name": "governance-board",
+    "description": "Decentralized governance with topic spaces, proposals, comments, and live voting",
+    "author": "Calimero",
+    "route": "/governance-board"
+  },
+  "theme": {
+    "primaryColor": "#1E40AF",
+    "accentColor": "#16A34A",
+    "style": "professional-civic"
+  },
+  "services": [
+    {
+      "id": "directory",
+      "name": "governance-directory",
+      "crate": "governance-board-governance-directory"
+    },
+    {
+      "id": "instance",
+      "name": "governance-topic",
+      "crate": "governance-board-governance-topic"
+    }
+  ]
+}

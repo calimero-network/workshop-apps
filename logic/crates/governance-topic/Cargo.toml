@@ -1,0 +1,18 @@
+[package]
+name = "governance-board-governance-topic"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+governance-board-types = { workspace = true }
+calimero-sdk = { workspace = true }
+calimero-storage = { workspace = true }
+calimero-storage-macros = { workspace = true }
+bs58 = { workspace = true }
+
+[build-dependencies]
+calimero-wasm-abi = { workspace = true }
+serde_json = { workspace = true }
