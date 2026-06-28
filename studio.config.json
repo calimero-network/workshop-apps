@@ -1,0 +1,22 @@
+{
+  "appName": "group-event-planner",
+  "appVersion": "0.2.0",
+  "package": "com.calimero.group-event-planner",
+  "metadata": {
+    "name": "group-event-planner",
+    "description": "Plan shared events together: RSVP, comment, and coordinate dish contributions",
+    "author": "Calimero",
+    "route": "/group-event-planner"
+  },
+  "theme": {
+    "primaryColor": "#EC4899",
+    "accentColor": "#10B981",
+    "style": "friendly-vibrant"
+  },
+  "services": [
+    {
+      "name": "event-planner",
+      "crate": "group-event-planner-event-planner"
+    }
+  ]
+}
