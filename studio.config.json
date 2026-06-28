@@ -1,0 +1,22 @@
+{
+  "appName": "shared-shopping-list",
+  "appVersion": "0.2.0",
+  "package": "com.calimero.shared-shopping-list",
+  "metadata": {
+    "name": "shared-shopping-list",
+    "description": "Real-time shopping list where members add, check off, and clear items together",
+    "author": "Calimero",
+    "route": "/shared-shopping-list"
+  },
+  "theme": {
+    "primaryColor": "#10B981",
+    "accentColor": "#F59E0B",
+    "style": "clean-practical"
+  },
+  "services": [
+    {
+      "name": "shopping-list",
+      "crate": "shared-shopping-list-shopping-list"
+    }
+  ]
+}

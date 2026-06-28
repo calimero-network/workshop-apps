@@ -1,0 +1,18 @@
+[package]
+name = "shared-shopping-list-shopping-list"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+shared-shopping-list-types = { workspace = true }
+bs58 = { workspace = true }
+calimero-sdk = { workspace = true }
+calimero-storage = { workspace = true }
+calimero-storage-macros = { workspace = true }
+
+[build-dependencies]
+calimero-wasm-abi = { workspace = true }
+serde_json = { workspace = true }
