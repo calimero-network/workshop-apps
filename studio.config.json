@@ -1,7 +1,7 @@
 {
   "appName": "team-kudos",
-  "appVersion": "1.0.0",
-  "package": "com.calimero.team-kudos",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.dev.team-kudos",
   "metadata": {
     "name": "team-kudos",
     "description": "A live shared board where team members post and see appreciation notes with author and timestamp",
