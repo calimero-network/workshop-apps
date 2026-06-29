@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '🌟', title: 'Celebrate instantly', body: 'Post a shoutout in seconds — every teammate sees it appear on the shared board in real time, no refresh needed.' },
+  { icon: '🔒', title: 'Private by design', body: 'Your kudos board lives in a Calimero context you own — no central server, no surveillance, your team\'s words are yours.' },
+  { icon: '⚡', title: 'Peer-to-peer sync', body: 'Kudos sync directly between nodes via CRDT — zero lag, conflict-free, and fully decentralized.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['What is a node?', 'A node (merod) is the runtime that stores your kudos and runs the board logic. You run your own — locally or on your own infrastructure — so your team\'s messages never leave your control.'],
+  ['Where does the kudos data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — no third party ever sees your team\'s appreciation notes.'],
+  ['Can I delete my own kudos?', 'Yes — only you can delete a note you posted. Authorship is enforced at the protocol level by the Calimero runtime, so no other member can remove your posts.'],
+  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same kudos board in real time, synced directly between nodes.'],
+  ['How do teammates join?', 'Connect your node, then share an invitation link. Anyone you invite joins the board instantly and can start giving and receiving kudos — no accounts, no sign-up.'],
+  ['Is it really decentralized?', 'Yes. Kudos are peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs with everyone.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -106,17 +106,17 @@ const STEPS = [
   { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: kudos cards appearing on the board, loops ──── */
+type KudosEntry = { id: number; from: string; to: string; msg: string; me?: boolean };
+const SCRIPT: KudosEntry[] = [
+  { id: 1, from: 'Marcus', to: 'Sarah', msg: 'Crushed the Q4 planning! 🎉' },
+  { id: 2, from: 'Priya', to: 'Alex', msg: 'Best PR review of the quarter' },
+  { id: 3, from: 'you', to: 'Jordan', msg: 'Always lifts the whole team! 💛', me: true },
+  { id: 4, from: 'Sam', to: 'Dana', msg: 'Shipped it ahead of schedule 🚀' },
 ];
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [shown, setShown] = useState<KudosEntry[]>([]);
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
@@ -143,18 +143,19 @@ function LivePreview() {
         <s style={{ background: '#ff5f56' }} />
         <s style={{ background: '#ffbd2e' }} />
         <s style={{ background: C.green }} />
-        <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · your node</span>
+        <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · your board</span>
         <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
       </div>
       <div className="body">
-        <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
-        </div>
         <div className="stream">
           {shown.map((it) => (
             <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+              <span className="star" aria-hidden="true">🌟</span>
+              <div className="kudos-card">
+                <strong>{it.to}</strong>
+                <p>{it.msg}</p>
+                <small>from {it.from}</small>
+              </div>
             </div>
           ))}
         </div>
@@ -236,7 +237,7 @@ export default function LandingPage() {
           <R v="up">
             <Kicker>How it works</Kicker>
             <H2>From your node to a shared app — in four moves</H2>
-            <Sub>No accounts, no servers, no setup friction. Connect a node and you’re collaborating.</Sub>
+            <Sub>No accounts, no servers, no setup friction. Connect a node and you're collaborating.</Sub>
           </R>
           <Pipeline>
             <span className="track" />
@@ -258,7 +259,7 @@ export default function LandingPage() {
       <Section id="features">
         <Inner>
           <R v="up">
-            <Kicker>Why it’s different</Kicker>
+            <Kicker>Why it's different</Kicker>
             <H2>Built on the Calimero network</H2>
           </R>
           <Cards>
@@ -531,24 +532,37 @@ const Preview = styled.div`
     }
     em.on { color: ${C.green}; }
   }
-  .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
-  .peers { display: flex; align-items: center; gap: 0; }
-  .peers i {
-    width: 22px; height: 22px; border-radius: 50%;
-    display: grid; place-items: center;
-    font-size: 10px; font-weight: 700; color: ${C.ink};
-    background: linear-gradient(135deg, ${C.green}, #cde88a);
-    border: 1.5px solid ${C.ink};
-    margin-left: -6px;
-  }
-  .peers i:first-child { margin-left: 0; }
-  .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
+  .body { padding: 14px; min-height: 230px; }
   .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+  .row {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .star { font-size: 16px; flex-shrink: 0; line-height: 1; margin-top: 2px; }
+  .kudos-card {
+    flex: 1;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+  .kudos-card strong {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: #FBBF24;
+    margin-bottom: 3px;
+  }
+  .kudos-card p { font-size: 11.5px; color: #dfe7db; margin: 0 0 4px; }
+  .kudos-card small { font-size: 10px; color: rgba(255,255,255,0.35); }
+  .row.me { animation-name: ${rowInMe}; }
+  .row.me .kudos-card {
+    border-color: rgba(236, 72, 153, 0.4);
+    background: rgba(236, 72, 153, 0.12);
+  }
+  .row.me .kudos-card strong { color: #F9A8D4; }
 `;
 
 /* sections */

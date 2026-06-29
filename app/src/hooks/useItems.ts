@@ -1,48 +1,40 @@
 /**
- * useItems — neutral CRUD over the single-context `service` registry.
+ * useKudos — live kudos feed over KudosBoardClient.
  *
- * The canonical Calimero data-binding pattern (mero-react v4):
- *  - `useWorkspace()` resolves the shared context + the executor identity to
- *    sign RPC calls with (from the auth callback on desktop, or the bootstrapped
- *    context on web).
- *  - a typed generated client (`ServiceClient`) wraps `mero.rpc.execute`.
- *  - `useSubscription([contextId])` re-fetches on every sync event, so changes
- *    from other peers appear live with no polling.
- *
- * The build agent reshapes `Item` + these methods to the spec's entity; the
- * wiring (client memo, subscription refresh, optimistic refetch) stays.
+ * Same wiring pattern as the neutral foundation:
+ *  - useWorkspace() resolves contextId + executorPublicKey
+ *  - KudosBoardClient wraps mero.rpc.execute
+ *  - useSubscription re-fetches on every sync event for live updates
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMero, useSubscription } from '@calimero-network/mero-react';
-import { ServiceClient, Item } from '../api/service/ServiceClient';
+import { KudosBoardClient, Kudos } from '../api/kudos-board/KudosBoardClient';
 
-export interface UseItemsArgs {
+export interface UseKudosArgs {
   contextId: string | null;
   executorPublicKey: string | null;
 }
 
-export interface UseItemsReturn {
-  items: Item[];
+export interface UseKudosReturn {
+  feed: Kudos[];
   loading: boolean;
   error: Error | null;
   ready: boolean;
-  add: (title: string, body: string) => Promise<void>;
-  update: (id: string, title: string, body: string) => Promise<void>;
-  remove: (id: string) => Promise<void>;
+  postKudos: (recipient: string, message: string) => Promise<void>;
+  deleteKudos: (id: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
-export function useItems({ contextId, executorPublicKey }: UseItemsArgs): UseItemsReturn {
+export function useKudos({ contextId, executorPublicKey }: UseKudosArgs): UseKudosReturn {
   const { mero } = useMero();
-  const [items, setItems] = useState<Item[]>([]);
+  const [feed, setFeed] = useState<Kudos[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  // Memoized typed client — null until the context + identity resolve.
   const client = useMemo(
     () =>
       mero && contextId && executorPublicKey
-        ? new ServiceClient(mero, contextId, executorPublicKey)
+        ? new KudosBoardClient(mero, contextId, executorPublicKey)
         : null,
     [mero, contextId, executorPublicKey],
   );
@@ -52,7 +44,9 @@ export function useItems({ contextId, executorPublicKey }: UseItemsArgs): UseIte
     setLoading(true);
     setError(null);
     try {
-      setItems(await client.list());
+      // Backend already sorts newest-first; defensive sort in case of race.
+      const raw = await client.getFeed();
+      setFeed([...raw].sort((a, b) => b.created_at - a.created_at));
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
@@ -62,35 +56,20 @@ export function useItems({ contextId, executorPublicKey }: UseItemsArgs): UseIte
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  // Live updates: re-fetch on any sync event for this context (local or remote).
+  // Live updates: re-fetch whenever any peer posts or deletes kudos.
   useSubscription(contextId ? [contextId] : [], () => { void refresh(); });
 
-  const add = useCallback(async (title: string, body: string) => {
+  const postKudos = useCallback(async (recipient: string, message: string) => {
     if (!client) return;
-    await client.add({ title, body });
+    await client.postKudos({ recipient, message });
     await refresh();
   }, [client, refresh]);
 
-  const update = useCallback(async (id: string, title: string, body: string) => {
+  const deleteKudos = useCallback(async (id: string) => {
     if (!client) return;
-    await client.update({ id, title, body });
+    await client.deleteKudos({ id });
     await refresh();
   }, [client, refresh]);
 
-  const remove = useCallback(async (id: string) => {
-    if (!client) return;
-    await client.delete({ id });
-    await refresh();
-  }, [client, refresh]);
-
-  return {
-    items,
-    loading,
-    error,
-    ready: client !== null,
-    add,
-    update,
-    remove,
-    refresh,
-  };
+  return { feed, loading, error, ready: client !== null, postKudos, deleteKudos, refresh };
 }
