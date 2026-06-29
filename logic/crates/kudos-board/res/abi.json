@@ -1,24 +1,7 @@
 {
   "schema_version": "wasm-abi/1",
   "types": {
-    "Event_ItemAdded": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "owner",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "Event_ItemDeleted": {
+    "Event_KudosDeleted": {
       "kind": "record",
       "fields": [
         {
@@ -29,7 +12,7 @@
         }
       ]
     },
-    "Event_ItemUpdated": {
+    "Event_KudosPosted": {
       "kind": "record",
       "fields": [
         {
@@ -40,99 +23,53 @@
         }
       ]
     },
-    "Item": {
+    "Kudos": {
       "kind": "record",
       "fields": [
         {
-          "name": "label",
+          "name": "id",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "value",
+          "name": "author",
           "type": {
-            "kind": "record",
-            "fields": [],
-            "crdt_type": "lww_register",
-            "inner_type": {
-              "kind": "string"
-            }
+            "kind": "string"
           }
         },
         {
-          "name": "created_ms",
+          "name": "recipient",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "message",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
           "type": {
             "kind": "u64"
           }
         }
       ]
     },
-    "ItemView": {
+    "KudosBoardState": {
       "kind": "record",
       "fields": [
         {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "label",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "value",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "created_ms",
-          "type": {
-            "kind": "u64"
-          }
-        },
-        {
-          "name": "owner",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ]
-    },
-    "Registry": {
-      "kind": "record",
-      "fields": [
-        {
-          "name": "items",
+          "name": "kudos",
           "type": {
             "kind": "map",
             "key": {
               "kind": "string"
             },
             "value": {
-              "$ref": "Item"
-            },
-            "crdt_type": "unordered_map"
-          }
-        },
-        {
-          "name": "owners",
-          "type": {
-            "kind": "map",
-            "key": {
-              "kind": "string"
-            },
-            "value": {
-              "kind": "record",
-              "fields": [],
-              "crdt_type": "lww_register",
-              "inner_type": {
-                "kind": "u64"
-              }
+              "$ref": "Kudos"
             },
             "crdt_type": "authored_map"
           }
@@ -149,16 +86,16 @@
       }
     },
     {
-      "name": "add",
+      "name": "post_kudos",
       "params": [
         {
-          "name": "label",
+          "name": "recipient",
           "type": {
             "kind": "string"
           }
         },
         {
-          "name": "value",
+          "name": "message",
           "type": {
             "kind": "string"
           }
@@ -169,75 +106,20 @@
       }
     },
     {
-      "name": "update",
-      "params": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        },
-        {
-          "name": "value",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "delete",
-      "params": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "unit"
-      }
-    },
-    {
-      "name": "get",
-      "params": [
-        {
-          "name": "id",
-          "type": {
-            "kind": "string"
-          }
-        }
-      ],
-      "returns": {
-        "$ref": "ItemView"
-      }
-    },
-    {
-      "name": "list",
+      "name": "get_feed",
       "params": [],
       "returns": {
         "kind": "list",
         "items": {
-          "$ref": "ItemView"
+          "$ref": "Kudos"
         }
       }
     },
     {
-      "name": "count",
-      "params": [],
-      "returns": {
-        "kind": "u32"
-      }
-    },
-    {
-      "name": "save_draft",
+      "name": "delete_kudos",
       "params": [
         {
-          "name": "text",
+          "name": "id",
           "type": {
             "kind": "string"
           }
@@ -245,36 +127,23 @@
       ],
       "returns": {
         "kind": "unit"
-      }
-    },
-    {
-      "name": "get_draft",
-      "params": [],
-      "returns": {
-        "kind": "string"
       }
     }
   ],
   "events": [
     {
-      "name": "ItemAdded",
+      "name": "KudosPosted",
       "payload": {
-        "$ref": "Event_ItemAdded"
+        "$ref": "Event_KudosPosted"
       }
     },
     {
-      "name": "ItemUpdated",
+      "name": "KudosDeleted",
       "payload": {
-        "$ref": "Event_ItemUpdated"
-      }
-    },
-    {
-      "name": "ItemDeleted",
-      "payload": {
-        "$ref": "Event_ItemDeleted"
+        "$ref": "Event_KudosDeleted"
       }
     }
   ],
-  "state_root": "Registry",
+  "state_root": "KudosBoardState",
   "state_version": 1
 }

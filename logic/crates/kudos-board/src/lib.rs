@@ -1,118 +1,52 @@
-//! Item-registry service — the neutral foundation template.
+//! Kudos-board service — shared feed where team members post and view appreciation notes.
 //!
-//! A generic shared registry of items (`add` / `list` / `get` / `update` /
-//! owner-gated `delete`). It is deliberately domain-agnostic: the build agent
-//! copies this crate per spec service and renames the entity. It demonstrates,
-//! in one cohesive context, the core Calimero patterns every generated app
-//! needs:
-//!
-//! - `#[app::state]` / `#[app::logic]` / `#[app::init]`
-//! - `UnorderedMap` (the registry) and `AuthoredMap` (the authorship index that
-//!   structurally owner-gates `update`/`delete`)
-//! - `LwwRegister` (the item's mutable value, last-writer-wins on conflict)
-//! - one hand-written `Mergeable` + matching `RekeyTarget` on `Item` (it nests a
-//!   CRDT, so it must re-key its child or the nested register is LWW'd as an
-//!   opaque blob — see `RekeyTarget` impl)
-//! - `app::emit!`, `#[app::private]` (per-node draft, never replicated),
-//!   named-struct returns (`Item` / `ItemView`), and base58 owner keys.
+//! Each kudos is authored: only the poster can delete their own note.
+//! `AuthoredMap` enforces this structurally — no manual ownership check needed.
 
 use calimero_sdk::app;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::env;
 use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
-use calimero_storage::address::Id;
 use calimero_storage::collections::crdt_meta::MergeError;
-use calimero_storage::collections::rekey::{field_child_id, RekeyTarget};
-use calimero_storage::collections::{AuthoredMap, LwwRegister, Mergeable, UnorderedMap};
+use calimero_storage::collections::{AuthoredMap, Mergeable};
 use calimero_storage::env as storage_env;
-use foundation_types::{generate_id, validate_label, Error};
+use team_kudos_types::{generate_id, Error};
 
 pub mod events;
 use events::Event;
 
 // ---------------------------------------------------------------------------
-// Data models
+// Data model
 // ---------------------------------------------------------------------------
 
-/// A registry item. `value` is a `LwwRegister` so concurrent edits converge by
-/// hybrid-logical-clock last-writer-wins; `label` and `created_ms` are set once
-/// at add time and never change. Because this struct **nests a CRDT** and is
-/// stored as a map value, it implements `Mergeable` by hand AND `RekeyTarget`
-/// (see below).
-// Nests a `LwwRegister`, which is Borsh-only (no serde impl in calimero_storage).
-// Item is the internal map value, stored/replicated via Borsh; callers get the
-// serde-able `ItemView` instead. So no serde derives here.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-#[borsh(crate = "calimero_sdk::borsh")]
-pub struct Item {
-    pub label: String,
-    /// The item's mutable body. LWW on concurrent updates.
-    pub value: LwwRegister<String>,
-    pub created_ms: u64,
-}
-
-/// Hand-written merge. The immutable fields (`label`, `created_ms`) tie-break
-/// deterministically; `value` delegates to the nested `LwwRegister` so the
-/// freshest write wins. A `#[derive(Mergeable)]` would generate this, but we
-/// write it by hand to demonstrate the pattern (and to pair it with the
-/// required `RekeyTarget`).
-impl Mergeable for Item {
-    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        // Deterministic tie-break for the set-once fields so merge is
-        // commutative even if two replicas raced the initial insert.
-        if (other.created_ms, &other.label) < (self.created_ms, &self.label) {
-            self.label = other.label.clone();
-            self.created_ms = other.created_ms;
-        }
-        // `LwwRegister::merge` returns `()` (infallible HLC last-writer-wins),
-        // so wrap it back into the fallible `Mergeable::merge` signature.
-        self.value.merge(&other.value);
-        Ok(())
-    }
-}
-
-/// Deterministic re-keying for a hand-written CRDT-value struct (#2577).
+/// A single appreciation note. All fields are set at post time and never change,
+/// so we store a plain struct — no nested CRDT needed with `AuthoredMap`.
 ///
-/// `Item` nests a `LwwRegister`. Stored as an `UnorderedMap` value it would be
-/// LWW'd as an opaque blob unless we re-key the nested register under a
-/// field-namespaced child of the entry id, so every replica derives identical
-/// ids and the register converges as a child entity. `#[derive(Mergeable)]`
-/// generates this for you; a hand-written `Mergeable` MUST provide it too.
-impl RekeyTarget for Item {
-    fn rekey_relative_to(&mut self, parent_id: Id) {
-        calimero_storage::rekey_field_if_supported!(
-            &mut self.value,
-            field_child_id(parent_id, "value")
-        );
-    }
-}
-
-/// Read-shaped view returned to callers: the registry id, the item, and the
-/// base58 owner key. A named struct (not a tuple) so the generated ABI client
-/// gets typed fields.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(crate = "calimero_sdk::serde")]
-pub struct ItemView {
-    pub id: String,
-    pub label: String,
-    pub value: String,
-    pub created_ms: u64,
-    pub owner: String,
-}
-
-/// Per-node draft, never replicated. `#[app::private]` keeps it local to the
-/// node — handy for "save before submit" UX that should not leak to peers.
-#[derive(BorshSerialize, BorshDeserialize, Debug)]
+/// Both Borsh (for CRDT storage/replication) and Serde (for ABI return types)
+/// are derived: all fields are plain scalars so both compose cleanly.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
-#[calimero_sdk::app::private]
-pub struct Draft {
-    pub text: String,
+#[serde(crate = "calimero_sdk::serde")]
+pub struct Kudos {
+    pub id: String,
+    pub author: String,
+    pub recipient: String,
+    pub message: String,
+    /// Milliseconds since Unix epoch (storage_env::time_now() / 1_000_000).
+    pub created_at: u64,
 }
 
-impl Default for Draft {
-    fn default() -> Draft {
-        Draft { text: String::new() }
+// AuthoredMap requires V: Mergeable at the type level. Kudos are immutable
+// after creation, so merge keeps whichever replica has the higher created_at
+// timestamp. In practice AuthoredMap never calls this at runtime.
+// ponytail: formal bound only — merge is unreachable in the normal AuthoredMap flow.
+impl Mergeable for Kudos {
+    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
+        if other.created_at > self.created_at {
+            *self = other.clone();
+        }
+        Ok(())
     }
 }
 
@@ -120,172 +54,80 @@ impl Default for Draft {
 // State
 // ---------------------------------------------------------------------------
 
-// `#[app::state]` injects the borsh derives itself (SDK 0.11+); a manual derive
-// here would collide.
 #[app::state(emits = for<'a> Event<'a>)]
-pub struct Registry {
-    /// The items, keyed by generated id. Plain `UnorderedMap`: any peer may add
-    /// or update an item's value (LWW), so no per-author gate on the data.
-    items: UnorderedMap<String, Item>,
-    /// Authorship index: `item_id → owner-claim`. `AuthoredMap` stamps the
-    /// adding executor as owner and rejects `update`/`remove` by anyone else,
-    /// so it structurally owner-gates deletion without a manual key check.
-    owners: AuthoredMap<String, LwwRegister<u64>>,
+pub struct KudosBoardState {
+    /// Author-gated map: only the posting member may delete their entry.
+    kudos: AuthoredMap<String, Kudos>,
 }
 
 #[app::logic]
-impl Registry {
+impl KudosBoardState {
     #[app::init]
-    pub fn init() -> Registry {
-        Registry {
-            items: UnorderedMap::new_with_field_name("registry:items"),
-            owners: AuthoredMap::new_with_field_name("registry:owners"),
+    pub fn init() -> KudosBoardState {
+        KudosBoardState {
+            kudos: AuthoredMap::new_with_field_name("kudos-board:kudos"),
         }
     }
 
-    /// Add an item. Returns its generated id. The caller becomes the owner; only
-    /// the owner may later delete it.
-    pub fn add(&mut self, label: String, value: String) -> app::Result<String> {
-        validate_label(&label).map_err(AppError::from)?;
-
-        let now = storage_env::time_now();
+    /// Post an appreciation note. Returns the new kudos id.
+    pub fn post_kudos(&mut self, recipient: String, message: String) -> app::Result<String> {
+        let now_ns = storage_env::time_now();
+        let now_ms = now_ns / 1_000_000;
         let mut nonce = [0u8; 4];
         env::random_bytes(&mut nonce);
-        let id = generate_id("item", now, &nonce);
+        let id = generate_id("kudos", now_ns, &nonce);
+        let author = bs58::encode(env::executor_id()).into_string();
 
-        let item = Item {
-            label,
-            value: LwwRegister::new(value),
-            created_ms: now,
+        let entry = Kudos {
+            id: id.clone(),
+            author,
+            recipient,
+            message,
+            created_at: now_ms,
         };
-        self.items
-            .insert(id.clone(), item)
-            .map_err(|e| AppError::msg(format!("items.insert: {e}")))?;
-        // Stamp the adding executor as the owner. The value is unused; the
-        // authorship stamp on the AuthoredMap entry is what gates delete.
-        self.owners
-            .insert(id.clone(), LwwRegister::new(now))
-            .map_err(|e| AppError::msg(format!("owners.insert: {e}")))?;
+        self.kudos
+            .insert(id.clone(), entry)
+            .map_err(|e| AppError::msg(format!("kudos.insert: {e}")))?;
 
-        let owner = self.owner_b58();
-        app::emit!(Event::ItemAdded {
-            id: &id,
-            owner: &owner,
-        });
+        app::emit!(Event::KudosPosted { id: &id });
         Ok(id)
     }
 
-    /// Update an item's value (LWW). Anyone may update — concurrent edits
-    /// converge to the last writer. Errors if the id is unknown.
-    pub fn update(&mut self, id: String, value: String) -> app::Result<()> {
-        let mut guard = self
-            .items
-            .get_mut(&id)
-            .map_err(|e| AppError::msg(format!("items.get_mut: {e}")))?
-            .ok_or_else(|| AppError::from(Error::NotFound(id.clone())))?;
-        guard.value.set(value);
-        drop(guard);
-
-        app::emit!(Event::ItemUpdated { id: &id });
-        Ok(())
+    /// Return all kudos, newest first.
+    pub fn get_feed(&self) -> app::Result<Vec<Kudos>> {
+        let mut feed: Vec<Kudos> = self
+            .kudos
+            .entries()
+            .map_err(|e| AppError::msg(format!("kudos.entries: {e}")))?
+            .map(|(_, k)| k)
+            .collect();
+        // Newest first; tie-break by id for a stable, deterministic order.
+        feed.sort_by(|a, b| b.created_at.cmp(&a.created_at).then_with(|| b.id.cmp(&a.id)));
+        Ok(feed)
     }
 
-    /// Delete an item. Owner-gated: `AuthoredMap::remove` returns
-    /// `ActionNotAllowed` for non-owners, surfaced here as `Forbidden`.
-    pub fn delete(&mut self, id: String) -> app::Result<()> {
+    /// Delete a kudos. Author-gated: `AuthoredMap::remove` rejects non-authors.
+    pub fn delete_kudos(&mut self, id: String) -> app::Result<()> {
         let removed = self
-            .owners
+            .kudos
             .remove(&id)
-            .map_err(map_owner_error())?;
+            .map_err(map_author_error())?;
         if removed.is_none() {
             app::bail!(Error::NotFound(id));
         }
-        self.items
-            .remove(&id)
-            .map_err(|e| AppError::msg(format!("items.remove: {e}")))?;
-
-        app::emit!(Event::ItemDeleted { id: &id });
+        app::emit!(Event::KudosDeleted { id: &id });
         Ok(())
-    }
-
-    /// Get one item by id.
-    pub fn get(&self, id: String) -> app::Result<Option<ItemView>> {
-        let Some(item) = self
-            .items
-            .get(&id)
-            .map_err(|e| AppError::msg(format!("items.get: {e}")))?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(self.to_view(id, &item)?))
-    }
-
-    /// List all items, sorted by creation time then id for a stable order
-    /// (`UnorderedMap` iteration order is unspecified).
-    pub fn list(&self) -> app::Result<Vec<ItemView>> {
-        let mut out: Vec<ItemView> = self
-            .items
-            .entries()
-            .map_err(|e| AppError::msg(format!("items.entries: {e}")))?
-            .map(|(id, item)| self.to_view(id, &item))
-            .collect::<app::Result<_>>()?;
-        out.sort_by(|a, b| (a.created_ms, &a.id).cmp(&(b.created_ms, &b.id)));
-        Ok(out)
-    }
-
-    /// Number of items in the registry.
-    pub fn count(&self) -> app::Result<usize> {
-        self.items
-            .len()
-            .map_err(|e| AppError::msg(format!("items.len: {e}")))
-    }
-
-    // ---- Per-node draft (never replicated) ----
-
-    pub fn save_draft(&self, text: String) -> app::Result<()> {
-        let mut draft = Draft::private_load_or_default()?;
-        draft.as_mut().text = text;
-        Ok(())
-    }
-
-    pub fn get_draft(&self) -> app::Result<String> {
-        Ok(Draft::private_load_or_default()?.text.clone())
     }
 }
 
-impl Registry {
-    /// Base58 of the current executor — the public, shareable owner identity.
-    fn owner_b58(&self) -> String {
-        bs58::encode(env::executor_id()).into_string()
-    }
-
-    fn to_view(&self, id: String, item: &Item) -> app::Result<ItemView> {
-        // `owner_of` yields a `PublicKey`; `String::from(PublicKey)` is its
-        // canonical base58 encoding (see calimero_primitives::identity).
-        let owner = self
-            .owners
-            .owner_of(&id)
-            .map_err(|e| AppError::msg(format!("owners.owner_of: {e}")))?
-            .map(String::from)
-            .unwrap_or_default();
-        Ok(ItemView {
-            id,
-            label: item.label.clone(),
-            value: item.value.get().clone(),
-            created_ms: item.created_ms,
-            owner,
-        })
-    }
-}
-
-/// Translate an `AuthoredMap` access-control error into a friendly `Forbidden`.
-fn map_owner_error() -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
+/// Translate `AuthoredMap`'s access-control error into a friendly `Forbidden`.
+fn map_author_error() -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
     move |e| {
         let s = e.to_string();
         if s.contains("ActionNotAllowed") {
-            AppError::from(Error::Forbidden("only the owner may delete this item".into()))
+            AppError::from(Error::Forbidden("only the author may delete their kudos".into()))
         } else {
-            AppError::msg(format!("owners.remove: {s}"))
+            AppError::msg(format!("kudos.remove: {s}"))
         }
     }
 }
@@ -301,64 +143,68 @@ mod tests {
     use super::*;
 
     #[test]
-    fn add_get_and_list() {
-        let mut app = TestHost::new(Registry::init);
+    fn post_and_get_feed() {
+        let mut app = TestHost::new(KudosBoardState::init);
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        let view = app.view(|s| s.get(id.clone())).unwrap().unwrap();
-        assert_eq!(view.label, "widget");
-        assert_eq!(view.value, "v1");
-        assert_eq!(app.view(|s| s.count()).unwrap(), 1);
-        assert_eq!(app.view(|s| s.list()).unwrap().len(), 1);
-        // `add` emits exactly one event.
+        let id = app
+            .call(|s| s.post_kudos("Sarah".into(), "Crushed the Q4 planning!".into()))
+            .unwrap();
+        let feed = app.view(|s| s.get_feed()).unwrap();
+        assert_eq!(feed.len(), 1);
+        assert_eq!(feed[0].id, id);
+        assert_eq!(feed[0].recipient, "Sarah");
+        assert_eq!(feed[0].message, "Crushed the Q4 planning!");
+        // post_kudos emits exactly one KudosPosted event.
         assert_eq!(app.events().len(), 1);
     }
 
     #[test]
-    fn update_changes_value() {
-        let mut app = TestHost::new(Registry::init);
+    fn feed_is_newest_first() {
+        let mut app = TestHost::new(KudosBoardState::init);
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        app.call(|s| s.update(id.clone(), "v2".into())).unwrap();
-        assert_eq!(app.view(|s| s.get(id)).unwrap().unwrap().value, "v2");
-    }
-
-    #[test]
-    fn update_unknown_id_errors() {
-        let mut app = TestHost::new(Registry::init);
-        assert!(app.call(|s| s.update("nope".into(), "x".into())).is_err());
+        let id1 = app
+            .call(|s| s.post_kudos("Alice".into(), "First".into()))
+            .unwrap();
+        let id2 = app
+            .call(|s| s.post_kudos("Bob".into(), "Second".into()))
+            .unwrap();
+        let feed = app.view(|s| s.get_feed()).unwrap();
+        assert_eq!(feed.len(), 2);
+        // Newest post (id2) must appear before the older one (id1).
+        assert!(feed.iter().position(|k| k.id == id2) < feed.iter().position(|k| k.id == id1));
     }
 
     #[test]
     fn owner_can_delete() {
-        let mut app = TestHost::new(Registry::init);
+        let mut app = TestHost::new(KudosBoardState::init);
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        app.call(|s| s.delete(id.clone())).unwrap();
-        assert_eq!(app.view(|s| s.count()).unwrap(), 0);
-        assert!(app.view(|s| s.get(id)).unwrap().is_none());
+        let id = app
+            .call(|s| s.post_kudos("Sarah".into(), "Great work!".into()))
+            .unwrap();
+        app.call(|s| s.delete_kudos(id.clone())).unwrap();
+        assert_eq!(app.view(|s| s.get_feed()).unwrap().len(), 0);
     }
 
     #[test]
     fn non_owner_cannot_delete() {
-        let mut app = TestHost::new(Registry::init);
+        let mut app = TestHost::new(KudosBoardState::init);
 
-        // Default identity adds the item, so it owns it.
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
+        let id = app
+            .call(|s| s.post_kudos("Sarah".into(), "Great work!".into()))
+            .unwrap();
 
-        // A different executor is not the owner — AuthoredMap rejects the
-        // delete, surfaced as Forbidden.
+        // A different executor must be rejected — AuthoredMap enforces authorship.
         let other = [9u8; 32];
-        assert!(app.call_as(other, |s| s.delete(id.clone())).is_err());
-        // The item survives the rejected delete.
-        assert_eq!(app.view(|s| s.count()).unwrap(), 1);
+        assert!(app
+            .call_as(other, |s| s.delete_kudos(id.clone()))
+            .is_err());
+        // The kudos must survive the rejected delete.
+        assert_eq!(app.view(|s| s.get_feed()).unwrap().len(), 1);
     }
 
     #[test]
-    fn private_draft_roundtrips() {
-        let mut app = TestHost::new(Registry::init);
-
-        app.call(|s| s.save_draft("hello".into())).unwrap();
-        assert_eq!(app.view(|s| s.get_draft()).unwrap(), "hello");
+    fn delete_unknown_id_errors() {
+        let mut app = TestHost::new(KudosBoardState::init);
+        assert!(app.call(|s| s.delete_kudos("nope".into())).is_err());
     }
 }
