@@ -1,0 +1,22 @@
+{
+  "appName": "sprint-retro-board",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.sprint-retro-board",
+  "metadata": {
+    "name": "sprint-retro-board",
+    "description": "Live team retro board with three columns: went well, to improve, action items. Add cards, upvote feedback (one vote per member), mark actions done, and freeze the board when the retro is closed.",
+    "author": "Calimero",
+    "route": "/sprint-retro-board"
+  },
+  "theme": {
+    "primaryColor": "#7C3AED",
+    "accentColor": "#EC4899",
+    "style": "collaborative-energetic"
+  },
+  "services": [
+    {
+      "name": "retro-board",
+      "crate": "sprint-retro-board-retro-board"
+    }
+  ]
+}
