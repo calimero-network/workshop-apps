@@ -1,0 +1,148 @@
+# Spec smoke test for the team-kudos app (kudos-board service).
+#
+# Exercises the mutate methods (post_kudos, delete_kudos) end-to-end on real
+# nodes, including cross-node replication via wait_for_sync.
+#
+# Usage (run from the project root after a dev bundle has been built):
+#   merobox bootstrap run test/spec-smoke.workflow.yml
+#
+# Pre-flight: `bash logic/build-bundle.sh` must have produced
+# `logic/res/team-kudos-1.0.0.mpk` (appName/appVersion from studio.config.json).
+
+name: team-kudos spec smoke
+description: Verify kudos-board service replicates post and delete mutations across two nodes.
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.8
+  base_port: 12428
+  base_rpc_port: 12528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # --- Bootstrap application + namespace ---
+
+  - type: install_application
+    name: Install team-kudos bundle on node 1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/team-kudos-1.0.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install team-kudos bundle on node 2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/team-kudos-1.0.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on node 1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create kudos-board context on node 1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: kudos-board
+    outputs:
+      kudos_board_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: Node 2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  # --- View: get_feed baseline (empty) ---
+
+  - type: call
+    name: Confirm feed is empty before any posts
+    node: app-node-1
+    context_id: '{{kudos_board_ctx}}'
+    method: get_feed
+    args: {}
+    outputs:
+      initial_feed: result.output
+
+  - type: json_assert
+    name: Feed starts empty
+    statements:
+      - 'json_equal({{initial_feed}}, [])'
+
+  # --- Mutate: post_kudos ---
+
+  - type: call
+    name: Exercise post_kudos on app-node-1
+    node: app-node-1
+    context_id: '{{kudos_board_ctx}}'
+    method: post_kudos
+    args:
+      recipient: "Sarah"
+      message: "Crushed the Q4 planning presentation!"
+    outputs:
+      new_kudos_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for context sync after post_kudos
+    context_id: '{{kudos_board_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm kudos visible on app-node-2
+    node: app-node-2
+    context_id: '{{kudos_board_ctx}}'
+    method: get_feed
+    args: {}
+    outputs:
+      first_kudos: result.output.0
+
+  - type: json_assert
+    name: post_kudos produced a visible Kudos on app-node-2
+    statements:
+      - 'json_subset({{first_kudos}}, {"recipient": "Sarah", "message": "Crushed the Q4 planning presentation!"})'
+
+  # --- Mutate: delete_kudos ---
+
+  - type: call
+    name: Exercise delete_kudos on app-node-1
+    node: app-node-1
+    context_id: '{{kudos_board_ctx}}'
+    method: delete_kudos
+    args:
+      id: '{{new_kudos_id}}'
+
+  - type: wait_for_sync
+    name: Wait for context sync after delete_kudos
+    context_id: '{{kudos_board_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm feed is empty after delete on app-node-2
+    node: app-node-2
+    context_id: '{{kudos_board_ctx}}'
+    method: get_feed
+    args: {}
+    outputs:
+      feed_after_delete: result.output
+
+  - type: json_assert
+    name: delete_kudos removed the kudos from app-node-2
+    statements:
+      - 'json_equal({{feed_after_delete}}, [])'
