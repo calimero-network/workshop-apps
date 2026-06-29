@@ -1,0 +1,280 @@
+{
+  "schema_version": "wasm-abi/1",
+  "types": {
+    "Event_ItemAdded": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "owner",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ItemDeleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_ItemUpdated": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Item": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "label",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "record",
+            "fields": [],
+            "crdt_type": "lww_register",
+            "inner_type": {
+              "kind": "string"
+            }
+          }
+        },
+        {
+          "name": "created_ms",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "ItemView": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "label",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_ms",
+          "type": {
+            "kind": "u64"
+          }
+        },
+        {
+          "name": "owner",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Registry": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "items",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Item"
+            },
+            "crdt_type": "unordered_map"
+          }
+        },
+        {
+          "name": "owners",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "kind": "record",
+              "fields": [],
+              "crdt_type": "lww_register",
+              "inner_type": {
+                "kind": "u64"
+              }
+            },
+            "crdt_type": "authored_map"
+          }
+        }
+      ]
+    }
+  },
+  "methods": [
+    {
+      "name": "init",
+      "params": [],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "add",
+      "params": [
+        {
+          "name": "label",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "update",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "value",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "delete",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "$ref": "ItemView"
+      }
+    },
+    {
+      "name": "list",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "ItemView"
+        }
+      }
+    },
+    {
+      "name": "count",
+      "params": [],
+      "returns": {
+        "kind": "u32"
+      }
+    },
+    {
+      "name": "save_draft",
+      "params": [
+        {
+          "name": "text",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "get_draft",
+      "params": [],
+      "returns": {
+        "kind": "string"
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "ItemAdded",
+      "payload": {
+        "$ref": "Event_ItemAdded"
+      }
+    },
+    {
+      "name": "ItemUpdated",
+      "payload": {
+        "$ref": "Event_ItemUpdated"
+      }
+    },
+    {
+      "name": "ItemDeleted",
+      "payload": {
+        "$ref": "Event_ItemDeleted"
+      }
+    }
+  ],
+  "state_root": "Registry",
+  "state_version": 1
+}
