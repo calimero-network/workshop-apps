@@ -1,0 +1,149 @@
+{
+  "schema_version": "wasm-abi/1",
+  "types": {
+    "Event_KudosDeleted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Event_KudosPosted": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ]
+    },
+    "Kudos": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "author",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "recipient",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "message",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "u64"
+          }
+        }
+      ]
+    },
+    "KudosBoardState": {
+      "kind": "record",
+      "fields": [
+        {
+          "name": "kudos",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "$ref": "Kudos"
+            },
+            "crdt_type": "authored_map"
+          }
+        }
+      ]
+    }
+  },
+  "methods": [
+    {
+      "name": "init",
+      "params": [],
+      "returns": {
+        "kind": "unit"
+      }
+    },
+    {
+      "name": "post_kudos",
+      "params": [
+        {
+          "name": "recipient",
+          "type": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "message",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "string"
+      }
+    },
+    {
+      "name": "get_feed",
+      "params": [],
+      "returns": {
+        "kind": "list",
+        "items": {
+          "$ref": "Kudos"
+        }
+      }
+    },
+    {
+      "name": "delete_kudos",
+      "params": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "unit"
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "KudosPosted",
+      "payload": {
+        "$ref": "Event_KudosPosted"
+      }
+    },
+    {
+      "name": "KudosDeleted",
+      "payload": {
+        "$ref": "Event_KudosDeleted"
+      }
+    }
+  ],
+  "state_root": "KudosBoardState",
+  "state_version": 1
+}
