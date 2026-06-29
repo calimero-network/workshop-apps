@@ -1,0 +1,22 @@
+{
+  "appName": "sprint-retro-board",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.sprint-retro-board",
+  "metadata": {
+    "name": "sprint-retro-board",
+    "description": "Live three-column retro board where teams share feedback, upvote, and track action items",
+    "author": "Calimero",
+    "route": "/sprint-retro-board"
+  },
+  "theme": {
+    "primaryColor": "#7C3AED",
+    "accentColor": "#EC4899",
+    "style": "modern-collaborative"
+  },
+  "services": [
+    {
+      "name": "retro-board",
+      "crate": "sprint-retro-board-retro-board"
+    }
+  ]
+}
