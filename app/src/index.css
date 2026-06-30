@@ -1,0 +1,74 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ── App theme tokens (light default). The landing page does NOT use these. ──
+   The `--c-green-*` names are the foundation's accent family — here mapped to
+   the sprint-retro brand (violet #7C3AED primary). `--c-on-accent` is text on
+   that accent: the accent is DARK, so on-accent is WHITE in both themes.
+   `--c-green-ink`/`--c-green-deep` are accent TEXT, so they lighten in dark
+   mode for contrast on dark surfaces. */
+:root {
+  --c-green: #7c3aed;
+  --c-green-hover: #6d28d9;
+  --c-green-deep: #5b21b6;
+  --c-green-ink: #6d28d9;
+  --c-on-accent: #ffffff;
+  --c-ink: #1a1626;
+  --c-paper: #ffffff;
+  --c-paper2: #f7f5fb;
+  --c-line: #ece8f3;
+  --c-muted: #6b6480;
+  --c-muted-soft: #9a93ad;
+  --c-off: #c7c0d6;
+  --c-disabled: #e6e1f0;
+  --c-danger: #d23b2f;
+}
+
+:root[data-theme='dark'] {
+  --c-green: #7c3aed;
+  --c-green-hover: #8b5cf6;
+  --c-green-deep: #c4b5fd;
+  --c-green-ink: #ddd6fe;
+  --c-on-accent: #ffffff;
+  --c-ink: #ece9f5;
+  --c-paper: #16131f;
+  --c-paper2: #1e1a2b;
+  --c-line: #322c44;
+  --c-muted: #a59cbb;
+  --c-muted-soft: #6f6786;
+  --c-off: #423a55;
+  --c-disabled: #2a2438;
+  --c-danger: #ff6b6b;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--c-paper);
+  color: var(--c-ink);
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-bg {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 1rem;
+}
