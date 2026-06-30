@@ -185,12 +185,14 @@ export function useChatLobby(): UseChatLobbyReturn {
   // (Filed/to-file as upstream bug in @calimero-network/mero-react.)
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [selfIdentity, setSelfIdentity] = useState<string | null>(null);
+  const [selfIsAdmin, setSelfIsAdmin] = useState(false);
   const [membersLoading, setMembersLoading] = useState(false);
 
   const refetchMembers = useCallback(async () => {
     if (!mero || !namespaceId) {
       setMembers([]);
       setSelfIdentity(null);
+      setSelfIsAdmin(false);
       return;
     }
     setMembersLoading(true);
@@ -199,6 +201,9 @@ export function useChatLobby(): UseChatLobbyReturn {
       const r = raw as unknown as { members?: GroupMember[]; selfIdentity?: string };
       const all = r.members ?? [];
       const self = r.selfIdentity ?? null;
+      // Check admin role from the full list before filtering self out.
+      const selfMember = self ? all.find((m) => m.identity === self) : null;
+      setSelfIsAdmin(selfMember?.role === 'Admin');
       // Match SDK semantics: members excludes self.
       setMembers(all.filter((m) => m.identity !== self));
       setSelfIdentity(self);
@@ -283,8 +288,9 @@ export function useChatLobby(): UseChatLobbyReturn {
     }
   }, [lobbyContextId, executorPublicKey, lobbyJoined]);
 
-  const isAdmin = selfIdentity !== null
-    && members.some((m) => m.identity === selfIdentity && m.role === 'Admin');
+  // selfIsAdmin is set in refetchMembers from the full members list (before
+  // self is filtered out), so it is correct even though `members` excludes self.
+  const isAdmin = selfIsAdmin;
 
   // --- Callbacks ---
 
