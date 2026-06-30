@@ -4,18 +4,18 @@ App: team-expenses
 Summary: A shared expense tracker where team members submit expenses and the ops team reviews, approves, and tracks reimbursements
 
 ## Backend (logic/src/lib.rs)
-- [ ] Define entity: [expenses] Expense (id:LwwRegister<String>, author:LwwRegister<String>, description:LwwRegister<String>, amount:LwwRegister<u64>, currency:LwwRegister<String>, category:LwwRegister<String>, status:LwwRegister<String>, reviewer_note:LwwRegister<String>, submitted_at:LwwRegister<u64>)
-- [ ] Define entity: [expenses] Category (id:LwwRegister<String>, name:LwwRegister<String>)
-- [ ] Implement mutate: [expenses] submit_expense(description: String, amount: u64, currency: String, category: String) → app::Result<String>
-- [ ] Implement mutate: [expenses] edit_expense(expense_id: String, description: String, amount: u64, currency: String, category: String) → app::Result<()>
-- [ ] Implement mutate: [expenses] approve_expense(expense_id: String, note: String) → app::Result<()>
-- [ ] Implement mutate: [expenses] reject_expense(expense_id: String, note: String) → app::Result<()>
-- [ ] Implement mutate: [expenses] mark_reimbursed(expense_id: String) → app::Result<()>
-- [ ] Implement view: [expenses] list_my_expenses() → app::Result<Vec<Expense>>
-- [ ] Implement view: [expenses] list_pending_expenses() → app::Result<Vec<Expense>>
-- [ ] Implement view: [expenses] list_all_expenses() → app::Result<Vec<Expense>>
-- [ ] Implement mutate: [expenses] add_category(name: String) → app::Result<String>
-- [ ] Implement view: [expenses] list_categories() → app::Result<Vec<Category>>
+- [x] Define entity: [expenses] Expense (id:LwwRegister<String>, author:LwwRegister<String>, description:LwwRegister<String>, amount:LwwRegister<u64>, currency:LwwRegister<String>, category:LwwRegister<String>, status:LwwRegister<String>, reviewer_note:LwwRegister<String>, submitted_at:LwwRegister<u64>)
+- [x] Define entity: [expenses] Category (id:LwwRegister<String>, name:LwwRegister<String>)
+- [x] Implement mutate: [expenses] submit_expense(description: String, amount: u64, currency: String, category: String) → app::Result<String>
+- [x] Implement mutate: [expenses] edit_expense(expense_id: String, description: String, amount: u64, currency: String, category: String) → app::Result<()>
+- [x] Implement mutate: [expenses] approve_expense(expense_id: String, note: String) → app::Result<()>
+- [x] Implement mutate: [expenses] reject_expense(expense_id: String, note: String) → app::Result<()>
+- [x] Implement mutate: [expenses] mark_reimbursed(expense_id: String) → app::Result<()>
+- [x] Implement view: [expenses] list_my_expenses() → app::Result<Vec<Expense>>
+- [x] Implement view: [expenses] list_pending_expenses() → app::Result<Vec<Expense>>
+- [x] Implement view: [expenses] list_all_expenses() → app::Result<Vec<Expense>>
+- [x] Implement mutate: [expenses] add_category(name: String) → app::Result<String>
+- [x] Implement view: [expenses] list_categories() → app::Result<Vec<Category>>
 
 ## Frontend (app/)
 - [ ] Screen: SubmitExpensePage — Form to submit a new expense with category picker, plus a list of the current user's expenses and their statuses

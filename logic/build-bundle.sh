@@ -73,7 +73,7 @@ else
   LATEST=$(curl -fsS -m 15 "$REGISTRY_URL/api/v2/bundles?package=$APP_PACKAGE" 2>/dev/null \
     | jq -r '[ .[].appVersion // empty
                | split(".") | map(gsub("[^0-9]";"") | if . == "" then 0 else tonumber end) ]
-             | sort | last | map(tostring) | join(".")' 2>/dev/null)
+             | sort | last | map(tostring) | join(".")' 2>/dev/null) || true
   if [[ -n "$LATEST" && "$LATEST" != "null" ]]; then
     IFS='.' read -r MA MI PA <<< "$LATEST"
     APP_VERSION="${MA:-0}.${MI:-0}.$(( ${PA:-0} + 1 ))"
@@ -180,7 +180,7 @@ else
     if [[ -n "$DEV_KEY_RAW" ]]; then
       if [[ "${DEV_KEY_RAW#\{}" != "$DEV_KEY_RAW" ]]; then
         # Inline key JSON — materialize to a temp file.
-        DEV_KEY_PATH="$(mktemp -t studio-dev-key).json"
+        DEV_KEY_PATH="$(mktemp "${TMPDIR:-/tmp}/studio-dev-key.XXXXXX").json"
         printf '%s' "$DEV_KEY_RAW" > "$DEV_KEY_PATH"
       elif [[ -f "$DEV_KEY_RAW" ]]; then
         DEV_KEY_PATH="$DEV_KEY_RAW"
