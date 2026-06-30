@@ -4,19 +4,18 @@ import { useMero } from '@calimero-network/mero-react';
 import { C } from '../../theme';
 import { APP_DISPLAY_NAME } from '../../config';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { useRetro, BoardCard } from '../../hooks/useRetro';
 import { describeError } from '../../utils/errors';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
 
 /**
  * RetroBoard — the sprint-retro view: three columns (went well / to improve /
- * action items) with live cards, vote counts and action-item done state.
- *
- * SHELL PASS (ABI-free): the board runs on local placeholder state — no data
- * hook, no generated client yet. The next pass swaps `cards`/`setCards` for a
- * `useCards` hook over the generated client (add_card / upvote_card /
- * toggle_done / delete_card + a useSubscription refresh), keeping this exact
- * layout and the workspace gate / Invite / Join wiring.
+ * action items) with live cards, vote counts and action-item done state, all
+ * driven by `useRetro` over the generated `RetroBoardClient`. `useSubscription`
+ * inside the hook re-fetches on every sync event, so peers' cards/votes/toggles
+ * appear within seconds. Toggle/delete are shown only to the card's author or
+ * the facilitator (the backend gates them the same way).
  */
 
 const COLUMNS = [
@@ -27,66 +26,36 @@ const COLUMNS = [
 
 type ColumnKey = (typeof COLUMNS)[number]['key'];
 
-interface BoardCard {
-  id: string;
-  author: string;
-  column: ColumnKey;
-  text: string;
-  done: boolean;
-  votes: number;
-  voted: boolean; // whether the current member has upvoted (one vote each)
-}
-
-// ponytail: placeholder seed for the shell pass — replaced by live cards from
-// the generated client in the ABI-wiring pass.
-const SEED: BoardCard[] = [
-  { id: 'c1', author: 'alice', column: 'went_well', text: 'Shipped the release on time 🚀', done: false, votes: 3, voted: false },
-  { id: 'c2', author: 'bob', column: 'went_well', text: 'Pairing sessions were really productive', done: false, votes: 1, voted: false },
-  { id: 'c3', author: 'carol', column: 'to_improve', text: 'Standups kept running long', done: false, votes: 2, voted: true },
-  { id: 'c4', author: 'dave', column: 'to_improve', text: 'Flaky CI cost us most of a day', done: false, votes: 5, voted: false },
-  { id: 'c5', author: 'alice', column: 'action_items', text: 'Add a retry step to the deploy pipeline', done: true, votes: 2, voted: false },
-  { id: 'c6', author: 'bob', column: 'action_items', text: 'Timebox standups to 10 minutes', done: false, votes: 4, voted: true },
-];
-
 export default function AppPage() {
   const { logout } = useMero();
   const ws = useWorkspace();
+  const retro = useRetro({ contextId: ws.contextId, executorPublicKey: ws.executorPublicKey });
 
-  const [cards, setCards] = useState<BoardCard[]>(SEED);
   const [drafts, setDrafts] = useState<Record<ColumnKey, string>>({
     went_well: '', to_improve: '', action_items: '',
   });
+  const [retroName, setRetroName] = useState('');
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
 
   const byColumn = useMemo(() => {
     const out: Record<ColumnKey, BoardCard[]> = { went_well: [], to_improve: [], action_items: [] };
-    for (const card of cards) out[card.column].push(card);
+    for (const card of retro.cards) {
+      if (card.column in out) out[card.column as ColumnKey].push(card);
+    }
+    // Highest-voted first, so the most important themes surface to the top.
     for (const key of Object.keys(out) as ColumnKey[]) {
       out[key].sort((a, b) => b.votes - a.votes);
     }
     return out;
-  }, [cards]);
+  }, [retro.cards]);
 
-  const addCard = (column: ColumnKey) => {
+  const submitCard = (column: ColumnKey) => {
     const text = drafts[column].trim();
     if (!text) return;
-    setCards((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), author: 'you', column, text, done: false, votes: 0, voted: false },
-    ]);
+    void retro.addCard(column, text);
     setDrafts((d) => ({ ...d, [column]: '' }));
   };
-
-  const upvote = (id: string) =>
-    setCards((prev) =>
-      prev.map((c) => (c.id === id && !c.voted ? { ...c, votes: c.votes + 1, voted: true } : c)),
-    );
-
-  const toggleDone = (id: string) =>
-    setCards((prev) => prev.map((c) => (c.id === id ? { ...c, done: !c.done } : c)));
-
-  const removeCard = (id: string) => setCards((prev) => prev.filter((c) => c.id !== id));
 
   // No workspace yet (fresh web session): offer create-or-join.
   if (!ws.ready && !ws.loading) {
@@ -111,11 +80,43 @@ export default function AppPage() {
     );
   }
 
+  // The context exists but the retro hasn't been named yet — the first member
+  // names it and becomes the facilitator (create_retro). Members joining an
+  // already-named retro skip straight to the board.
+  if (retro.retro && !retro.retro.name) {
+    return (
+      <Empty>
+        <Card>
+          <h2>Name your retro</h2>
+          <p>Give this retrospective a title so your team knows what it’s for.</p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const name = retroName.trim();
+              if (name) void retro.createRetro(name);
+            }}
+          >
+            <NameInput
+              placeholder="e.g. Sprint 42 Retro"
+              value={retroName}
+              onChange={(e) => setRetroName(e.target.value)}
+              autoFocus
+            />
+            <Row>
+              <Primary type="submit" disabled={!retroName.trim()}>Create retro</Primary>
+            </Row>
+          </form>
+          {retro.error && <ErrLine>{describeError(retro.error)}</ErrLine>}
+        </Card>
+      </Empty>
+    );
+  }
+
   return (
     <Page>
       <Bar>
         <div className="title">
-          <h1>{APP_DISPLAY_NAME}</h1>
+          <h1>{retro.retro?.name || APP_DISPLAY_NAME}</h1>
           <span>Live sprint retrospective</span>
         </div>
         <div className="actions">
@@ -124,6 +125,8 @@ export default function AppPage() {
           <Secondary onClick={logout}>Sign out</Secondary>
         </div>
       </Bar>
+
+      {retro.error && <ErrLine>{describeError(retro.error)}</ErrLine>}
 
       <Board>
         {COLUMNS.map((col) => (
@@ -145,27 +148,32 @@ export default function AppPage() {
                 <CardRow key={card.id} $done={card.done}>
                   <p className="text">{card.text}</p>
                   <div className="meta">
-                    <span className="author">{card.author}</span>
+                    <span className="author">{card.author.slice(0, 8)}</span>
                     <div className="right">
-                      {col.key === 'action_items' && (
+                      {col.key === 'action_items' && card.mine && (
                         <button
                           className={`check ${card.done ? 'on' : ''}`}
-                          onClick={() => toggleDone(card.id)}
+                          onClick={() => retro.toggleDone(card.id)}
                           aria-pressed={card.done}
                           aria-label={card.done ? 'Mark not done' : 'Mark done'}
                         >
                           {card.done ? '✓ done' : 'mark done'}
                         </button>
                       )}
+                      {col.key === 'action_items' && !card.mine && card.done && (
+                        <span className="doneTag">✓ done</span>
+                      )}
                       <button
                         className={`vote ${card.voted ? 'on' : ''}`}
-                        onClick={() => upvote(card.id)}
+                        onClick={() => retro.upvote(card.id)}
                         disabled={card.voted}
                         aria-label="Upvote"
                       >
                         ▲ {card.votes}
                       </button>
-                      <button className="del" onClick={() => removeCard(card.id)} aria-label="Delete">×</button>
+                      {card.mine && (
+                        <button className="del" onClick={() => retro.removeCard(card.id)} aria-label="Delete">×</button>
+                      )}
                     </div>
                   </div>
                 </CardRow>
@@ -173,7 +181,7 @@ export default function AppPage() {
             </div>
 
             <AddRow
-              onSubmit={(e) => { e.preventDefault(); addCard(col.key); }}
+              onSubmit={(e) => { e.preventDefault(); submitCard(col.key); }}
             >
               <input
                 placeholder={`Add to ${col.title.toLowerCase()}…`}
@@ -272,6 +280,10 @@ const CardRow = styled.div<{ $done: boolean }>`
     &:hover { border-color: var(--col-accent); color: var(--col-accent); }
     &.on { color: #fff; background: var(--col-accent); border-color: var(--col-accent); }
   }
+  .doneTag {
+    font-size: 11.5px; font-weight: 700; padding: 4px 9px; border-radius: 999px;
+    color: #fff; background: var(--col-accent);
+  }
   .del {
     width: 26px; height: 26px; font-size: 17px; line-height: 1; border-radius: 7px;
     color: ${C.mutedSoft}; background: transparent; border: none;
@@ -309,6 +321,14 @@ const Card = styled.div`
   p { font-size: 14px; color: ${C.muted}; margin-bottom: 22px; line-height: 1.55; }
 `;
 const Row = styled.div`display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;`;
+
+const NameInput = styled.input`
+  width: 100%; margin-bottom: 16px; padding: 11px 13px; font-size: 14px;
+  color: ${C.ink}; background: ${C.paper};
+  border: 1px solid ${C.line}; border-radius: 10px; outline: none;
+  &::placeholder { color: ${C.mutedSoft}; }
+  &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px rgba(124,58,237,0.18); }
+`;
 
 const Primary = styled.button`
   display: inline-flex; align-items: center; justify-content: center;
