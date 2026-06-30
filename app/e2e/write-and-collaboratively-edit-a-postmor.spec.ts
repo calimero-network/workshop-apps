@@ -24,7 +24,7 @@ async function createResolvedIncident(page: Page, title: string): Promise<void> 
   await expect(page.getByText(title)).toBeVisible({ timeout: 10_000 });
   await page.getByText(title).first().click();
   await page.getByRole('button', { name: 'Acknowledge' }).click();
-  await expect(page.getByText('acknowledged')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText('acknowledged').first()).toBeVisible({ timeout: 5_000 });
   await page.getByRole('button', { name: 'Resolve' }).click();
   await expect(page.getByText('Resolve Incident')).toBeVisible({ timeout: 5_000 });
   await page.getByPlaceholder('What caused this incident?').fill('Missing rate limit on auth endpoint');
