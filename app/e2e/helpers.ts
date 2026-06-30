@@ -78,7 +78,7 @@ export async function clearAuth(page: Page) {
         'mero-tokens',
         'mero:access_token', 'mero:refresh_token', 'mero:expires_at',
         'mero:node_url', 'mero:application_id', 'mero:context_id',
-        'mero:context_identity', 'chat:selectedNamespaceId',
+        'mero:context_identity',
         'pending-invitation',
       ].forEach((k) => localStorage.removeItem(k));
     });
