@@ -5,40 +5,42 @@
 }
 
 /* ── App theme tokens (light default). The landing page does NOT use these. ──
-   `--c-on-accent` is text on the bright green accent — stays dark in both
-   themes. `--c-green-ink`/`--c-green-deep` are accent TEXT, so they lighten in
-   dark mode for contrast on dark surfaces. */
+   The `--c-green-*` names are the foundation's accent family — here mapped to
+   the sprint-retro brand (violet #7C3AED primary). `--c-on-accent` is text on
+   that accent: the accent is DARK, so on-accent is WHITE in both themes.
+   `--c-green-ink`/`--c-green-deep` are accent TEXT, so they lighten in dark
+   mode for contrast on dark surfaces. */
 :root {
-  --c-green: #a4ff11;
-  --c-green-hover: #93e60c;
-  --c-green-deep: #4e7a06;
-  --c-green-ink: #37610a;
-  --c-on-accent: #0e140f;
-  --c-ink: #0e140f;
+  --c-green: #7c3aed;
+  --c-green-hover: #6d28d9;
+  --c-green-deep: #5b21b6;
+  --c-green-ink: #6d28d9;
+  --c-on-accent: #ffffff;
+  --c-ink: #1a1626;
   --c-paper: #ffffff;
-  --c-paper2: #f5f8f1;
-  --c-line: #e7ece2;
-  --c-muted: #5d6b60;
-  --c-muted-soft: #93a394;
-  --c-off: #c4ccbf;
-  --c-disabled: #e2e8da;
+  --c-paper2: #f7f5fb;
+  --c-line: #ece8f3;
+  --c-muted: #6b6480;
+  --c-muted-soft: #9a93ad;
+  --c-off: #c7c0d6;
+  --c-disabled: #e6e1f0;
   --c-danger: #d23b2f;
 }
 
 :root[data-theme='dark'] {
-  --c-green: #a4ff11;
-  --c-green-hover: #b4ff3d;
-  --c-green-deep: #bdf76a;
-  --c-green-ink: #cdf78a;
-  --c-on-accent: #0e140f;
-  --c-ink: #e7edf2;
-  --c-paper: #14181d;
-  --c-paper2: #1b2027;
-  --c-line: #2b313a;
-  --c-muted: #9aa6ad;
-  --c-muted-soft: #6d7884;
-  --c-off: #3a414b;
-  --c-disabled: #2a2f37;
+  --c-green: #7c3aed;
+  --c-green-hover: #8b5cf6;
+  --c-green-deep: #c4b5fd;
+  --c-green-ink: #ddd6fe;
+  --c-on-accent: #ffffff;
+  --c-ink: #ece9f5;
+  --c-paper: #16131f;
+  --c-paper2: #1e1a2b;
+  --c-line: #322c44;
+  --c-muted: #a59cbb;
+  --c-muted-soft: #6f6786;
+  --c-off: #423a55;
+  --c-disabled: #2a2438;
   --c-danger: #ff6b6b;
 }
 

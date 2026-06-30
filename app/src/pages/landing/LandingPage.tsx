@@ -18,40 +18,40 @@ import { APP_DISPLAY_NAME, APP_DESCRIPTION } from '../../config';
  * Pull real product features from the spec; don't ship the placeholder copy.
  */
 
-/* ── Calimero brand palette — neon green on white + near-black ─────────────── */
+/* ── sprint-retro brand palette — violet + pink on white + near-black ──────── */
 const C = {
-  green: '#A4FF11',
-  greenHover: '#93e60c',
-  greenDeep: '#4e7a06',
-  greenInk: '#37610a',
-  ink: '#0e140f',
-  ink2: '#151c16',
+  green: '#7C3AED',   // brand primary (key name kept from the foundation palette)
+  greenHover: '#6D28D9',
+  greenDeep: '#5B21B6',
+  greenInk: '#6D28D9',
+  pink: '#EC4899',    // accent — votes / "you"
+  ink: '#1a1626',
+  ink2: '#241d33',
   paper: '#ffffff',
-  paper2: '#f5f8f1',
-  line: '#e7ece2',
-  lineDark: 'rgba(164,255,17,0.14)',
-  muted: '#5d6b60',
-  mutedSoft: '#93a394',
+  paper2: '#f7f5fb',
+  line: '#ece8f3',
+  lineDark: 'rgba(124,58,237,0.16)',
+  muted: '#6b6480',
+  mutedSoft: '#9a93ad',
 } as const;
 
-/* ConnectButton + its login popup use the default mero-react theme — the
-   default button (green #a5ff11 on dark text) already reads well on this white
-   page, and the default popup keeps proper contrast (a dark modal). Overriding
-   the theme broke the modal's internal contrast (white-on-green), so leave it. */
+/* ConnectButton + its login popup use the default mero-react theme — its default
+   button + dark login modal keep proper internal contrast, so we don't override
+   the theme here (doing so broke the modal's contrast). */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '🗂️', title: 'Three columns, one board', body: 'Capture what went well, what to improve and the action items — everyone adds to the same live board.' },
+  { icon: '⬆️', title: 'Vote on what matters', body: 'Upvote the cards that resonate, one vote each, so the team surfaces the most important themes first.' },
+  { icon: '✅', title: 'Track the follow-through', body: 'Turn discussion into action items and check them off — synced live across every teammate.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
+  ['How do my teammates join a retro?', 'Create a retro and share the invitation link. Anyone you invite joins the same board — their cards, votes and updates sync live within seconds. No accounts, no sign-up.'],
+  ['Where do the cards and votes live?', 'On your own Calimero node, as CRDT collections that merge conflict-free across peers. There is no central server holding your team’s retrospective.'],
+  ['What is a context?', 'A context is the shared, encrypted space your retro runs in. Everyone in it sees the same columns, cards and vote counts in real time, synced directly between nodes.'],
+  ['Can two people add cards at the same time?', 'Yes. Cards, votes and done-states are CRDTs, so simultaneous edits from different teammates merge automatically — no locks, no lost updates.'],
   ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['Is it really decentralized?', 'Yes. The board is peer-to-peer CRDT data on the nodes taking part. Take your node offline and your retro goes with it; bring it back and it re-syncs.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -101,40 +101,63 @@ function R({
 
 const STEPS = [
   { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '02', t: 'Start a retro', d: 'Create a board with three columns and share the invite link with your team.' },
+  { k: '03', t: 'Add & vote together', d: 'Everyone drops cards into columns and upvotes the themes that matter — live, within seconds.' },
+  { k: '04', t: 'Track action items', d: 'Turn decisions into action items and check them off as they ship. No central server, ever.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: a retro board fills with cards + votes, loops ──── */
+const COLS = [
+  { label: 'Went well', accent: '#10b981' },
+  { label: 'To improve', accent: '#f59e0b' },
+  { label: 'Actions', accent: C.green },
 ];
+
+type Step =
+  | { t: 'add'; id: number; col: number; text: string; mine?: boolean }
+  | { t: 'vote'; id: number }
+  | { t: 'done'; id: number };
+
+const SCRIPT: Step[] = [
+  { t: 'add', id: 1, col: 0, text: 'Shipped on time 🚀' },
+  { t: 'add', id: 2, col: 1, text: 'CI kept flaking' },
+  { t: 'vote', id: 2 },
+  { t: 'add', id: 3, col: 0, text: 'Pairing went great', mine: true },
+  { t: 'vote', id: 1 },
+  { t: 'add', id: 4, col: 2, text: 'Add a deploy retry' },
+  { t: 'vote', id: 4 },
+  { t: 'done', id: 4 },
+];
+
+type PCard = { id: number; col: number; text: string; votes: number; done: boolean; mine: boolean };
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [cards, setCards] = useState<PCard[]>([]);
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
-    const timers: number[] = [];
-    const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
-    const run = () => {
-      setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
-          setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
-        });
-      });
+    let i = 0;
+    let flashTimer = 0;
+    const flash = () => {
+      setPulse(true);
+      window.clearTimeout(flashTimer);
+      flashTimer = window.setTimeout(() => setPulse(false), 340);
     };
-    run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
-    return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
+    const tick = () => {
+      if (i >= SCRIPT.length) { setCards([]); i = 0; return; } // one blank beat, then loop
+      const step = SCRIPT[i];
+      if (step.t === 'add') {
+        setCards((p) => [...p, { id: step.id, col: step.col, text: step.text, votes: 0, done: false, mine: !!step.mine }]);
+      } else if (step.t === 'vote') {
+        setCards((p) => p.map((c) => (c.id === step.id ? { ...c, votes: c.votes + 1 } : c)));
+      } else {
+        setCards((p) => p.map((c) => (c.id === step.id ? { ...c, done: true } : c)));
+      }
+      flash();
+      i += 1;
+    };
+    const loop = window.setInterval(tick, 1150);
+    return () => { window.clearInterval(loop); window.clearTimeout(flashTimer); };
   }, []);
 
   return (
@@ -146,18 +169,20 @@ function LivePreview() {
         <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · your node</span>
         <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
       </div>
-      <div className="body">
-        <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
-        </div>
-        <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+      <div className="board">
+        {COLS.map((col, ci) => (
+          <div className="col" key={col.label}>
+            <h6><i style={{ background: col.accent }} /> {col.label}</h6>
+            <div className="stack">
+              {cards.filter((c) => c.col === ci).map((c) => (
+                <div key={c.id} className={`card ${c.mine ? 'mine' : ''} ${c.done ? 'done' : ''}`}>
+                  <p>{c.done ? '✓ ' : ''}{c.text}</p>
+                  <span className="v">▲ {c.votes}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
     </Preview>
   );
@@ -213,7 +238,7 @@ export default function LandingPage() {
           <Eyebrow>
             <CalimeroLogo size={13} color={C.greenDeep} /> Powered by Calimero
           </Eyebrow>
-          <H1>{APP_DISPLAY_NAME}</H1>
+          <H1>Sprint retros your whole team runs together.</H1>
           <Lede>{APP_DESCRIPTION}</Lede>
           <Cta>
             <ConnectButton />
@@ -222,9 +247,9 @@ export default function LandingPage() {
             </GhostBtn>
           </Cta>
           <TrustRow>
-            <span>Private by design</span><i />
-            <span>Real-time sync</span><i />
-            <span>Peer-to-peer</span>
+            <span>Live in seconds</span><i />
+            <span>One vote per card</span><i />
+            <span>Private by design</span>
           </TrustRow>
         </HeroInner>
         <PreviewWrap><LivePreview /></PreviewWrap>
@@ -341,7 +366,6 @@ const float = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform
 const drift = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-22px,14px) scale(1.07);}`;
 const travel = keyframes`0%{left:0;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{left:100%;opacity:0;}`;
 const rowIn = keyframes`from{opacity:0;transform:translateY(8px) scale(0.97);}to{opacity:1;transform:none;}`;
-const rowInMe = keyframes`from{opacity:0;transform:translateY(8px) translateX(8px) scale(0.97);}to{opacity:1;transform:none;}`;
 
 /* ════════════════════════ layout ════════════════════════ */
 const Root = styled.div`
@@ -403,7 +427,7 @@ const Hero = styled.section`
   gap: clamp(24px, 5vw, 64px);
   align-items: center;
   padding: clamp(56px, 8vw, 104px) clamp(18px, 5vw, 56px) clamp(64px, 9vw, 110px);
-  background: radial-gradient(1200px 480px at 75% -10%, #f3ffd9 0%, rgba(255, 255, 255, 0) 60%), ${C.paper};
+  background: radial-gradient(1200px 480px at 75% -10%, #efe7ff 0%, rgba(255, 255, 255, 0) 60%), ${C.paper};
   @media (max-width: 940px) { grid-template-columns: 1fr; }
   @media (max-width: 560px) { padding: 40px 18px 56px; gap: 30px; }
 `;
@@ -414,7 +438,7 @@ const Glow = styled.div`
   border-radius: 50%;
   top: -140px;
   right: -80px;
-  background: radial-gradient(circle, rgba(164, 255, 17, 0.5), rgba(164, 255, 17, 0) 68%);
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.42), rgba(236, 72, 153, 0) 68%);
   filter: blur(26px);
   animation: ${float} 11s ease-in-out infinite;
   pointer-events: none;
@@ -443,8 +467,8 @@ const Eyebrow = styled.div`
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: ${C.greenDeep};
-  background: rgba(164, 255, 17, 0.13);
-  border: 1px solid rgba(164, 255, 17, 0.4);
+  background: rgba(124, 58, 237, 0.12);
+  border: 1px solid rgba(124, 58, 237, 0.34);
   padding: 5px 11px;
   border-radius: 999px;
 `;
@@ -502,7 +526,7 @@ const Preview = styled.div`
   border: 1px solid ${C.line};
   border-radius: 14px;
   background: ${C.ink};
-  box-shadow: 0 30px 70px -30px rgba(14, 20, 15, 0.5);
+  box-shadow: 0 30px 70px -30px rgba(26, 22, 38, 0.55);
   overflow: hidden;
   .bar {
     display: flex;
@@ -529,26 +553,31 @@ const Preview = styled.div`
       color: ${C.mutedSoft};
       transition: color 0.3s;
     }
-    em.on { color: ${C.green}; }
+    em.on { color: ${C.pink}; }
   }
-  .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
-  .peers { display: flex; align-items: center; gap: 0; }
-  .peers i {
-    width: 22px; height: 22px; border-radius: 50%;
-    display: grid; place-items: center;
-    font-size: 10px; font-weight: 700; color: ${C.ink};
-    background: linear-gradient(135deg, ${C.green}, #cde88a);
-    border: 1.5px solid ${C.ink};
-    margin-left: -6px;
+  .board { padding: 14px; min-height: 230px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; align-items: start; }
+  .col h6 {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    color: ${C.mutedSoft}; margin-bottom: 9px;
   }
-  .peers i:first-child { margin-left: 0; }
-  .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
-  .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+  .col h6 i { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+  .stack { display: flex; flex-direction: column; gap: 7px; }
+  .card {
+    animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 7px 8px; border-radius: 9px;
+    background: rgba(255, 255, 255, 0.05); border: 1px solid ${C.lineDark};
+  }
+  .card p { font-size: 11px; line-height: 1.35; color: #ddd6f5; }
+  .card .v {
+    align-self: flex-start; font-size: 10px; font-weight: 700; color: ${C.pink};
+    background: rgba(236, 72, 153, 0.14); border: 1px solid rgba(236, 72, 153, 0.32);
+    border-radius: 999px; padding: 1px 7px;
+  }
+  .card.mine { background: rgba(124, 58, 237, 0.16); border-color: rgba(124, 58, 237, 0.5); }
+  .card.mine p { color: #efeaff; }
+  .card.done p { text-decoration: line-through; opacity: 0.6; }
 `;
 
 /* sections */
@@ -605,8 +634,8 @@ const Pipeline = styled.div`
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 22px;
-  .track { position: absolute; top: 19px; left: 6%; right: 6%; height: 2px; background: linear-gradient(90deg, ${C.line}, #cfe6a6, ${C.line}); }
-  .pulse { position: absolute; top: 14px; width: 12px; height: 12px; border-radius: 50%; background: ${C.green}; box-shadow: 0 0 0 5px rgba(164, 255, 17, 0.25); animation: ${travel} 4.2s ease-in-out infinite; }
+  .track { position: absolute; top: 19px; left: 6%; right: 6%; height: 2px; background: linear-gradient(90deg, ${C.line}, #cdb8f5, ${C.line}); }
+  .pulse { position: absolute; top: 14px; width: 12px; height: 12px; border-radius: 50%; background: ${C.green}; box-shadow: 0 0 0 5px rgba(124, 58, 237, 0.25); animation: ${travel} 4.2s ease-in-out infinite; }
   .stage { position: relative; text-align: left; }
   .dot { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; background: ${C.paper}; border: 1px solid ${C.line}; box-shadow: 0 6px 16px -8px rgba(14, 20, 15, 0.3); margin-bottom: 14px; }
   .dot b { font-size: 13px; font-weight: 700; color: ${C.greenDeep}; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
@@ -634,10 +663,10 @@ const Card = styled.div`
   background: ${C.paper};
   height: 100%;
   transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-  .ic { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 11px; background: rgba(164, 255, 17, 0.14); font-size: 20px; margin-bottom: 14px; }
+  .ic { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 11px; background: rgba(124, 58, 237, 0.14); font-size: 20px; margin-bottom: 14px; }
   h3 { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; color: ${C.ink}; margin-bottom: 7px; }
   p { font-size: 13.5px; color: ${C.muted}; }
-  &:hover { transform: translateY(-3px); border-color: rgba(164, 255, 17, 0.6); box-shadow: 0 18px 40px -24px rgba(14, 20, 15, 0.4); }
+  &:hover { transform: translateY(-3px); border-color: rgba(124, 58, 237, 0.55); box-shadow: 0 18px 40px -24px rgba(26, 22, 38, 0.4); }
 `;
 
 /* faq */
@@ -659,7 +688,7 @@ const FaqRow = styled.div<{ $open: boolean }>`
     font-weight: 600;
     letter-spacing: -0.2px;
     color: ${C.ink};
-    i { font-style: normal; flex-shrink: 0; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; font-size: 16px; color: ${C.greenInk}; background: rgba(164, 255, 17, 0.14); }
+    i { font-style: normal; flex-shrink: 0; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; font-size: 16px; color: ${C.greenInk}; background: rgba(124, 58, 237, 0.14); }
   }
   .ans { overflow: hidden; max-height: ${(p) => (p.$open ? '240px' : '0')}; transition: max-height 0.32s ease; }
   .ans p { padding: 0 2px 20px; font-size: 14px; color: ${C.muted}; max-width: 660px; }
@@ -671,12 +700,12 @@ const CtaBand = styled.section`
   overflow: hidden;
   text-align: center;
   padding: clamp(58px, 8vw, 92px) 24px;
-  background: radial-gradient(700px 280px at 50% 120%, rgba(164, 255, 17, 0.22), transparent 70%), ${C.ink};
+  background: radial-gradient(700px 280px at 50% 120%, rgba(236, 72, 153, 0.22), transparent 70%), ${C.ink};
   border-top: 1px solid ${C.lineDark};
   h2 { font-size: clamp(24px, 3.6vw, 34px); font-weight: 700; letter-spacing: -0.8px; color: ${C.paper}; }
   p { margin: 12px 0 24px; font-size: 14.5px; color: ${C.mutedSoft}; }
   .btn { display: inline-flex; }
-  &::after { content: ''; position: absolute; width: 360px; height: 360px; border-radius: 50%; left: -120px; bottom: -180px; background: radial-gradient(circle, rgba(164, 255, 17, 0.3), transparent 68%); filter: blur(24px); animation: ${drift} 12s ease-in-out infinite; }
+  &::after { content: ''; position: absolute; width: 360px; height: 360px; border-radius: 50%; left: -120px; bottom: -180px; background: radial-gradient(circle, rgba(124, 58, 237, 0.32), transparent 68%); filter: blur(24px); animation: ${drift} 12s ease-in-out infinite; }
   @media (prefers-reduced-motion: reduce) { &::after { animation: none; } }
 `;
 

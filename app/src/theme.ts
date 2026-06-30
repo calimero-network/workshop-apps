@@ -24,7 +24,7 @@ export const C = {
   paper: 'var(--c-paper)',
   paper2: 'var(--c-paper2)',
   line: 'var(--c-line)',
-  lineDark: 'rgba(164,255,17,0.14)',
+  lineDark: 'rgba(124,58,237,0.16)',
   muted: 'var(--c-muted)',
   mutedSoft: 'var(--c-muted-soft)',
   off: 'var(--c-off)',

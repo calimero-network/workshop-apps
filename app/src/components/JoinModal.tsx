@@ -102,7 +102,7 @@ const Close = styled.button`
 `;
 const IconBadge = styled.div`
   width: 48px; height: 48px; margin-bottom: 16px; display: grid; place-items: center; border-radius: 14px;
-  background: rgba(164,255,17,0.16); border: 1px solid rgba(164,255,17,0.4);
+  background: rgba(124,58,237,0.14); border: 1px solid rgba(124,58,237,0.34);
 `;
 const Field = styled.div`
   margin: 22px 0 4px;
@@ -113,7 +113,7 @@ const Field = styled.div`
     color: ${C.ink}; background: ${C.paper}; border: 1px solid ${C.line}; border-radius: 11px; padding: 10px 12px;
     outline: none; word-break: break-all;
     &::placeholder { color: ${C.mutedSoft}; font-family: -apple-system, sans-serif; }
-    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 4px rgba(164,255,17,0.18); }
+    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 4px rgba(124,58,237,0.2); }
     &:disabled { opacity: 0.6; }
   }
 `;
@@ -131,8 +131,8 @@ const SecondaryBtn = styled.button`
 const PrimaryBtn = styled.button`
   ${btn}
   min-width: 150px; display: inline-flex; align-items: center; justify-content: center;
-  color: ${C.onAccent}; background: ${C.green}; border: 1px solid #93e60c;
-  &:hover:not(:disabled) { background: ${C.greenHover}; box-shadow: 0 10px 28px rgba(164,255,17,0.4); transform: translateY(-1px); }
+  color: ${C.onAccent}; background: ${C.green}; border: 1px solid ${C.greenHover};
+  &:hover:not(:disabled) { background: ${C.greenHover}; box-shadow: 0 10px 28px rgba(124,58,237,0.4); transform: translateY(-1px); }
 `;
 const ErrorLine = styled.p`margin: 12px 0 0; font-size: 12.5px; color: ${C.danger};`;
 const Spin = styled.span`
