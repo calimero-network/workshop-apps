@@ -15,7 +15,7 @@
   },
   "services": [
     {
-      "name": "incident-manager",
+      "name": "incident_manager",
       "crate": "incident-command-incident-manager"
     }
   ]
