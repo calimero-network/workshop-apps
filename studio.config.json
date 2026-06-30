@@ -1,0 +1,22 @@
+{
+  "appName": "sprint-retro",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.sprint-retro",
+  "metadata": {
+    "name": "sprint-retro",
+    "description": "Live sprint retrospective board with three columns, card creation, upvoting, and action-item tracking",
+    "author": "Calimero",
+    "route": "/sprint-retro"
+  },
+  "theme": {
+    "primaryColor": "#7C3AED",
+    "accentColor": "#EC4899",
+    "style": "modern-collaborative"
+  },
+  "services": [
+    {
+      "name": "retro-board",
+      "crate": "sprint-retro-retro-board"
+    }
+  ]
+}
