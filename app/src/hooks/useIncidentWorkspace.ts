@@ -166,12 +166,14 @@ export function useIncidentWorkspace(): UseIncidentWorkspaceReturn {
   // --- Members (SDK bug workaround: listGroupMembers returns {members,selfIdentity} directly) ---
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [selfIdentity, setSelfIdentity] = useState<string | null>(null);
+  const [selfRole, setSelfRole] = useState<string | null>(null);
   const [membersLoading, setMembersLoading] = useState(false);
 
   const refetchMembers = useCallback(async () => {
     if (!mero || !namespaceId) {
       setMembers([]);
       setSelfIdentity(null);
+      setSelfRole(null);
       return;
     }
     setMembersLoading(true);
@@ -180,6 +182,9 @@ export function useIncidentWorkspace(): UseIncidentWorkspaceReturn {
       const r = raw as unknown as { members?: GroupMember[]; selfIdentity?: string };
       const all = r.members ?? [];
       const self = r.selfIdentity ?? null;
+      // Track self's role before filtering self out of the members list.
+      const selfMember = self ? all.find((m) => m.identity === self) : null;
+      setSelfRole(selfMember?.role ?? null);
       setMembers(all.filter((m) => m.identity !== self));
       setSelfIdentity(self);
     } catch {
@@ -251,8 +256,9 @@ export function useIncidentWorkspace(): UseIncidentWorkspaceReturn {
     }
   }, [incidentContextId, executorPublicKey, workspaceJoined]);
 
-  const isAdmin = selfIdentity !== null
-    && members.some((m) => m.identity === selfIdentity && m.role === 'Admin');
+  // Use selfRole (captured before self is filtered out of members) so the
+  // admin check correctly reflects this user's actual workspace role.
+  const isAdmin = selfRole === 'Admin';
 
   // --- Callbacks ---
   const selectWorkspace = useCallback((nsId: string) => {

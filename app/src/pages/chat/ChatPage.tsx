@@ -10,7 +10,6 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import styled from 'styled-components';
-import { useMero, useSubscription } from '@calimero-network/mero-react';
 import { useIncidentWorkspace } from '../../hooks/useIncidentWorkspace';
 import { useIncidentManager } from '../../hooks/useIncidentManager';
 import { C } from '../../theme';
@@ -623,7 +622,6 @@ type ActiveView = 'dashboard' | 'detail' | 'postmortem' | 'oncall';
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ChatPage() {
-  const { mero } = useMero();
   const workspace = useIncidentWorkspace();
   const im = useIncidentManager(workspace.contextId, workspace.executorPublicKey);
 
@@ -639,16 +637,6 @@ export default function ChatPage() {
     const id = setInterval(() => { void workspace.refetchMembers(); }, 5_000);
     return () => clearInterval(id);
   }, [workspace.namespaceId, workspace.refetchMembers]);
-
-  // Refresh incidents on workspace context subscription
-  useSubscription(workspace.contextId ? [workspace.contextId] : [], () => {
-    void im.refreshIncidents();
-    void im.refreshOncall();
-    if (im.selectedIncident) {
-      void im.refreshTimeline(im.selectedIncident.id);
-      void im.refreshPostmortem(im.selectedIncident.id);
-    }
-  });
 
   const handleReport = useCallback(async (title: string, desc: string, sev: string) => {
     await im.reportIncident(title, desc, sev);
