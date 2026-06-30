@@ -1,7 +1,7 @@
 {
   "appName": "team-expenses",
-  "appVersion": "0.2.0",
-  "package": "com.calimero.team-expenses",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.users.team-expenses",
   "metadata": {
     "name": "team-expenses",
     "description": "A shared expense tracker where team members submit expenses and the ops team reviews, approves, and tracks reimbursements",
