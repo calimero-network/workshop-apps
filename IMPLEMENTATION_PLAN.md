@@ -4,15 +4,15 @@ App: deal-flow
 Summary: A simple, shared sales pipeline for small teams to track leads through customizable stages
 
 ## Backend (logic/src/lib.rs)
-- [ ] Define entity: [pipeline] PipelineConfig (id:LwwRegister<String>, stages:LwwRegister<Vec<String>>)
-- [ ] Define entity: [pipeline] Lead (id:String, name:String, company:String, value:u64, stage:String, status:String, created_by:String, created_at:u64)
-- [ ] Implement mutate: [pipeline] set_stages(stages: Vec<String>) → app::Result<()>
-- [ ] Implement view: [pipeline] get_stages() → app::Result<Vec<String>>
-- [ ] Implement mutate: [pipeline] add_lead(name: String, company: String, value: u64) → app::Result<String>
-- [ ] Implement mutate: [pipeline] move_lead(lead_id: String, new_stage: String) → app::Result<()>
-- [ ] Implement mutate: [pipeline] close_lead(lead_id: String, outcome: String) → app::Result<()>
-- [ ] Implement view: [pipeline] list_leads() → app::Result<Vec<Lead>>
-- [ ] Implement view: [pipeline] list_closed_leads() → app::Result<Vec<Lead>>
+- [x] Define entity: [pipeline] PipelineConfig (id:LwwRegister<String>, stages:LwwRegister<Vec<String>>)
+- [x] Define entity: [pipeline] Lead (id:String, name:String, company:String, value:u64, stage:String, status:String, created_by:String, created_at:u64)
+- [x] Implement mutate: [pipeline] set_stages(stages: Vec<String>) → app::Result<()>
+- [x] Implement view: [pipeline] get_stages() → app::Result<Vec<String>>
+- [x] Implement mutate: [pipeline] add_lead(name: String, company: String, value: u64) → app::Result<String>
+- [x] Implement mutate: [pipeline] move_lead(lead_id: String, new_stage: String) → app::Result<()>
+- [x] Implement mutate: [pipeline] close_lead(lead_id: String, outcome: String) → app::Result<()>
+- [x] Implement view: [pipeline] list_leads() → app::Result<Vec<Lead>>
+- [x] Implement view: [pipeline] list_closed_leads() → app::Result<Vec<Lead>>
 
 ## Frontend (app/)
 - [ ] Screen: PipelineBoard — Kanban-style board with leads as cards grouped into stage columns, showing deal values and drag-to-move
