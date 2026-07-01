@@ -3,6 +3,9 @@ import { Link, useParams } from 'react-router-dom';
 import styled from 'styled-components';
 import { C } from '../../theme';
 import { APP_ROUTE } from '../../config';
+import { useWs } from './AppPage';
+import { usePostmortemData } from '../../hooks/usePostmortemData';
+import { describeError } from '../../utils/errors';
 import { type Incident, type Postmortem } from '../../types/incidents';
 
 /**
@@ -12,26 +15,34 @@ import { type Incident, type Postmortem } from '../../types/incidents';
  *  - A postmortem can only be written for a resolved incident.
  *  - If a postmortem exists: show it in view mode with an Edit button.
  *  - If not: show the write form (only for resolved incidents).
- *
- * Shell pass: placeholder data. Client wired in next pass.
  */
-
-// ── Placeholder data ───────────────────────────────────────────────────────
-const PLACEHOLDER_INCIDENT: Incident | null = null;
-const PLACEHOLDER_POSTMORTEM: Postmortem | null = null;
 
 export default function PostmortemPage() {
   const { id } = useParams<{ id: string }>();
+  const { contextId, executorPublicKey } = useWs();
 
-  // Shell pass: no real data yet
-  const incident = PLACEHOLDER_INCIDENT;
-  const postmortem = PLACEHOLDER_POSTMORTEM;
-  const loading = false;
+  const data = usePostmortemData({
+    contextId,
+    executorPublicKey,
+    incidentId: id ?? '',
+  });
 
+  const incident = data.incident;
+  const postmortem = data.postmortem;
   const [editing, setEditing] = useState(false);
 
-  if (loading) {
+  if (data.loading && !incident) {
     return <LoadingPage>Loading postmortem…</LoadingPage>;
+  }
+
+  if (data.error && !incident) {
+    return (
+      <NotFound>
+        <h2>Error loading incident</h2>
+        <p>{describeError(data.error)}</p>
+        <BackLink to={APP_ROUTE}>← Back to dashboard</BackLink>
+      </NotFound>
+    );
   }
 
   if (!incident) {
@@ -55,13 +66,21 @@ export default function PostmortemPage() {
   }
 
   if (postmortem && !editing) {
-    return <PostmortemView incident={incident} postmortem={postmortem} onEdit={() => setEditing(true)} />;
+    return (
+      <PostmortemView
+        incident={incident}
+        postmortem={postmortem}
+        onEdit={() => setEditing(true)}
+      />
+    );
   }
 
   return (
     <PostmortemForm
       incident={incident}
       existing={postmortem}
+      onCreate={data.createPostmortem}
+      onEdit={data.editPostmortem}
       onClose={() => setEditing(false)}
     />
   );
@@ -86,10 +105,7 @@ function PostmortemView({
           <PageSuper>Postmortem</PageSuper>
           <PageTitle>{incident.title}</PageTitle>
         </div>
-        <EditPostBtn
-          data-testid="action-edit_postmortem"
-          onClick={onEdit}
-        >
+        <EditPostBtn data-testid="action-edit_postmortem" onClick={onEdit}>
           Edit Postmortem
         </EditPostBtn>
       </PageHeader>
@@ -120,10 +136,19 @@ function PostmortemView({
 function PostmortemForm({
   incident,
   existing,
+  onCreate,
+  onEdit,
   onClose,
 }: {
   incident: Incident;
   existing: Postmortem | null;
+  onCreate: (timeline: string, rootCause: string, actionItems: string) => Promise<void>;
+  onEdit: (
+    postmortemId: string,
+    timeline: string | null,
+    rootCause: string | null,
+    actionItems: string | null,
+  ) => Promise<void>;
   onClose: () => void;
 }) {
   const [timeline, setTimeline] = useState(existing?.timeline ?? '');
@@ -140,15 +165,15 @@ function PostmortemForm({
     setSaving(true);
     setError(null);
     try {
-      // Client wiring in next pass
-      if (isEdit) {
-        // edit_postmortem(...)
+      if (isEdit && existing) {
+        await onEdit(existing.id, timeline.trim(), rootCause.trim(), actionItems.trim());
+        onClose();
       } else {
-        // create_postmortem(...)
+        await onCreate(timeline.trim(), rootCause.trim(), actionItems.trim());
+        // After create, data refresh will set postmortem → view mode renders
       }
-      if (isEdit) onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save postmortem.');
+      setError(describeError(err));
     } finally {
       setSaving(false);
     }
@@ -246,6 +271,7 @@ const LoadingPage = styled.div`
 const NotFound = styled.div`
   padding: 64px 0; text-align: center;
   h2 { font-size: 20px; font-weight: 700; color: ${C.ink}; margin-bottom: 16px; }
+  p { font-size: 14px; color: ${C.muted}; margin-bottom: 16px; }
 `;
 
 const NotAllowed = styled.div`

@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import styled from 'styled-components';
 import { C } from '../../theme';
 import { APP_ROUTE } from '../../config';
+import { useWs } from './AppPage';
+import { useIncidentTracker } from '../../hooks/useIncidentTracker';
+import { describeError } from '../../utils/errors';
 import {
   type Incident,
   type OnCallEntry,
@@ -17,23 +20,17 @@ import {
 /**
  * Dashboard — live list of open/acknowledged incidents sorted by severity,
  * on-call badge, and quick-declare form.
- *
- * Shell pass: data is placeholder (empty). Client wiring happens in the next pass.
  */
 
-// ── Placeholder data (removed in client-wiring pass) ──────────────────────
-const PLACEHOLDER_INCIDENTS: Incident[] = [];
-const PLACEHOLDER_ON_CALL: OnCallEntry | null = null;
-
 export default function DashboardPage() {
-  const incidents = PLACEHOLDER_INCIDENTS;
-  const onCall = PLACEHOLDER_ON_CALL;
+  const { contextId, executorPublicKey } = useWs();
+  const tracker = useIncidentTracker({ contextId, executorPublicKey });
 
   const [showCreate, setShowCreate] = useState(false);
   const [showOnCall, setShowOnCall] = useState(false);
 
-  // Active = open OR acknowledged, sorted by severity
-  const active = [...incidents]
+  // Active = open OR acknowledged, sorted by severity (critical first)
+  const active = [...tracker.incidents]
     .filter((i) => i.status !== 'resolved')
     .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
 
@@ -46,7 +43,7 @@ export default function DashboardPage() {
           <CountBadge>{active.length}</CountBadge>
         </HeaderLeft>
         <HeaderRight>
-          <OnCallBadge onCall={onCall} onSet={() => setShowOnCall(true)} />
+          <OnCallBadge onCall={tracker.onCall} onSet={() => setShowOnCall(true)} />
           <DeclareBtn
             data-testid="action-create_incident"
             onClick={() => setShowCreate(true)}
@@ -56,8 +53,12 @@ export default function DashboardPage() {
         </HeaderRight>
       </Header>
 
+      {tracker.error && <ErrorBar>{describeError(tracker.error)}</ErrorBar>}
+
       {/* ── Incident list ─────────────────────────────────────────── */}
-      {active.length === 0 ? (
+      {tracker.loading && active.length === 0 ? (
+        <LoadingRow>Loading incidents…</LoadingRow>
+      ) : active.length === 0 ? (
         <EmptyState>
           <EmptyIcon aria-hidden="true">✅</EmptyIcon>
           <h3>All clear</h3>
@@ -77,7 +78,11 @@ export default function DashboardPage() {
           </thead>
           <tbody>
             {active.map((inc) => (
-              <IncidentRow key={inc.id} data-testid={`item-incident-${inc.id}`} data-incident-id={inc.id}>
+              <IncidentRow
+                key={inc.id}
+                data-testid={`item-incident-${inc.id}`}
+                data-incident-id={inc.id}
+              >
                 <td>
                   <SeverityBadge severity={inc.severity} />
                 </td>
@@ -104,12 +109,18 @@ export default function DashboardPage() {
 
       {/* ── Declare Incident modal ─────────────────────────────────── */}
       {showCreate && (
-        <DeclareModal onClose={() => setShowCreate(false)} />
+        <DeclareModal
+          onDeclare={tracker.createIncident}
+          onClose={() => setShowCreate(false)}
+        />
       )}
 
       {/* ── Set on-call modal ─────────────────────────────────────── */}
       {showOnCall && (
-        <SetOnCallModal onClose={() => setShowOnCall(false)} />
+        <SetOnCallModal
+          onSet={tracker.setOnCall}
+          onClose={() => setShowOnCall(false)}
+        />
       )}
     </Page>
   );
@@ -118,7 +129,7 @@ export default function DashboardPage() {
 /* ── On-call badge ────────────────────────────────────────────────────────── */
 function OnCallBadge({ onCall, onSet }: { onCall: OnCallEntry | null; onSet: () => void }) {
   return (
-    <OnCallWrap onClick={onSet} title="Click to set on-call">
+    <OnCallWrap onClick={onSet} title="Click to set on-call" data-testid="action-set_on_call">
       <span className="dot" aria-hidden="true">🔴</span>
       {onCall ? (
         <>On call: <strong>{onCall.responder}</strong></>
@@ -130,19 +141,29 @@ function OnCallBadge({ onCall, onSet }: { onCall: OnCallEntry | null; onSet: () 
 }
 
 /* ── Declare Incident modal ───────────────────────────────────────────────── */
-function DeclareModal({ onClose }: { onClose: () => void }) {
+function DeclareModal({
+  onDeclare,
+  onClose,
+}: {
+  onDeclare: (title: string, description: string, severity: string) => Promise<void>;
+  onClose: () => void;
+}) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [severity, setSeverity] = useState<Severity>('high');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
     setSubmitting(true);
+    setError(null);
     try {
-      // Client wiring happens in the next pass — no-op for now
+      await onDeclare(title.trim(), description.trim(), severity);
       onClose();
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setSubmitting(false);
     }
@@ -150,7 +171,12 @@ function DeclareModal({ onClose }: { onClose: () => void }) {
 
   return (
     <ModalOverlay onClick={onClose}>
-      <ModalDialog onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="dec-title">
+      <ModalDialog
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dec-title"
+      >
         <ModalClose onClick={onClose} aria-label="Close">×</ModalClose>
         <ModalTitle id="dec-title">Declare Incident</ModalTitle>
         <ModalSub>Fill in the details and notify the whole team instantly.</ModalSub>
@@ -196,6 +222,8 @@ function DeclareModal({ onClose }: { onClose: () => void }) {
             />
           </FieldGroup>
 
+          {error && <ErrorLine>{error}</ErrorLine>}
+
           <ModalActions>
             <CancelBtn type="button" onClick={onClose}>Cancel</CancelBtn>
             <SubmitBtn
@@ -213,17 +241,27 @@ function DeclareModal({ onClose }: { onClose: () => void }) {
 }
 
 /* ── Set on-call modal ────────────────────────────────────────────────────── */
-function SetOnCallModal({ onClose }: { onClose: () => void }) {
+function SetOnCallModal({
+  onSet,
+  onClose,
+}: {
+  onSet: (responder: string) => Promise<void>;
+  onClose: () => void;
+}) {
   const [responder, setResponder] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!responder.trim()) return;
     setSubmitting(true);
+    setError(null);
     try {
-      // Client wiring in next pass
+      await onSet(responder.trim());
       onClose();
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setSubmitting(false);
     }
@@ -231,7 +269,12 @@ function SetOnCallModal({ onClose }: { onClose: () => void }) {
 
   return (
     <ModalOverlay onClick={onClose}>
-      <ModalDialog onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="oc-title">
+      <ModalDialog
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="oc-title"
+      >
         <ModalClose onClick={onClose} aria-label="Close">×</ModalClose>
         <ModalTitle id="oc-title">Set On-Call Responder</ModalTitle>
         <ModalSub>The team will see who&apos;s on duty right now.</ModalSub>
@@ -249,6 +292,7 @@ function SetOnCallModal({ onClose }: { onClose: () => void }) {
               autoFocus
             />
           </FieldGroup>
+          {error && <ErrorLine>{error}</ErrorLine>}
           <ModalActions>
             <CancelBtn type="button" onClick={onClose}>Cancel</CancelBtn>
             <SubmitBtn
@@ -362,6 +406,22 @@ const OnCallWrap = styled.button`
   strong { color: ${C.ink}; }
   .none { font-style: italic; }
   &:hover { border-color: ${C.muted}; color: ${C.ink}; }
+`;
+
+const LoadingRow = styled.p`
+  font-size: 14px;
+  color: ${C.muted};
+  padding: 24px 0;
+`;
+
+const ErrorBar = styled.div`
+  padding: 10px 14px;
+  font-size: 13px;
+  color: ${C.danger};
+  background: rgba(210,59,47,0.07);
+  border: 1px solid rgba(210,59,47,0.2);
+  border-radius: 8px;
+  margin-bottom: 16px;
 `;
 
 const IncidentTable = styled.table`
@@ -576,4 +636,10 @@ const SubmitBtn = styled.button`
   transition: filter 0.15s, transform 0.12s;
   &:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); }
   &:disabled { opacity: 0.5; cursor: default; }
+`;
+
+const ErrorLine = styled.p`
+  font-size: 13px;
+  color: ${C.danger};
+  margin-bottom: 8px;
 `;

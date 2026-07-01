@@ -3,6 +3,9 @@ import { Link, useParams } from 'react-router-dom';
 import styled from 'styled-components';
 import { C } from '../../theme';
 import { APP_ROUTE } from '../../config';
+import { useWs } from './AppPage';
+import { useIncidentDetail } from '../../hooks/useIncidentDetail';
+import { describeError } from '../../utils/errors';
 import {
   type Incident,
   type Comment,
@@ -16,25 +19,26 @@ import {
 /**
  * IncidentDetailPage — full incident view with:
  *  - Status controls: acknowledge, resolve
- *  - Severity badge + assignee + commander actions (escalate / reassign)
+ *  - Severity badge + assignee + commander actions (change severity / reassign)
  *  - Comment thread (add, edit, delete own comments)
  *  - Link to postmortem (only when resolved)
- *
- * Shell pass: placeholder data. Client wired in next pass.
  */
-
-// ── Placeholder data ───────────────────────────────────────────────────────
-const PLACEHOLDER_INCIDENT: Incident | null = null;
-const PLACEHOLDER_COMMENTS: Comment[] = [];
 
 export default function IncidentDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { contextId, executorPublicKey } = useWs();
 
-  // Shell pass: no real data yet
-  const incident = PLACEHOLDER_INCIDENT;
-  const comments = PLACEHOLDER_COMMENTS;
-  const loading = false;
-  const currentUser = ''; // resolved from executorPublicKey in next pass
+  const detail = useIncidentDetail({
+    contextId,
+    executorPublicKey,
+    incidentId: id ?? '',
+  });
+
+  const incident = detail.incident;
+  const comments = detail.comments;
+
+  // Use the short executor public key as the "current user" identifier for comment authorship.
+  const currentUser = executorPublicKey ?? '';
 
   const [commentBody, setCommentBody] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -42,8 +46,9 @@ export default function IncidentDetailPage() {
   const [showReassign, setShowReassign] = useState(false);
   const [showEscalate, setShowEscalate] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  if (loading) {
+  if (detail.loading && !incident) {
     return <LoadingPage>Loading incident…</LoadingPage>;
   }
 
@@ -61,21 +66,24 @@ export default function IncidentDetailPage() {
   const canAck = incident.status === 'open';
   const canResolve = incident.status !== 'resolved';
 
-  const handleAck = async () => {
-    // Client wiring in next pass
+  const withError = async (fn: () => Promise<void>) => {
+    setActionError(null);
+    try { await fn(); } catch (err) { setActionError(describeError(err)); }
   };
 
-  const handleResolve = async () => {
-    // Client wiring in next pass
-  };
+  const handleAck = () => withError(detail.acknowledgeIncident);
+  const handleResolve = () => withError(detail.resolveIncident);
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!commentBody.trim()) return;
     setSubmittingComment(true);
+    setActionError(null);
     try {
-      // Client wiring in next pass
+      await detail.addComment(commentBody.trim());
       setCommentBody('');
+    } catch (err) {
+      setActionError(describeError(err));
     } finally {
       setSubmittingComment(false);
     }
@@ -83,14 +91,17 @@ export default function IncidentDetailPage() {
 
   const handleEditComment = async (commentId: string) => {
     if (!editBody.trim()) return;
-    // Client wiring in next pass
-    setEditingId(null);
-    setEditBody('');
+    try {
+      await detail.editComment(commentId, editBody.trim());
+      setEditingId(null);
+      setEditBody('');
+    } catch (err) {
+      setActionError(describeError(err));
+    }
   };
 
-  const handleDeleteComment = async (commentId: string) => {
-    // Client wiring in next pass
-  };
+  const handleDeleteComment = (commentId: string) =>
+    withError(() => detail.deleteComment(commentId));
 
   const startEdit = (comment: Comment) => {
     setEditingId(comment.id);
@@ -143,25 +154,16 @@ export default function IncidentDetailPage() {
       {/* ── Action buttons ─────────────────────────────────────── */}
       <ActionBar>
         {canAck && (
-          <AckBtn
-            data-testid="action-acknowledge_incident"
-            onClick={handleAck}
-          >
+          <AckBtn data-testid="action-acknowledge_incident" onClick={handleAck}>
             Acknowledge
           </AckBtn>
         )}
         {canResolve && (
-          <ResolveBtn
-            data-testid="action-resolve_incident"
-            onClick={handleResolve}
-          >
+          <ResolveBtn data-testid="action-resolve_incident" onClick={handleResolve}>
             Resolve
           </ResolveBtn>
         )}
-        <OutlineBtn
-          data-testid="action-update_incident"
-          onClick={() => setShowEscalate(true)}
-        >
+        <OutlineBtn data-testid="action-update_incident" onClick={() => setShowEscalate(true)}>
           Change Severity
         </OutlineBtn>
         <OutlineBtn onClick={() => setShowReassign(true)}>
@@ -169,11 +171,12 @@ export default function IncidentDetailPage() {
         </OutlineBtn>
         {isResolved && (
           <PostmortemBtn to={`${APP_ROUTE}/incident/${id}/postmortem`}>
-            {/* Link to postmortem: visible only when resolved */}
             📋 Postmortem
           </PostmortemBtn>
         )}
       </ActionBar>
+
+      {actionError && <ErrorBar>{actionError}</ErrorBar>}
 
       <Divider />
 
@@ -188,10 +191,10 @@ export default function IncidentDetailPage() {
             <CommentItem key={c.id} data-testid={`item-comment-${c.id}`}>
               <CommentMeta>
                 <AuthorAvatar>{c.author.charAt(0).toUpperCase()}</AuthorAvatar>
-                <AuthorName>{c.author}</AuthorName>
+                <AuthorName title={c.author}>{c.author.length > 16 ? c.author.slice(0, 8) + '…' : c.author}</AuthorName>
                 <CommentTime>{timeAgo(c.created_at)}</CommentTime>
-                {/* own comment controls */}
-                {c.author === currentUser && (
+                {/* own comment controls: compare full executor key */}
+                {(c.author === currentUser || c.author === currentUser.slice(0, c.author.length)) && (
                   <CommentActions>
                     <CommentActionBtn
                       data-testid="action-edit_comment"
@@ -222,7 +225,12 @@ export default function IncidentDetailPage() {
                     autoFocus
                   />
                   <EditActions>
-                    <SaveBtn onClick={() => handleEditComment(c.id)} disabled={!editBody.trim()}>Save</SaveBtn>
+                    <SaveBtn
+                      onClick={() => handleEditComment(c.id)}
+                      disabled={!editBody.trim()}
+                    >
+                      Save
+                    </SaveBtn>
                     <CancelEditBtn onClick={() => setEditingId(null)}>Cancel</CancelEditBtn>
                   </EditActions>
                 </EditForm>
@@ -258,6 +266,7 @@ export default function IncidentDetailPage() {
       {showEscalate && (
         <UpdateSeverityModal
           current={incident.severity}
+          onSave={(sev) => withError(() => detail.updateIncident(sev, null))}
           onClose={() => setShowEscalate(false)}
         />
       )}
@@ -266,6 +275,7 @@ export default function IncidentDetailPage() {
       {showReassign && (
         <ReassignModal
           current={incident.assignee}
+          onSave={(assignee) => withError(() => detail.updateIncident(null, assignee))}
           onClose={() => setShowReassign(false)}
         />
       )}
@@ -274,16 +284,28 @@ export default function IncidentDetailPage() {
 }
 
 /* ── Update severity modal ────────────────────────────────────────────────── */
-function UpdateSeverityModal({ current, onClose }: { current: Severity; onClose: () => void }) {
+function UpdateSeverityModal({
+  current,
+  onSave,
+  onClose,
+}: {
+  current: Severity;
+  onSave: (severity: string) => Promise<void>;
+  onClose: () => void;
+}) {
   const [severity, setSeverity] = useState<Severity>(current);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setError(null);
     try {
-      // Client wiring in next pass
+      await onSave(severity);
       onClose();
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setSaving(false);
     }
@@ -309,6 +331,7 @@ function UpdateSeverityModal({ current, onClose }: { current: Severity; onClose:
               <option value="low">🟢 Low</option>
             </StyledSelect>
           </FieldGroup>
+          {error && <ErrorLine>{error}</ErrorLine>}
           <ModalActions>
             <CancelBtn type="button" onClick={onClose}>Cancel</CancelBtn>
             <SubmitBtn type="submit" data-testid="action-update_incident" disabled={saving}>
@@ -322,16 +345,28 @@ function UpdateSeverityModal({ current, onClose }: { current: Severity; onClose:
 }
 
 /* ── Reassign modal ───────────────────────────────────────────────────────── */
-function ReassignModal({ current, onClose }: { current: string | null; onClose: () => void }) {
+function ReassignModal({
+  current,
+  onSave,
+  onClose,
+}: {
+  current: string | null;
+  onSave: (assignee: string) => Promise<void>;
+  onClose: () => void;
+}) {
   const [assignee, setAssignee] = useState(current ?? '');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setError(null);
     try {
-      // Client wiring in next pass
+      await onSave(assignee.trim());
       onClose();
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setSaving(false);
     }
@@ -354,9 +389,14 @@ function ReassignModal({ current, onClose }: { current: string | null; onClose: 
               autoFocus
             />
           </FieldGroup>
+          {error && <ErrorLine>{error}</ErrorLine>}
           <ModalActions>
             <CancelBtn type="button" onClick={onClose}>Cancel</CancelBtn>
-            <SubmitBtn type="submit" data-testid="action-update_incident" disabled={!assignee.trim() || saving}>
+            <SubmitBtn
+              type="submit"
+              data-testid="action-update_incident"
+              disabled={!assignee.trim() || saving}
+            >
               {saving ? 'Saving…' : 'Reassign'}
             </SubmitBtn>
           </ModalActions>
@@ -450,7 +490,7 @@ const ActionBar = styled.div`
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 `;
 
 const AckBtn = styled.button`
@@ -481,6 +521,16 @@ const PostmortemBtn = styled(Link)`
   text-decoration: none;
   transition: background 0.15s;
   &:hover { background: #d0dcea; }
+`;
+
+const ErrorBar = styled.div`
+  padding: 10px 14px;
+  font-size: 13px;
+  color: ${C.danger};
+  background: rgba(210,59,47,0.07);
+  border: 1px solid rgba(210,59,47,0.2);
+  border-radius: 8px;
+  margin-bottom: 16px;
 `;
 
 const Divider = styled.hr`
@@ -592,7 +642,7 @@ const CancelEditBtn = styled.button`
   color: ${C.muted}; background: ${C.paper2}; border: 1px solid ${C.line};
 `;
 
-/* Shared modal styles (also exported for reuse) */
+/* Shared modal styles */
 const ModalOverlay = styled.div`
   position: fixed; inset: 0; z-index: 100;
   display: flex; align-items: center; justify-content: center; padding: 20px;
@@ -660,4 +710,8 @@ const SubmitBtn = styled.button`
   transition: filter 0.15s, transform 0.12s;
   &:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); }
   &:disabled { opacity: 0.5; cursor: default; }
+`;
+
+const ErrorLine = styled.p`
+  font-size: 13px; color: ${C.danger}; margin-bottom: 8px;
 `;

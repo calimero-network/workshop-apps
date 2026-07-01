@@ -3,26 +3,23 @@ import { Link } from 'react-router-dom';
 import styled from 'styled-components';
 import { C } from '../../theme';
 import { APP_ROUTE } from '../../config';
+import { useWs } from './AppPage';
+import { useIncidentTracker } from '../../hooks/useIncidentTracker';
 import {
-  type Incident,
   SEVERITY_COLOR,
-  STATUS_COLOR,
-  STATUS_LABEL,
   timeAgo,
 } from '../../types/incidents';
 
 /**
  * HistoryPage — searchable list of all resolved incidents with links to
  * their detail views and postmortems.
- *
- * Shell pass: placeholder data. Client wired in next pass.
  */
 
-// ── Placeholder data ───────────────────────────────────────────────────────
-const PLACEHOLDER_RESOLVED: Incident[] = [];
-
 export default function HistoryPage() {
-  const resolved = PLACEHOLDER_RESOLVED;
+  const { contextId, executorPublicKey } = useWs();
+  const tracker = useIncidentTracker({ contextId, executorPublicKey });
+
+  const resolved = tracker.incidents.filter((i) => i.status === 'resolved');
   const [query, setQuery] = useState('');
 
   const filtered = resolved.filter((i) => {
@@ -56,7 +53,9 @@ export default function HistoryPage() {
       </SearchRow>
 
       {/* ── List ───────────────────────────────────────────────── */}
-      {resolved.length === 0 ? (
+      {tracker.loading && resolved.length === 0 ? (
+        <LoadingRow>Loading incident history…</LoadingRow>
+      ) : resolved.length === 0 ? (
         <EmptyState>
           <EmptyIcon aria-hidden="true">📋</EmptyIcon>
           <h3>No resolved incidents yet</h3>
@@ -72,20 +71,24 @@ export default function HistoryPage() {
           {filtered.map((inc) => (
             <HistoryRow key={inc.id} data-testid={`item-incident-${inc.id}`}>
               <RowLeft>
-                <SevBadge style={{ background: SEVERITY_COLOR[inc.severity].bg, color: SEVERITY_COLOR[inc.severity].text }}>
+                <SevBadge
+                  style={{
+                    background: SEVERITY_COLOR[inc.severity].bg,
+                    color: SEVERITY_COLOR[inc.severity].text,
+                  }}
+                >
                   {inc.severity.toUpperCase()}
                 </SevBadge>
                 <RowInfo>
                   <RowTitle>{inc.title}</RowTitle>
                   <RowMeta>
-                    Declared by {inc.created_by} · Resolved {inc.resolved_at ? timeAgo(inc.resolved_at) : 'unknown'}
+                    Declared by {inc.created_by} · Resolved{' '}
+                    {inc.resolved_at ? timeAgo(inc.resolved_at) : 'unknown'}
                   </RowMeta>
                 </RowInfo>
               </RowLeft>
               <RowActions>
-                <IncidentLink to={`${APP_ROUTE}/incident/${inc.id}`}>
-                  View
-                </IncidentLink>
+                <IncidentLink to={`${APP_ROUTE}/incident/${inc.id}`}>View</IncidentLink>
                 <PostmortemLink to={`${APP_ROUTE}/incident/${inc.id}/postmortem`}>
                   Postmortem
                 </PostmortemLink>
@@ -150,6 +153,12 @@ const SearchInput = styled.input`
     box-shadow: 0 0 0 3px rgba(239,68,68,0.12);
   }
   &::placeholder { color: ${C.mutedSoft}; }
+`;
+
+const LoadingRow = styled.p`
+  font-size: 14px;
+  color: ${C.muted};
+  padding: 24px 0;
 `;
 
 const IncidentList = styled.div`
