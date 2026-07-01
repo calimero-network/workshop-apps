@@ -1,0 +1,22 @@
+{
+  "appName": "vector-knowledge-base",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.vector-knowledge-base",
+  "metadata": {
+    "name": "vector-knowledge-base",
+    "description": "A collaborative vector knowledge base where teams curate text chunks with embeddings, search by similarity, and visualize the collection's shape",
+    "author": "Calimero",
+    "route": "/vector-knowledge-base"
+  },
+  "theme": {
+    "primaryColor": "#7C3AED",
+    "accentColor": "#22D3EE",
+    "style": "data-dense-dark"
+  },
+  "services": [
+    {
+      "name": "vector-store",
+      "crate": "vector-knowledge-base-vector-store"
+    }
+  ]
+}
