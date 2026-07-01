@@ -1,0 +1,22 @@
+{
+  "appName": "incident-command",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.incident-command",
+  "metadata": {
+    "name": "incident-command",
+    "description": "Collaborative incident management for teams — declare, discuss, resolve, and write postmortems together in real time",
+    "author": "Calimero",
+    "route": "/incident-command"
+  },
+  "theme": {
+    "primaryColor": "#1E293B",
+    "accentColor": "#EF4444",
+    "style": "sharp-operational"
+  },
+  "services": [
+    {
+      "name": "incident-tracker",
+      "crate": "incident-command-incident-tracker"
+    }
+  ]
+}
