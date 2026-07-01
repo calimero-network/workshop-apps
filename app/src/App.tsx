@@ -8,6 +8,10 @@ import LoginPage from './pages/login/LoginPage';
 import AppPage from './pages/app/AppPage';
 import { APP_PACKAGE, APP_ROUTE } from './config';
 
+// APP_ROUTE is '/incident-command'; use a wildcard so nested routes
+// (incident detail, postmortem, history) are handled inside AppPage.
+const APP_ROUTE_WILD = APP_ROUTE.endsWith('/') ? APP_ROUTE + '*' : APP_ROUTE + '/*';
+
 /**
  * Auth route guards. The MeroProvider resolves auth ASYNCHRONOUSLY — on first
  * render `isAuthenticated` is `false` while `isLoading` is `true` until the
@@ -55,7 +59,7 @@ export default function App() {
                 SSO skip) are redirected straight into the app. */}
             <Route path="/" element={<RedirectIfAuthed><LandingPage /></RedirectIfAuthed>} />
             <Route path="/login" element={<RedirectIfAuthed><LoginPage /></RedirectIfAuthed>} />
-            <Route path={APP_ROUTE} element={<RequireAuth><AppPage /></RequireAuth>} />
+            <Route path={APP_ROUTE_WILD} element={<RequireAuth><AppPage /></RequireAuth>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

@@ -1,193 +1,290 @@
-import React, { useState } from 'react';
+import React, { createContext, useContext, useState } from 'react';
+import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import { useMero } from '@calimero-network/mero-react';
 import { C } from '../../theme';
-import { APP_DISPLAY_NAME } from '../../config';
-import { useWorkspace } from '../../hooks/useWorkspace';
-import { useItems } from '../../hooks/useItems';
+import { APP_DISPLAY_NAME, APP_ROUTE } from '../../config';
+import { useWorkspace, type UseWorkspaceReturn } from '../../hooks/useWorkspace';
 import { describeError } from '../../utils/errors';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
 
+import DashboardPage from './DashboardPage';
+import IncidentDetailPage from './IncidentDetailPage';
+import PostmortemPage from './PostmortemPage';
+import HistoryPage from './HistoryPage';
+
 /**
- * Neutral single-context CRUD view — the foundation's "app" screen.
+ * Workspace context — shared with all sub-pages so they can read contextId /
+ * executorPublicKey without calling useWorkspace again (which would create a
+ * new state instance). Sub-pages import `useWs()` from here.
+ */
+export interface WsCtxValue {
+  contextId: string | null;
+  executorPublicKey: string | null;
+}
+const WsContext = createContext<WsCtxValue>({ contextId: null, executorPublicKey: null });
+export function useWs(): WsCtxValue {
+  return useContext(WsContext);
+}
+
+/**
+ * App shell — workspace gate + persistent top nav + nested routes.
  *
- * BUILD AGENT: this is the canonical data-binding shell. Reshape it to the
- * spec's entity:
- *  - `useItems` → your domain hook over the generated `ServiceClient`,
- *  - the form fields + list rows → your entity's fields,
- *  - the page copy → your product.
- * Keep the structure: workspace resolution (bootstrap / join), the item form,
- * the live list, and the Invite/Join wiring — these make it multi-user out of
- * the box. Do NOT reintroduce chat concepts (rooms, messages, presence).
+ * Structure:
+ *  /incident-command           → DashboardPage
+ *  /incident-command/history   → HistoryPage
+ *  /incident-command/incident/:id             → IncidentDetailPage
+ *  /incident-command/incident/:id/postmortem  → PostmortemPage
  */
 export default function AppPage() {
   const { logout } = useMero();
-  const ws = useWorkspace();
-  const items = useItems({
-    contextId: ws.contextId,
-    executorPublicKey: ws.executorPublicKey,
-  });
-
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
+  const ws: UseWorkspaceReturn = useWorkspace();
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    await items.add(title.trim(), body.trim());
-    setTitle('');
-    setBody('');
-  };
-
-  // No workspace yet (fresh web session): offer create-or-join.
+  // ── Workspace gate ─────────────────────────────────────────────────────────
   if (!ws.ready && !ws.loading) {
     return (
-      <Empty>
-        <Card>
+      <GateBg>
+        <GateCard>
+          <AlertIcon aria-hidden="true">🚨</AlertIcon>
           <h2>Welcome to {APP_DISPLAY_NAME}</h2>
-          <p>Create a workspace to start, or join one you were invited to.</p>
-          <Row>
-            <Primary onClick={() => ws.bootstrap()}>Create workspace</Primary>
-            <Secondary onClick={() => setShowJoin(true)}>Join with invitation</Secondary>
-          </Row>
+          <p>Create a workspace to start incident tracking, or join one you were invited to.</p>
+          <GateRow>
+            <PrimaryBtn onClick={() => ws.bootstrap()}>Create workspace</PrimaryBtn>
+            <SecondaryBtn onClick={() => setShowJoin(true)}>Join with invitation</SecondaryBtn>
+          </GateRow>
           {ws.error && <ErrLine>{describeError(ws.error)}</ErrLine>}
-        </Card>
+        </GateCard>
         {showJoin && (
           <JoinModal
             onJoin={async (code) => { await ws.join(code); setShowJoin(false); }}
             onClose={() => setShowJoin(false)}
           />
         )}
-      </Empty>
+      </GateBg>
+    );
+  }
+
+  if (ws.loading) {
+    return (
+      <GateBg>
+        <LoadingText>Connecting to workspace…</LoadingText>
+      </GateBg>
     );
   }
 
   return (
-    <Page>
-      <Bar>
-        <h1>{APP_DISPLAY_NAME}</h1>
-        <div className="actions">
-          <Secondary onClick={() => setShowInvite(true)}>Invite</Secondary>
-          <Secondary onClick={() => setShowJoin(true)}>Join</Secondary>
-          <Secondary onClick={logout}>Sign out</Secondary>
-        </div>
-      </Bar>
+    <WsContext.Provider value={{ contextId: ws.contextId, executorPublicKey: ws.executorPublicKey }}>
+      <Shell>
+        {/* ── Top nav ──────────────────────────────────────────────────────── */}
+        <TopNav>
+          <NavLeft>
+            <BrandLink to={APP_ROUTE}>
+              <BrandIcon aria-hidden="true">🚨</BrandIcon>
+              <BrandName>{APP_DISPLAY_NAME}</BrandName>
+            </BrandLink>
+            <NavLinks>
+              <StyledNavLink to={APP_ROUTE} end>Dashboard</StyledNavLink>
+              <StyledNavLink to={`${APP_ROUTE}/history`}>History</StyledNavLink>
+            </NavLinks>
+          </NavLeft>
+          <NavRight>
+            <SecondaryBtn onClick={() => setShowInvite(true)}>Invite</SecondaryBtn>
+            <SecondaryBtn onClick={() => setShowJoin(true)}>Join</SecondaryBtn>
+            <SecondaryBtn onClick={logout}>Sign out</SecondaryBtn>
+          </NavRight>
+        </TopNav>
 
-      <Form onSubmit={submit}>
-        <input
-          placeholder="Title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-        <input
-          placeholder="Details (optional)"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-        />
-        <Primary type="submit" disabled={!title.trim() || !items.ready}>Add</Primary>
-      </Form>
+        {/* ── Page content ─────────────────────────────────────────────────── */}
+        <Content>
+          <Routes>
+            <Route index element={<DashboardPage />} />
+            <Route path="history" element={<HistoryPage />} />
+            <Route path="incident/:id" element={<IncidentDetailPage />} />
+            <Route path="incident/:id/postmortem" element={<PostmortemPage />} />
+            {/* Fallback within the app — redirect to dashboard */}
+            <Route path="*" element={<Navigate to={APP_ROUTE} replace />} />
+          </Routes>
+        </Content>
 
-      {items.error && <ErrLine>{describeError(items.error)}</ErrLine>}
-
-      <List>
-        {items.items.length === 0 && !items.loading && (
-          <Hint>No items yet — add the first one above.</Hint>
+        {showInvite && (
+          <InviteModal onInvite={ws.invite} onClose={() => setShowInvite(false)} />
         )}
-        {items.items.map((item) => (
-          <ItemRow key={item.id}>
-            <div className="text">
-              <strong>{item.title}</strong>
-              {item.body && <span>{item.body}</span>}
-            </div>
-            <button onClick={() => items.remove(item.id)} aria-label="Delete">×</button>
-          </ItemRow>
-        ))}
-      </List>
-
-      {showInvite && (
-        <InviteModal onInvite={ws.invite} onClose={() => setShowInvite(false)} />
-      )}
-      {showJoin && (
-        <JoinModal
-          onJoin={async (code) => { await ws.join(code); setShowJoin(false); }}
-          onClose={() => setShowJoin(false)}
-        />
-      )}
-    </Page>
+        {showJoin && (
+          <JoinModal
+            onJoin={async (code) => { await ws.join(code); setShowJoin(false); }}
+            onClose={() => setShowJoin(false)}
+          />
+        )}
+      </Shell>
+    </WsContext.Provider>
   );
 }
 
-const Page = styled.div`
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 28px 20px 64px;
-  width: 100%;
+/* ── Styled components ─────────────────────────────────────────────────────── */
+
+const Shell = styled.div`
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: ${C.paper};
 `;
-const Bar = styled.header`
+
+const TopNav = styled.nav`
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 24px;
-  h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: ${C.ink}; }
-  .actions { display: flex; gap: 8px; }
+  padding: 0 clamp(16px, 3vw, 32px);
+  height: 56px;
+  background: var(--color-primary, #1E293B);
+  border-bottom: 2px solid var(--color-accent, #EF4444);
+  flex-shrink: 0;
 `;
-const Form = styled.form`
+
+const NavLeft = styled.div`
   display: flex;
+  align-items: center;
+  gap: 28px;
+`;
+
+const NavRight = styled.div`
+  display: flex;
+  align-items: center;
   gap: 8px;
-  margin-bottom: 22px;
+`;
+
+const BrandLink = styled(Link)`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+`;
+
+const BrandIcon = styled.span`
+  font-size: 20px;
+  line-height: 1;
+`;
+
+const BrandName = styled.span`
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: #ffffff;
+  white-space: nowrap;
+`;
+
+const NavLinks = styled.div`
+  display: flex;
+  gap: 4px;
+  @media (max-width: 560px) { display: none; }
+`;
+
+const StyledNavLink = styled(NavLink)`
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  border-radius: 7px;
+  transition: color 0.15s, background 0.15s;
+  &:hover { color: #ffffff; background: rgba(255,255,255,0.1); }
+  &.active { color: #ffffff; background: rgba(255,255,255,0.15); font-weight: 600; }
+`;
+
+const Content = styled.main`
+  flex: 1;
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 28px 20px 64px;
+`;
+
+/* Gate (no workspace yet) */
+const GateBg = styled.div`
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: ${C.paper};
+`;
+
+const GateCard = styled.div`
+  max-width: 440px;
+  width: 100%;
+  text-align: center;
+  padding: 36px 32px;
+  background: ${C.paper2};
+  border: 1px solid ${C.line};
+  border-radius: 18px;
+  h2 {
+    font-size: 21px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: ${C.ink};
+    margin: 12px 0 10px;
+  }
+  p {
+    font-size: 14px;
+    color: ${C.muted};
+    line-height: 1.55;
+    margin-bottom: 24px;
+  }
+`;
+
+const AlertIcon = styled.div`
+  font-size: 36px;
+  line-height: 1;
+`;
+
+const GateRow = styled.div`
+  display: flex;
+  gap: 10px;
+  justify-content: center;
   flex-wrap: wrap;
-  input {
-    flex: 1; min-width: 160px;
-    padding: 10px 12px; font-size: 14px;
-    color: ${C.ink}; background: ${C.paper2};
-    border: 1px solid ${C.line}; border-radius: 10px; outline: none;
-    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px rgba(164,255,17,0.18); }
-  }
 `;
-const List = styled.div`display: flex; flex-direction: column; gap: 10px;`;
-const ItemRow = styled.div`
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 14px 16px; background: ${C.paper2};
-  border: 1px solid ${C.line}; border-radius: 12px;
-  .text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .text strong { font-size: 15px; color: ${C.ink}; }
-  .text span { font-size: 13px; color: ${C.muted}; }
-  button {
-    flex-shrink: 0; width: 30px; height: 30px; font-size: 20px; line-height: 1;
-    color: ${C.mutedSoft}; background: transparent; border: none; border-radius: 8px; cursor: pointer;
-    &:hover { background: ${C.paper}; color: ${C.danger}; }
-  }
-`;
-const Hint = styled.p`font-size: 14px; color: ${C.muted}; padding: 8px 2px;`;
-const ErrLine = styled.p`margin: 8px 0; font-size: 13px; color: ${C.danger};`;
 
-const Empty = styled.div`
-  flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px;
+const LoadingText = styled.p`
+  font-size: 15px;
+  color: ${C.muted};
 `;
-const Card = styled.div`
-  max-width: 420px; text-align: center;
-  padding: 32px 28px; background: ${C.paper2};
-  border: 1px solid ${C.line}; border-radius: 18px;
-  h2 { font-size: 20px; font-weight: 800; letter-spacing: -0.4px; color: ${C.ink}; margin-bottom: 8px; }
-  p { font-size: 14px; color: ${C.muted}; margin-bottom: 22px; line-height: 1.55; }
-`;
-const Row = styled.div`display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;`;
 
-const Primary = styled.button`
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 10px 18px; font-size: 13.5px; font-weight: 600; border-radius: 10px; cursor: pointer;
-  color: ${C.onAccent}; background: ${C.green}; border: 1px solid #93e60c;
-  transition: background 0.18s, transform 0.15s;
-  &:hover:not(:disabled) { background: ${C.greenHover}; transform: translateY(-1px); }
-  &:disabled { opacity: 0.55; cursor: default; }
+const ErrLine = styled.p`
+  margin-top: 14px;
+  font-size: 13px;
+  color: ${C.danger};
 `;
-const Secondary = styled.button`
-  padding: 10px 16px; font-size: 13.5px; font-weight: 600; border-radius: 10px; cursor: pointer;
-  color: ${C.ink}; background: ${C.paper}; border: 1px solid ${C.line};
-  transition: background 0.15s, border-color 0.15s;
-  &:hover { background: ${C.paper2}; border-color: ${C.green}; }
+
+export const PrimaryBtn = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #ffffff;
+  background: var(--color-accent, #EF4444);
+  border: 1px solid rgba(0,0,0,0.12);
+  transition: filter 0.15s, transform 0.12s;
+  &:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); }
+  &:disabled { opacity: 0.5; cursor: default; }
+`;
+
+export const SecondaryBtn = styled.button`
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 7px;
+  cursor: pointer;
+  color: rgba(255,255,255,0.8);
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  transition: background 0.15s, color 0.15s;
+  &:hover { background: rgba(255,255,255,0.2); color: #ffffff; }
 `;
