@@ -1,35 +1,25 @@
-# Two-node smoke test for the neutral item-registry foundation service.
+# Two-node smoke test for the incident-command application.
 #
-# Exercises the parts the v2 generator most often breaks, end-to-end on real
-# nodes (what the in-process TestHost / converge harness can't cover):
-#   - the `service` crate installed + a context created for it from a bundle
-#   - registry state (UnorderedMap<String, Item> with a nested LwwRegister)
-#     replicating across two peers
-#   - the AuthoredMap owner-gate: a non-owner `delete` is rejected on a real
-#     signed-delta path (the gate the bare converge harness can't verify)
+# Exercises the incident_tracker service end-to-end on real nodes:
+#   - bundle installed, namespace created, two peers joined
+#   - all mutate methods exercised; state verified on node 2 after sync
+#   - CRDT replication of Incident, Comment, Postmortem, OnCallEntry
 #
-# Usage (run from the chat project root, after a dev bundle has been built):
+# Usage:
 #   merobox bootstrap run test/smoke.workflow.yml
 #
-# Pre-flight: `bash logic/build-bundle.sh` must have produced
-# `logic/res/foundation-1.0.0.mpk` (appName/appVersion from studio.config.json).
+# Pre-flight: build the bundle first so the .mpk file exists:
+#   bash logic/build-bundle.sh
 
-name: Foundation item-registry smoke
-description: Verify the item-registry service replicates state and owner-gates delete across two nodes.
+name: incident-command smoke
+description: Verify the incident_tracker service replicates state across two nodes and all mutate methods succeed.
 log_level: info
 nodes:
   count: 2
-  prefix: foundation-node
-  # ponytail: pinned off `:edge` to the rc.8-matching tag so the verify merod
-  # matches the SDK the logic pins (0.11.0-rc.8). Bump in lockstep with
-  # logic/Cargo.toml's SDK tag, or bootstrap skews. ASSUMPTION: ghcr publishes
-  # an image tag matching the core git tag `0.11.0-rc.8`; if the registry uses a
-  # different naming scheme, correct this tag (and verifierWorkflow.js).
+  prefix: app-node
   image: ghcr.io/calimero-network/merod:0.11.0-rc.8
-  # High base ports to avoid colliding with a host-native merod on the
-  # defaults (2428 P2P / 2528 RPC). Each node gets base + i.
-  base_port: 12428      # P2P / swarm
-  base_rpc_port: 12528  # JSON-RPC / admin API
+  base_port: 12428
+  base_rpc_port: 12528
 nuke_on_start: true
 nuke_on_end: true
 wait_timeout: 90
@@ -38,132 +28,413 @@ steps:
   # --- Bootstrap application + namespace ---
 
   - type: install_application
-    name: Install foundation bundle on node 1
-    node: foundation-node-1
+    name: Install incident-command bundle on node 1
+    node: app-node-1
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/incident-command-1.0.0.mpk
     outputs:
       app_id: applicationId
 
   - type: install_application
-    name: Install foundation bundle on node 2
-    node: foundation-node-2
+    name: Install incident-command bundle on node 2
+    node: app-node-2
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/incident-command-1.0.0.mpk
 
   - type: create_namespace
     name: Create namespace on node 1
-    node: foundation-node-1
+    node: app-node-1
     application_id: '{{app_id}}'
     outputs:
       namespace_id: namespaceId
 
   - type: create_context
-    name: Create service context on node 1
-    node: foundation-node-1
+    name: Create incident_tracker context on node 1
+    node: app-node-1
     application_id: '{{app_id}}'
     group_id: '{{namespace_id}}'
-    service_name: service
+    service_name: incident-tracker
     outputs:
-      ctx: contextId
+      incident_tracker_ctx: contextId
 
   - type: create_namespace_invitation
     name: Issue namespace invitation
-    node: foundation-node-1
+    node: app-node-1
     namespace_id: '{{namespace_id}}'
     outputs:
       invitation: invitation
 
   - type: join_namespace
     name: Node 2 joins namespace
-    node: foundation-node-2
+    node: app-node-2
     namespace_id: '{{namespace_id}}'
     invitation: '{{invitation}}'
 
-  # --- Registry state replicates across peers ---
+  # --- Baseline views: both nodes start with empty state ---
 
   - type: call
-    name: Node 1 adds an item
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: add
-    args:
-      label: widget
-      value: v1
-    outputs:
-      item_id: result
-
-  - type: wait_for_sync
-    name: Wait for the add to sync across both nodes
-    context_id: '{{ctx}}'
-    nodes: [foundation-node-1, foundation-node-2]
-    timeout: 30
-    trigger_sync: true
-
-  # Both nodes must see the same single-item list — replication of the
-  # UnorderedMap<String, Item> (incl. the nested LwwRegister value).
-  - type: call
-    name: List items from node 1
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: list
+    name: list_incidents baseline from node 1
+    node: app-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: list_incidents
     args: {}
     outputs:
-      list_n1: result
+      incidents_baseline_n1: result.output
 
   - type: call
-    name: List items from node 2
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: list
+    name: list_incidents baseline from node 2
+    node: app-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: list_incidents
     args: {}
     outputs:
-      list_n2: result
+      incidents_baseline_n2: result.output
 
   - type: json_assert
-    name: Both nodes see the same item list
+    name: Both nodes start with an empty incident list
     statements:
-      - 'equal({{list_n1}}, {{list_n2}})'
-
-  # --- Owner-gated delete (AuthoredMap) ---
-  # Node 2 is not the owner of the item node 1 added, so its delete must be
-  # rejected. This is the per-entry authorization the bare converge harness
-  # cannot test (it needs the signed-delta apply path).
-  - type: call
-    name: Non-owner delete from node 2 must be rejected
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: delete
-    args:
-      id: '{{item_id}}'
-    expect_error: true
-
-  # The owner (node 1) can delete it.
-  - type: call
-    name: Owner delete from node 1 succeeds
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: delete
-    args:
-      id: '{{item_id}}'
-
-  - type: wait_for_sync
-    name: Wait for the delete to sync across both nodes
-    context_id: '{{ctx}}'
-    nodes: [foundation-node-1, foundation-node-2]
-    timeout: 30
-    trigger_sync: true
+      - 'json_equal({{incidents_baseline_n1}}, [])'
+      - 'json_equal({{incidents_baseline_n2}}, [])'
 
   - type: call
-    name: Node 2 sees the empty registry
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: count
+    name: get_on_call baseline from node 1
+    node: app-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: get_on_call
     args: {}
     outputs:
-      count_n2: result
+      on_call_baseline: result.output
 
   - type: json_assert
-    name: Registry is empty on node 2 after the owner delete
+    name: No on-call entry exists initially
     statements:
-      - 'equal({{count_n2}}, 0)'
+      - 'json_equal({{on_call_baseline}}, null)'
+
+  # --- Mutate: create_incident ---
+
+  - type: call
+    name: Exercise create_incident on app-node-1
+    node: app-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: create_incident
+    args:
+      title: "DB connection pool exhausted"
+      description: "Primary DB read replicas returning timeouts since 14:32 UTC"
+      severity: "critical"
+    outputs:
+      created_incident_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for context sync after create_incident
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm incident visible on node 2 via get_incident
+    node: app-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: get_incident
+    args:
+      incident_id: '{{created_incident_id}}'
+    outputs:
+      fetched_incident: result.output
+
+  - type: json_assert
+    name: create_incident produced an open Incident visible on node 2
+    statements:
+      - 'json_subset({{fetched_incident}}, {"title": "DB connection pool exhausted", "severity": "critical", "status": "open"})'
+
+  # --- Mutate: add_comment ---
+
+  - type: call
+    name: Exercise add_comment on app-node-1
+    node: app-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: add_comment
+    args:
+      incident_id: '{{created_incident_id}}'
+      body: "Restarted read replica 3, monitoring recovery"
+    outputs:
+      created_comment_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for context sync after add_comment
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm comment visible on node 2 via get_comments
+    node: app-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: get_comments
+    args:
+      incident_id: '{{created_incident_id}}'
+    outputs:
+      comment_0: result.output.0
+
+  - type: json_assert
+    name: add_comment produced a visible Comment on node 2
+    statements:
+      - 'json_subset({{comment_0}}, {"body": "Restarted read replica 3, monitoring recovery"})'
+
+  # --- Mutate: edit_comment ---
+
+  - type: call
+    name: Exercise edit_comment on app-node-1
+    node: app-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: edit_comment
+    args:
+      comment_id: '{{created_comment_id}}'
+      body: "Restarted read replicas 3 and 4, monitoring recovery"
+
+  - type: wait_for_sync
+    name: Wait for context sync after edit_comment
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm edited comment body on node 2
+    node: app-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: get_comments
+    args:
+      incident_id: '{{created_incident_id}}'
+    outputs:
+      edited_comment_0: result.output.0
+
+  - type: json_assert
+    name: edit_comment updated the body visible on node 2
+    statements:
+      - 'json_subset({{edited_comment_0}}, {"body": "Restarted read replicas 3 and 4, monitoring recovery"})'
+
+  # --- Mutate: update_incident (severity + assignee) ---
+
+  - type: call
+    name: Exercise update_incident on app-node-1
+    node: app-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: update_incident
+    args:
+      incident_id: '{{created_incident_id}}'
+      severity: "high"
+      assignee: "bob"
+
+  - type: wait_for_sync
+    name: Wait for context sync after update_incident
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm updated severity and assignee on node 2
+    node: app-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: get_incident
+    args:
+      incident_id: '{{created_incident_id}}'
+    outputs:
+      updated_incident: result.output
+
+  - type: json_assert
+    name: update_incident reflected new severity and assignee on node 2
+    statements:
+      - 'json_subset({{updated_incident}}, {"severity": "high", "assignee": "bob"})'
+
+  # --- Mutate: acknowledge_incident ---
+
+  - type: call
+    name: Exercise acknowledge_incident on app-node-1
+    node: app-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: acknowledge_incident
+    args:
+      incident_id: '{{created_incident_id}}'
+
+  - type: wait_for_sync
+    name: Wait for context sync after acknowledge_incident
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm acknowledged status on node 2
+    node: app-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: get_incident
+    args:
+      incident_id: '{{created_incident_id}}'
+    outputs:
+      acked_incident: result.output
+
+  - type: json_assert
+    name: acknowledge_incident changed status to acknowledged on node 2
+    statements:
+      - 'json_subset({{acked_incident}}, {"status": "acknowledged"})'
+
+  # --- Mutate: set_on_call ---
+
+  - type: call
+    name: Exercise set_on_call on app-node-1
+    node: app-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: set_on_call
+    args:
+      responder: "alice"
+    outputs:
+      on_call_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for context sync after set_on_call
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm on-call entry visible on node 2
+    node: app-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: get_on_call
+    args: {}
+    outputs:
+      on_call_entry: result.output
+
+  - type: json_assert
+    name: set_on_call reflected the new on-call person on node 2
+    statements:
+      - 'json_subset({{on_call_entry}}, {"responder": "alice"})'
+
+  # --- Mutate: resolve_incident (prerequisite for create_postmortem) ---
+
+  - type: call
+    name: Exercise resolve_incident on app-node-1
+    node: app-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: resolve_incident
+    args:
+      incident_id: '{{created_incident_id}}'
+
+  - type: wait_for_sync
+    name: Wait for context sync after resolve_incident
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm resolved status on node 2
+    node: app-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: get_incident
+    args:
+      incident_id: '{{created_incident_id}}'
+    outputs:
+      resolved_incident: result.output
+
+  - type: json_assert
+    name: resolve_incident changed status to resolved on node 2
+    statements:
+      - 'json_subset({{resolved_incident}}, {"status": "resolved"})'
+
+  # --- Mutate: create_postmortem (only valid for resolved incidents) ---
+
+  - type: call
+    name: Exercise create_postmortem on app-node-1
+    node: app-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: create_postmortem
+    args:
+      incident_id: '{{created_incident_id}}'
+      timeline: "14:32 alerts fired → 14:45 ack → 15:10 resolved"
+      root_cause: "Connection pool max was set to 50, needed 200 under load"
+      action_items: "Increase pool max to 200; add pool-size alerting"
+    outputs:
+      created_pm_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for context sync after create_postmortem
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm postmortem visible on node 2 via get_postmortem
+    node: app-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: get_postmortem
+    args:
+      incident_id: '{{created_incident_id}}'
+    outputs:
+      pm_entry: result.output
+
+  - type: json_assert
+    name: create_postmortem produced a visible Postmortem on node 2
+    statements:
+      - 'json_subset({{pm_entry}}, {"root_cause": "Connection pool max was set to 50, needed 200 under load"})'
+
+  # --- Mutate: edit_postmortem ---
+
+  - type: call
+    name: Exercise edit_postmortem on app-node-1
+    node: app-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: edit_postmortem
+    args:
+      postmortem_id: '{{created_pm_id}}'
+      timeline: ~
+      root_cause: ~
+      action_items: "Increase pool max to 200; add pool-size alerting; schedule load test"
+
+  - type: wait_for_sync
+    name: Wait for context sync after edit_postmortem
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm edited postmortem action_items on node 2
+    node: app-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: get_postmortem
+    args:
+      incident_id: '{{created_incident_id}}'
+    outputs:
+      edited_pm: result.output
+
+  - type: json_assert
+    name: edit_postmortem updated action_items on node 2
+    statements:
+      - 'json_subset({{edited_pm}}, {"action_items": "Increase pool max to 200; add pool-size alerting; schedule load test"})'
+
+  # --- Mutate: delete_comment ---
+
+  - type: call
+    name: Exercise delete_comment on app-node-1
+    node: app-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: delete_comment
+    args:
+      comment_id: '{{created_comment_id}}'
+
+  - type: wait_for_sync
+    name: Wait for context sync after delete_comment
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm comment list is empty on node 2 after delete
+    node: app-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: get_comments
+    args:
+      incident_id: '{{created_incident_id}}'
+    outputs:
+      comments_after_delete: result.output
+
+  - type: json_assert
+    name: delete_comment removed the comment; list is empty on node 2
+    statements:
+      - 'json_equal({{comments_after_delete}}, [])'
