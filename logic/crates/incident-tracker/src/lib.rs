@@ -596,19 +596,39 @@ impl IncidentTracker {
         env::random_bytes(&mut nonce);
         let id = generate_id("oc", now_ms, &nonce);
 
-        let entry = OnCallData {
-            id: id.clone(),
-            responder: responder.clone(),
-            started_at: now_ms,
-        };
-        // Remove the previous entry (if any) before inserting the new one.
-        let _ = self
+        let current_key = "current".to_string();
+        // Separate existence check from mutation to avoid E0499. Using
+        // `if let Some(guard) = self.on_call.get_mut(...) { } else { insert(...) }`
+        // causes the borrow checker to see the guard's lifetime as spanning the
+        // else branch too, making `insert` a second concurrent mutable borrow.
+        // `get` returns an owned value so its borrow is released before we
+        // call `get_mut` or `insert`.
+        let exists = self
             .on_call
-            .remove(&"current".to_string())
-            .map_err(|e| AppError::msg(format!("on_call.remove: {e}")))?;
-        self.on_call
-            .insert("current".to_string(), entry)
-            .map_err(|e| AppError::msg(format!("on_call.insert: {e}")))?;
+            .get(&current_key)
+            .map_err(|e| AppError::msg(format!("on_call.get: {e}")))?
+            .is_some();
+
+        if exists {
+            let mut guard = self
+                .on_call
+                .get_mut(&current_key)
+                .map_err(|e| AppError::msg(format!("on_call.get_mut: {e}")))?
+                .expect("existence confirmed above");
+            guard.id = id.clone();
+            guard.responder = responder.clone();
+            guard.started_at = now_ms;
+            drop(guard);
+        } else {
+            let entry = OnCallData {
+                id: id.clone(),
+                responder: responder.clone(),
+                started_at: now_ms,
+            };
+            self.on_call
+                .insert(current_key, entry)
+                .map_err(|e| AppError::msg(format!("on_call.insert: {e}")))?;
+        }
 
         app::emit!(Event::OnCallUpdated { responder: &responder });
         Ok(id)
