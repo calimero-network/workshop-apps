@@ -1,67 +1,70 @@
-//! Convergence coverage for the item-registry service.
+//! Convergence coverage for the vector-store service.
 //!
-//! `Registry` hand-writes `Mergeable`/`RekeyTarget` on its `Item` map value (it
-//! nests an `LwwRegister`), so this is the #2577 case: without deterministic
-//! re-keying the nested register would be last-writer-wins'd as an opaque blob.
-//! We register the generated re-key thunks (`__calimero_register_rekey()` — the
-//! WASM-load / TestHost-bridge path) so the nested register gets a deterministic
-//! id and converges as a child entity, then assert every replica lands on the
-//! same Merkle root.
+//! `VectorStore` hand-writes `Mergeable`/`RekeyTarget` on `KnowledgeEntryData`
+//! (its `LwwRegister<Vec<String>>` tags field and `LwwRegister<Option<String>>`
+//! collection_id field are nested CRDTs). Without deterministic re-keying those
+//! registers would be LWW'd as opaque blobs; with the re-key thunks every
+//! replica derives the same child ids and they converge.
 //!
-//! Surface under test: the `items: UnorderedMap<String, Item>` field only. The
-//! sibling `owners: AuthoredMap` is `CrdtType::UserStorage`, whose per-entry
-//! merge runs on the *signed* delta path (`Interface::apply_action`) — the bare
-//! `converge_app` harness has no signing identity and cannot reconcile `User`
-//! deltas (see `core/crates/storage/src/testing.rs` Limitations; no
-//! converge-tested core app puts authored/shared/user storage in state). So we
-//! seed items at **genesis** (single identity, snapshotted identically into
-//! every replica — no concurrent owners-merge) and then drive only `update`,
-//! which touches `items` exclusively. That is exactly the nested-register #2577
-//! exercise, isomorphic to the canonical `team-metrics-custom` converge test.
+//! Surface under test: the `entries: UnorderedMap<String, KnowledgeEntryData>`
+//! field only. The sibling `entry_owners: AuthoredMap` is seeded once at genesis
+//! (single identity, snapshotted byte-identical into every replica — no
+//! concurrent AuthoredMap merge) and then only read by `update_entry_tags`'s
+//! authorship check. The ops themselves write only to `entries` (tags LwwRegister),
+//! which is the pure nested-register #2577 convergence case.
 //!
 //! `#[serial]`: `converge_app` clears/repopulates the process-global merge
-//! registry per run (it self-serializes via an internal lock, but `#[serial]`
-//! avoids the contention and matches the canonical core pattern —
-//! `apps/team-metrics-custom/tests/converge.rs`). Own integration binary so it
-//! is isolated from the in-`lib.rs` `TestHost` unit tests.
+//! registry per run. Own integration binary so it is isolated from the in-lib.rs
+//! TestHost unit tests.
 
 use calimero_storage::testing::converge_app;
-use vector_knowledge_base_vector_store::Registry;
 use serial_test::serial;
+use vector_knowledge_base_vector_store::VectorStore;
 
-// One item is seeded at genesis (under the genesis identity, before any
-// concurrent op), so every replica starts from the identical seeded state. Each
-// replica then concurrently `update`s that item's nested `LwwRegister` to the
-// same value, in a per-replica shuffled order. The hand-written `Item` merge +
-// nested-register re-key must converge all replicas to one Merkle root, and the
-// value must survive (LWW, not blob-LWW'd to a stale/empty value).
 #[test]
 #[serial]
-fn registry_updates_converge() {
-    // Register the nested-CRDT-value re-key thunks for `Item` (its `LwwRegister`
-    // field). Without this the value blob is LWW'd and replicas can diverge.
-    Registry::__calimero_register_rekey();
+fn entry_tags_converge() {
+    // Register the nested-CRDT re-key thunks for KnowledgeEntryData (tags and
+    // collection_id LwwRegisters). Without this the registers are LWW'd as
+    // opaque blobs and replicas can diverge.
+    VectorStore::__calimero_register_rekey();
 
     converge_app(|| {
-        // Genesis seed: runs once under the single genesis identity, so the
-        // `owners` AuthoredMap entry is written without any concurrent
-        // User-storage merge, then snapshotted byte-identical into all replicas.
-        let mut r = Registry::init();
-        let _ = r.add("widget".into(), "v0".into());
-        r
+        // Genesis seed: one entry is added under the single genesis identity so
+        // that entry_owners (AuthoredMap) is written conflict-free and
+        // snapshotted identically into every replica.
+        let mut s = VectorStore::init();
+        let _ = s.add_entry(
+            "seed entry".into(),
+            vec![1.0_f32, 0.0, 0.0, 0.0],
+            vec!["original".into()],
+            None,
+        );
+        s
     })
     .replicas(3)
-    // Each replica concurrently rewrites the single seeded item's value. `update`
-    // touches `items` only (no `owners` write), so this is the pure nested-
-    // register convergence case.
+    // Each replica concurrently updates the seeded entry's tags. update_entry_tags
+    // reads entry_owners (no merge — genesis-seeded, identical on all replicas)
+    // and writes only to entries (tags LwwRegister). The genesis identity is the
+    // same for all replicas in converge_app, so the authorship check passes.
     .ops(|s| {
-        if let Some(view) = s.list().ok().and_then(|v| v.into_iter().next()) {
-            let _ = s.update(view.id, "v1".into());
+        if let Some(entry) = s
+            .list_entries(None, 0, 1)
+            .ok()
+            .and_then(|v| v.into_iter().next())
+        {
+            let _ = s.update_entry_tags(entry.id, vec!["converged".into()]);
         }
     })
-    .invariant("the single seeded item survives and holds the merged value", |s| {
-        let items = s.list().unwrap_or_default();
-        items.len() == 1 && items[0].value == "v1"
-    })
+    .invariant(
+        "the seeded entry survives and its tags hold the merged value",
+        |s| {
+            s.list_entries(None, 0, 10)
+                .map(|entries| {
+                    entries.len() == 1 && entries[0].tags == vec!["converged".to_string()]
+                })
+                .unwrap_or(false)
+        },
+    )
     .assert_all_replicas_equal();
 }

@@ -6,6 +6,11 @@ import { ToastProvider } from '@calimero-network/mero-ui';
 import LandingPage from './pages/landing/LandingPage';
 import LoginPage from './pages/login/LoginPage';
 import AppPage from './pages/app/AppPage';
+import DashboardPage from './pages/app/DashboardPage';
+import SearchPage from './pages/app/SearchPage';
+import BrowsePage from './pages/app/BrowsePage';
+import VisualizationPage from './pages/app/VisualizationPage';
+import CollectionsPage from './pages/app/CollectionsPage';
 import { APP_PACKAGE, APP_ROUTE } from './config';
 
 /**
@@ -55,7 +60,13 @@ export default function App() {
                 SSO skip) are redirected straight into the app. */}
             <Route path="/" element={<RedirectIfAuthed><LandingPage /></RedirectIfAuthed>} />
             <Route path="/login" element={<RedirectIfAuthed><LoginPage /></RedirectIfAuthed>} />
-            <Route path={APP_ROUTE} element={<RequireAuth><AppPage /></RequireAuth>} />
+            <Route path={APP_ROUTE} element={<RequireAuth><AppPage /></RequireAuth>}>
+              <Route index element={<DashboardPage />} />
+              <Route path="search" element={<SearchPage />} />
+              <Route path="browse" element={<BrowsePage />} />
+              <Route path="viz" element={<VisualizationPage />} />
+              <Route path="collections" element={<CollectionsPage />} />
+            </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

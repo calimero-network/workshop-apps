@@ -1,12 +1,18 @@
-//! Events emitted by the item-registry service. Borrowed `&'a str` fields keep
+//! Events emitted by the vector-store service. Borrowed `&'a str` fields keep
 //! emission allocation-free (the SDK serialises them before the borrow ends).
 
 #[calimero_sdk::app::event]
 pub enum Event<'a> {
-    /// A new item was added to the registry.
-    ItemAdded { id: &'a str, owner: &'a str },
-    /// An item's value was updated.
-    ItemUpdated { id: &'a str },
-    /// An item was deleted by its owner.
-    ItemDeleted { id: &'a str },
+    /// A new knowledge entry was added to the store.
+    EntryAdded { id: &'a str, author: &'a str },
+    /// An entry was removed from the store.
+    EntryRemoved { id: &'a str },
+    /// An entry's tags were updated.
+    EntryTagsUpdated { id: &'a str },
+    /// A named collection was created.
+    CollectionCreated { id: &'a str, name: &'a str },
+    /// A named collection was deleted.
+    CollectionDeleted { id: &'a str },
+    /// A similarity search was performed (emitted by mutate wrapper if needed).
+    SearchPerformed { result_count: u32 },
 }

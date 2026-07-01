@@ -7,8 +7,13 @@ import { THEME } from './config';
 import { bootstrapSsoAndInvitation } from './auth/ssoBootstrap';
 import { applyTheme, getStoredTheme } from './theme';
 
-// Apply the saved light/dark theme before first paint (avoids a flash).
-applyTheme(getStoredTheme());
+// Apply theme before first paint. Default to dark for data-dense-dark style
+// when the user has no stored preference (avoids a flash).
+{
+  const stored = (() => { try { return localStorage.getItem('app:theme'); } catch { return null; } })();
+  const initTheme = (stored === 'dark' || (!stored && THEME.style === 'data-dense-dark')) ? 'dark' : 'light';
+  applyTheme(initTheme as Parameters<typeof applyTheme>[0]);
+}
 
 // Desktop auth-skip + web invitation capture. MUST run before React mounts so
 // MeroProvider reads an already-authenticated desktop session on first render
