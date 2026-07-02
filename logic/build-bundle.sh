@@ -187,7 +187,7 @@ else
     if [[ -n "$DEV_KEY_RAW" ]]; then
       if [[ "${DEV_KEY_RAW#\{}" != "$DEV_KEY_RAW" ]]; then
         # Inline key JSON — materialize to a temp file.
-        DEV_KEY_PATH="$(mktemp -t studio-dev-key).json"
+        DEV_KEY_PATH="$(mktemp -t studio-dev-key.XXXXXX).json"
         printf '%s' "$DEV_KEY_RAW" > "$DEV_KEY_PATH"
       elif [[ -f "$DEV_KEY_RAW" ]]; then
         DEV_KEY_PATH="$DEV_KEY_RAW"
