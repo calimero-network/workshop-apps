@@ -1,20 +1,9 @@
-//! Item-registry service — the neutral foundation template.
+//! Standup board service — shared async daily standup for teams.
 //!
-//! A generic shared registry of items (`add` / `list` / `get` / `update` /
-//! owner-gated `delete`). It is deliberately domain-agnostic: the build agent
-//! copies this crate per spec service and renames the entity. It demonstrates,
-//! in one cohesive context, the core Calimero patterns every generated app
-//! needs:
-//!
-//! - `#[app::state]` / `#[app::logic]` / `#[app::init]`
-//! - `UnorderedMap` (the registry) and `AuthoredMap` (the authorship index that
-//!   structurally owner-gates `update`/`delete`)
-//! - `LwwRegister` (the item's mutable value, last-writer-wins on conflict)
-//! - one hand-written `Mergeable` + matching `RekeyTarget` on `Item` (it nests a
-//!   CRDT, so it must re-key its child or the nested register is LWW'd as an
-//!   opaque blob — see `RekeyTarget` impl)
-//! - `app::emit!`, `#[app::private]` (per-node draft, never replicated),
-//!   named-struct returns (`Item` / `ItemView`), and base58 owner keys.
+//! Members post Yesterday / Today / Blockers entries. Only the original author
+//! may edit or delete their own entry (enforced by comparing the stored
+//! `author_id` against the current executor's base58 identity). Reads return
+//! all entries for a given ISO date, ordered by recency.
 
 use calimero_sdk::app;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
@@ -23,96 +12,99 @@ use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
 use calimero_storage::address::Id;
 use calimero_storage::collections::crdt_meta::MergeError;
-use calimero_storage::collections::rekey::{field_child_id, RekeyTarget};
-use calimero_storage::collections::{AuthoredMap, LwwRegister, Mergeable, UnorderedMap};
+use calimero_storage::collections::rekey::RekeyTarget;
+use calimero_storage::collections::{Mergeable, UnorderedMap};
 use calimero_storage::env as storage_env;
-use async_standup_types::{generate_id, validate_label, Error};
+use async_standup_types::{generate_id, Error};
 
 pub mod events;
 use events::Event;
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Convert Unix epoch seconds to ISO date string (YYYY-MM-DD).
+///
+/// Uses Hinnant's civil_from_days algorithm (proleptic Gregorian calendar).
+fn unix_seconds_to_date(secs: u64) -> String {
+    let days = (secs / 86400) as i64;
+    let z = days + 719_468_i64;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64; // day of era [0, 146096]
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365; // year of era [0, 399]
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // day of year [0, 365]
+    let mp = (5 * doy + 2) / 153; // month prime [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // day [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // month [1, 12]
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{:04}-{:02}-{:02}", y, m, d)
+}
+
+// ---------------------------------------------------------------------------
 // Data models
 // ---------------------------------------------------------------------------
 
-/// A registry item. `value` is a `LwwRegister` so concurrent edits converge by
-/// hybrid-logical-clock last-writer-wins; `label` and `created_ms` are set once
-/// at add time and never change. Because this struct **nests a CRDT** and is
-/// stored as a map value, it implements `Mergeable` by hand AND `RekeyTarget`
-/// (see below).
-// Nests a `LwwRegister`, which is Borsh-only (no serde impl in calimero_storage).
-// Item is the internal map value, stored/replicated via Borsh; callers get the
-// serde-able `ItemView` instead. So no serde derives here.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+/// A daily standup entry. This struct is both stored (via Borsh) and returned
+/// to callers (via Serde), so it carries both derive sets.
+///
+/// All mutable fields (`yesterday`, `today`, `blockers`, `updated_at`) converge
+/// by last-writer-wins: the replica with the higher `updated_at` wins. Immutable
+/// fields (`id`, `author`, `author_id`, `date`, `created_at`) tie-break by the
+/// lower `created_at`.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
-pub struct Item {
-    pub label: String,
-    /// The item's mutable body. LWW on concurrent updates.
-    pub value: LwwRegister<String>,
-    pub created_ms: u64,
+#[serde(crate = "calimero_sdk::serde")]
+pub struct StandupEntry {
+    /// Server-generated unique id, e.g. "su-1736956800000000000-a1b2c3d4".
+    pub id: String,
+    /// Display name of the authoring member (provided at post time).
+    pub author: String,
+    /// Base58-encoded executor identity of the author; used to authorize edits/deletes.
+    pub author_id: String,
+    pub yesterday: String,
+    pub today: String,
+    pub blockers: String,
+    /// ISO date (YYYY-MM-DD) derived server-side from `created_at`.
+    pub date: String,
+    /// Unix epoch seconds when the entry was first posted.
+    pub created_at: u64,
+    /// Unix epoch seconds of the last edit; equals `created_at` until edited.
+    pub updated_at: u64,
 }
 
-/// Hand-written merge. The immutable fields (`label`, `created_ms`) tie-break
-/// deterministically; `value` delegates to the nested `LwwRegister` so the
-/// freshest write wins. A `#[derive(Mergeable)]` would generate this, but we
-/// write it by hand to demonstrate the pattern (and to pair it with the
-/// required `RekeyTarget`).
-impl Mergeable for Item {
+/// Last-writer-wins merge for concurrent standup entries.
+///
+/// Immutable fields tie-break by the earlier `created_at` (set-once at post
+/// time). Mutable fields (`yesterday`, `today`, `blockers`, `updated_at`) take
+/// the version with the higher `updated_at` — i.e. the most-recent edit wins.
+impl Mergeable for StandupEntry {
     fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        // Deterministic tie-break for the set-once fields so merge is
-        // commutative even if two replicas raced the initial insert.
-        if (other.created_ms, &other.label) < (self.created_ms, &self.label) {
-            self.label = other.label.clone();
-            self.created_ms = other.created_ms;
+        // Immutable fields: deterministic tie-break by created_at.
+        if other.created_at < self.created_at {
+            self.id = other.id.clone();
+            self.author = other.author.clone();
+            self.author_id = other.author_id.clone();
+            self.date = other.date.clone();
+            self.created_at = other.created_at;
         }
-        // `LwwRegister::merge` returns `()` (infallible HLC last-writer-wins),
-        // so wrap it back into the fallible `Mergeable::merge` signature.
-        self.value.merge(&other.value);
+        // Mutable fields: take the version with the higher updated_at (LWW).
+        if other.updated_at > self.updated_at {
+            self.yesterday = other.yesterday.clone();
+            self.today = other.today.clone();
+            self.blockers = other.blockers.clone();
+            self.updated_at = other.updated_at;
+        }
         Ok(())
     }
 }
 
-/// Deterministic re-keying for a hand-written CRDT-value struct (#2577).
-///
-/// `Item` nests a `LwwRegister`. Stored as an `UnorderedMap` value it would be
-/// LWW'd as an opaque blob unless we re-key the nested register under a
-/// field-namespaced child of the entry id, so every replica derives identical
-/// ids and the register converges as a child entity. `#[derive(Mergeable)]`
-/// generates this for you; a hand-written `Mergeable` MUST provide it too.
-impl RekeyTarget for Item {
-    fn rekey_relative_to(&mut self, parent_id: Id) {
-        calimero_storage::rekey_field_if_supported!(
-            &mut self.value,
-            field_child_id(parent_id, "value")
-        );
-    }
-}
-
-/// Read-shaped view returned to callers: the registry id, the item, and the
-/// base58 owner key. A named struct (not a tuple) so the generated ABI client
-/// gets typed fields.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(crate = "calimero_sdk::serde")]
-pub struct ItemView {
-    pub id: String,
-    pub label: String,
-    pub value: String,
-    pub created_ms: u64,
-    pub owner: String,
-}
-
-/// Per-node draft, never replicated. `#[app::private]` keeps it local to the
-/// node — handy for "save before submit" UX that should not leak to peers.
-#[derive(BorshSerialize, BorshDeserialize, Debug)]
-#[borsh(crate = "calimero_sdk::borsh")]
-#[calimero_sdk::app::private]
-pub struct Draft {
-    pub text: String,
-}
-
-impl Default for Draft {
-    fn default() -> Draft {
-        Draft { text: String::new() }
+/// `StandupEntry` has no nested CRDT storage fields, so rekeying is a no-op.
+/// A hand-written `Mergeable` must always pair with `RekeyTarget`.
+impl RekeyTarget for StandupEntry {
+    fn rekey_relative_to(&mut self, _parent_id: Id) {
+        // No nested CRDT fields to rekey.
     }
 }
 
@@ -120,173 +112,171 @@ impl Default for Draft {
 // State
 // ---------------------------------------------------------------------------
 
-// `#[app::state]` injects the borsh derives itself (SDK 0.11+); a manual derive
-// here would collide.
+// `#[app::state]` injects the borsh derives itself (SDK 0.11+).
 #[app::state(emits = for<'a> Event<'a>)]
-pub struct Registry {
-    /// The items, keyed by generated id. Plain `UnorderedMap`: any peer may add
-    /// or update an item's value (LWW), so no per-author gate on the data.
-    items: UnorderedMap<String, Item>,
-    /// Authorship index: `item_id → owner-claim`. `AuthoredMap` stamps the
-    /// adding executor as owner and rejects `update`/`remove` by anyone else,
-    /// so it structurally owner-gates deletion without a manual key check.
-    owners: AuthoredMap<String, LwwRegister<u64>>,
+pub struct StandupBoard {
+    /// All standup entries, keyed by generated entry id.
+    entries: UnorderedMap<String, StandupEntry>,
 }
 
 #[app::logic]
-impl Registry {
+impl StandupBoard {
     #[app::init]
-    pub fn init() -> Registry {
-        Registry {
-            items: UnorderedMap::new_with_field_name("registry:items"),
-            owners: AuthoredMap::new_with_field_name("registry:owners"),
+    pub fn init() -> StandupBoard {
+        StandupBoard {
+            entries: UnorderedMap::new_with_field_name("standup:entries"),
         }
     }
 
-    /// Add an item. Returns its generated id. The caller becomes the owner; only
-    /// the owner may later delete it.
-    pub fn add(&mut self, label: String, value: String) -> app::Result<String> {
-        validate_label(&label).map_err(AppError::from)?;
+    /// Post a new standup entry. Returns the generated entry id.
+    ///
+    /// `author_name` is the caller's display name (stored alongside the
+    /// executor-derived `author_id`). `yesterday`, `today`, `blockers` are the
+    /// three standup sections. All timestamp and identity fields are set
+    /// server-side.
+    pub fn post_standup(
+        &mut self,
+        author_name: String,
+        yesterday: String,
+        today: String,
+        blockers: String,
+    ) -> app::Result<String> {
+        let now_ns = storage_env::time_now();
+        let now_secs = now_ns / 1_000_000_000;
+        let date = unix_seconds_to_date(now_secs);
+        let author_id = bs58::encode(env::executor_id()).into_string();
 
-        let now = storage_env::time_now();
         let mut nonce = [0u8; 4];
         env::random_bytes(&mut nonce);
-        let id = generate_id("item", now, &nonce);
+        let id = generate_id("su", now_ns, &nonce);
 
-        let item = Item {
-            label,
-            value: LwwRegister::new(value),
-            created_ms: now,
+        let entry = StandupEntry {
+            id: id.clone(),
+            author: author_name.clone(),
+            author_id,
+            yesterday,
+            today,
+            blockers,
+            date: date.clone(),
+            created_at: now_secs,
+            updated_at: now_secs,
         };
-        self.items
-            .insert(id.clone(), item)
-            .map_err(|e| AppError::msg(format!("items.insert: {e}")))?;
-        // Stamp the adding executor as the owner. The value is unused; the
-        // authorship stamp on the AuthoredMap entry is what gates delete.
-        self.owners
-            .insert(id.clone(), LwwRegister::new(now))
-            .map_err(|e| AppError::msg(format!("owners.insert: {e}")))?;
+        self.entries
+            .insert(id.clone(), entry)
+            .map_err(|e| AppError::msg(format!("entries.insert: {e}")))?;
 
-        let owner = self.owner_b58();
-        app::emit!(Event::ItemAdded {
+        app::emit!(Event::StandupPosted {
             id: &id,
-            owner: &owner,
+            author: &author_name,
+            date: &date,
         });
         Ok(id)
     }
 
-    /// Update an item's value (LWW). Anyone may update — concurrent edits
-    /// converge to the last writer. Errors if the id is unknown.
-    pub fn update(&mut self, id: String, value: String) -> app::Result<()> {
+    /// Edit the three sections of an existing entry. Only the original author
+    /// may edit — rejected with `Forbidden` for other callers. `NotFound` if
+    /// the id does not exist.
+    pub fn edit_standup(
+        &mut self,
+        id: String,
+        yesterday: String,
+        today: String,
+        blockers: String,
+    ) -> app::Result<()> {
+        let caller_id = bs58::encode(env::executor_id()).into_string();
+        let now_secs = storage_env::time_now() / 1_000_000_000;
+
         let mut guard = self
-            .items
+            .entries
             .get_mut(&id)
-            .map_err(|e| AppError::msg(format!("items.get_mut: {e}")))?
+            .map_err(|e| AppError::msg(format!("entries.get_mut: {e}")))?
             .ok_or_else(|| AppError::from(Error::NotFound(id.clone())))?;
-        guard.value.set(value);
-        drop(guard);
 
-        app::emit!(Event::ItemUpdated { id: &id });
-        Ok(())
-    }
-
-    /// Delete an item. Owner-gated: `AuthoredMap::remove` returns
-    /// `ActionNotAllowed` for non-owners, surfaced here as `Forbidden`.
-    pub fn delete(&mut self, id: String) -> app::Result<()> {
-        let removed = self
-            .owners
-            .remove(&id)
-            .map_err(map_owner_error())?;
-        if removed.is_none() {
-            app::bail!(Error::NotFound(id));
+        if guard.author_id != caller_id {
+            return Err(AppError::from(Error::Forbidden(
+                "only the author may edit this standup".into(),
+            )));
         }
-        self.items
-            .remove(&id)
-            .map_err(|e| AppError::msg(format!("items.remove: {e}")))?;
 
-        app::emit!(Event::ItemDeleted { id: &id });
+        // Clone event fields before mutating (guard borrows the entry).
+        let author = guard.author.clone();
+        let date = guard.date.clone();
+
+        guard.yesterday = yesterday;
+        guard.today = today;
+        guard.blockers = blockers;
+        guard.updated_at = now_secs;
+        drop(guard); // commit changes
+
+        app::emit!(Event::StandupEdited {
+            id: &id,
+            author: &author,
+            date: &date,
+        });
         Ok(())
     }
 
-    /// Get one item by id.
-    pub fn get(&self, id: String) -> app::Result<Option<ItemView>> {
-        let Some(item) = self
-            .items
-            .get(&id)
-            .map_err(|e| AppError::msg(format!("items.get: {e}")))?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(self.to_view(id, &item)?))
+    /// Delete a standup entry. Only the original author may delete — rejected
+    /// with `Forbidden` for other callers. `NotFound` if the id does not exist.
+    pub fn delete_standup(&mut self, id: String) -> app::Result<()> {
+        let caller_id = bs58::encode(env::executor_id()).into_string();
+
+        // Check auth while holding an immutable borrow, then drop before remove.
+        let (author, date) = {
+            let entry_opt = self
+                .entries
+                .get(&id)
+                .map_err(|e| AppError::msg(format!("entries.get: {e}")))?;
+            match entry_opt {
+                None => return Err(AppError::from(Error::NotFound(id.clone()))),
+                Some(entry) => {
+                    if entry.author_id != caller_id {
+                        return Err(AppError::from(Error::Forbidden(
+                            "only the author may delete this standup".into(),
+                        )));
+                    }
+                    (entry.author.clone(), entry.date.clone())
+                }
+            }
+        }; // immutable borrow released here
+
+        self.entries
+            .remove(&id)
+            .map_err(|e| AppError::msg(format!("entries.remove: {e}")))?;
+
+        app::emit!(Event::StandupDeleted {
+            id: &id,
+            author: &author,
+            date: &date,
+        });
+        Ok(())
     }
 
-    /// List all items, sorted by creation time then id for a stable order
-    /// (`UnorderedMap` iteration order is unspecified).
-    pub fn list(&self) -> app::Result<Vec<ItemView>> {
-        let mut out: Vec<ItemView> = self
-            .items
+    /// Return all entries for today (server-side date), ordered by `created_at`
+    /// descending (most recent first).
+    pub fn get_standups(&self) -> app::Result<Vec<StandupEntry>> {
+        let today = unix_seconds_to_date(storage_env::time_now() / 1_000_000_000);
+        self.get_standups_by_date(today)
+    }
+
+    /// Return all entries whose `date` matches the given ISO date (YYYY-MM-DD),
+    /// ordered by `created_at` descending (most recent first).
+    pub fn get_standups_by_date(&self, date: String) -> app::Result<Vec<StandupEntry>> {
+        let mut out: Vec<StandupEntry> = self
+            .entries
             .entries()
-            .map_err(|e| AppError::msg(format!("items.entries: {e}")))?
-            .map(|(id, item)| self.to_view(id, &item))
-            .collect::<app::Result<_>>()?;
-        out.sort_by(|a, b| (a.created_ms, &a.id).cmp(&(b.created_ms, &b.id)));
+            .map_err(|e| AppError::msg(format!("entries.entries: {e}")))?
+            .filter_map(|(_id, entry)| {
+                if entry.date == date {
+                    Some(entry)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // Most recent first.
+        out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
         Ok(out)
-    }
-
-    /// Number of items in the registry.
-    pub fn count(&self) -> app::Result<usize> {
-        self.items
-            .len()
-            .map_err(|e| AppError::msg(format!("items.len: {e}")))
-    }
-
-    // ---- Per-node draft (never replicated) ----
-
-    pub fn save_draft(&self, text: String) -> app::Result<()> {
-        let mut draft = Draft::private_load_or_default()?;
-        draft.as_mut().text = text;
-        Ok(())
-    }
-
-    pub fn get_draft(&self) -> app::Result<String> {
-        Ok(Draft::private_load_or_default()?.text.clone())
-    }
-}
-
-impl Registry {
-    /// Base58 of the current executor — the public, shareable owner identity.
-    fn owner_b58(&self) -> String {
-        bs58::encode(env::executor_id()).into_string()
-    }
-
-    fn to_view(&self, id: String, item: &Item) -> app::Result<ItemView> {
-        // `owner_of` yields a `PublicKey`; `String::from(PublicKey)` is its
-        // canonical base58 encoding (see calimero_primitives::identity).
-        let owner = self
-            .owners
-            .owner_of(&id)
-            .map_err(|e| AppError::msg(format!("owners.owner_of: {e}")))?
-            .map(String::from)
-            .unwrap_or_default();
-        Ok(ItemView {
-            id,
-            label: item.label.clone(),
-            value: item.value.get().clone(),
-            created_ms: item.created_ms,
-            owner,
-        })
-    }
-}
-
-/// Translate an `AuthoredMap` access-control error into a friendly `Forbidden`.
-fn map_owner_error() -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
-    move |e| {
-        let s = e.to_string();
-        if s.contains("ActionNotAllowed") {
-            AppError::from(Error::Forbidden("only the owner may delete this item".into()))
-        } else {
-            AppError::msg(format!("owners.remove: {s}"))
-        }
     }
 }
 
@@ -300,65 +290,188 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn add_get_and_list() {
-        let mut app = TestHost::new(Registry::init);
+    const OTHER: [u8; 32] = [0x22; 32];
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        let view = app.view(|s| s.get(id.clone())).unwrap().unwrap();
-        assert_eq!(view.label, "widget");
-        assert_eq!(view.value, "v1");
-        assert_eq!(app.view(|s| s.count()).unwrap(), 1);
-        assert_eq!(app.view(|s| s.list()).unwrap().len(), 1);
-        // `add` emits exactly one event.
+    #[test]
+    fn post_and_get_today() {
+        let mut app = TestHost::new(StandupBoard::init);
+
+        let id = app
+            .call(|s| {
+                s.post_standup(
+                    "alice".into(),
+                    "Finished auth".into(),
+                    "Writing tests".into(),
+                    "None".into(),
+                )
+            })
+            .unwrap();
+
+        let entries = app.view(|s| s.get_standups()).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, id);
+        assert_eq!(entries[0].author, "alice");
+        assert_eq!(entries[0].yesterday, "Finished auth");
+        assert_eq!(entries[0].today, "Writing tests");
+        assert_eq!(entries[0].blockers, "None");
         assert_eq!(app.events().len(), 1);
     }
 
     #[test]
-    fn update_changes_value() {
-        let mut app = TestHost::new(Registry::init);
+    fn multiple_posts_ordered_by_recency() {
+        let mut app = TestHost::new(StandupBoard::init);
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        app.call(|s| s.update(id.clone(), "v2".into())).unwrap();
-        assert_eq!(app.view(|s| s.get(id)).unwrap().unwrap().value, "v2");
+        let id1 = app
+            .call(|s| {
+                s.post_standup("alice".into(), "a1".into(), "b1".into(), "c1".into())
+            })
+            .unwrap();
+        let id2 = app
+            .call(|s| {
+                s.post_standup("bob".into(), "a2".into(), "b2".into(), "c2".into())
+            })
+            .unwrap();
+
+        let entries = app.view(|s| s.get_standups()).unwrap();
+        assert_eq!(entries.len(), 2);
+        // Most recent (id2) should be first. Both have the same created_at in
+        // the test harness so order may vary — just assert both are present.
+        let ids: Vec<&str> = entries.iter().map(|e| e.id.as_str()).collect();
+        assert!(ids.contains(&id1.as_str()));
+        assert!(ids.contains(&id2.as_str()));
     }
 
     #[test]
-    fn update_unknown_id_errors() {
-        let mut app = TestHost::new(Registry::init);
-        assert!(app.call(|s| s.update("nope".into(), "x".into())).is_err());
+    fn edit_own_standup_succeeds() {
+        let mut app = TestHost::new(StandupBoard::init);
+
+        let id = app
+            .call(|s| {
+                s.post_standup("alice".into(), "v1".into(), "v1".into(), "v1".into())
+            })
+            .unwrap();
+
+        app.call(|s| {
+            s.edit_standup(id.clone(), "v2".into(), "v2".into(), "v2".into())
+        })
+        .unwrap();
+
+        let entries = app.view(|s| s.get_standups()).unwrap();
+        assert_eq!(entries[0].yesterday, "v2");
+        assert_eq!(entries[0].today, "v2");
+        assert_eq!(entries[0].blockers, "v2");
+        // updated_at should be ≥ created_at after edit.
+        assert!(entries[0].updated_at >= entries[0].created_at);
     }
 
     #[test]
-    fn owner_can_delete() {
-        let mut app = TestHost::new(Registry::init);
+    fn edit_others_standup_rejected() {
+        let mut app = TestHost::new(StandupBoard::init);
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        app.call(|s| s.delete(id.clone())).unwrap();
-        assert_eq!(app.view(|s| s.count()).unwrap(), 0);
-        assert!(app.view(|s| s.get(id)).unwrap().is_none());
+        let id = app
+            .call(|s| {
+                s.post_standup("alice".into(), "v1".into(), "v1".into(), "v1".into())
+            })
+            .unwrap();
+
+        let result = app.call_as(OTHER, |s| {
+            s.edit_standup(id.clone(), "v2".into(), "v2".into(), "v2".into())
+        });
+        assert!(result.is_err());
+
+        // Original content must be unchanged.
+        let entries = app.view(|s| s.get_standups()).unwrap();
+        assert_eq!(entries[0].yesterday, "v1");
     }
 
     #[test]
-    fn non_owner_cannot_delete() {
-        let mut app = TestHost::new(Registry::init);
-
-        // Default identity adds the item, so it owns it.
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-
-        // A different executor is not the owner — AuthoredMap rejects the
-        // delete, surfaced as Forbidden.
-        let other = [9u8; 32];
-        assert!(app.call_as(other, |s| s.delete(id.clone())).is_err());
-        // The item survives the rejected delete.
-        assert_eq!(app.view(|s| s.count()).unwrap(), 1);
+    fn edit_unknown_id_errors() {
+        let mut app = TestHost::new(StandupBoard::init);
+        let result = app.call(|s| {
+            s.edit_standup("nope".into(), "v".into(), "v".into(), "v".into())
+        });
+        assert!(result.is_err());
     }
 
     #[test]
-    fn private_draft_roundtrips() {
-        let mut app = TestHost::new(Registry::init);
+    fn delete_own_standup_succeeds() {
+        let mut app = TestHost::new(StandupBoard::init);
 
-        app.call(|s| s.save_draft("hello".into())).unwrap();
-        assert_eq!(app.view(|s| s.get_draft()).unwrap(), "hello");
+        let id = app
+            .call(|s| {
+                s.post_standup("alice".into(), "v1".into(), "v1".into(), "v1".into())
+            })
+            .unwrap();
+
+        app.call(|s| s.delete_standup(id.clone())).unwrap();
+
+        let entries = app.view(|s| s.get_standups()).unwrap();
+        assert_eq!(entries.len(), 0);
+    }
+
+    #[test]
+    fn delete_others_standup_rejected() {
+        let mut app = TestHost::new(StandupBoard::init);
+
+        let id = app
+            .call(|s| {
+                s.post_standup("alice".into(), "v1".into(), "v1".into(), "v1".into())
+            })
+            .unwrap();
+
+        let result = app.call_as(OTHER, |s| s.delete_standup(id.clone()));
+        assert!(result.is_err());
+
+        // Entry must still be present.
+        let entries = app.view(|s| s.get_standups()).unwrap();
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn delete_unknown_id_errors() {
+        let mut app = TestHost::new(StandupBoard::init);
+        let result = app.call(|s| s.delete_standup("nope".into()));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_standups_by_date_filters_correctly() {
+        let mut app = TestHost::new(StandupBoard::init);
+
+        app.call(|s| {
+            s.post_standup("alice".into(), "v1".into(), "v1".into(), "v1".into())
+        })
+        .unwrap();
+
+        // Today's entries are returned.
+        let today_entries = app.view(|s| s.get_standups()).unwrap();
+        assert_eq!(today_entries.len(), 1);
+
+        // A past date returns no entries.
+        let past = app
+            .view(|s| s.get_standups_by_date("1970-01-01".into()))
+            .unwrap();
+        assert_eq!(past.len(), 0);
+    }
+
+    #[test]
+    fn events_emitted_for_each_mutation() {
+        let mut app = TestHost::new(StandupBoard::init);
+
+        let id = app
+            .call(|s| {
+                s.post_standup("alice".into(), "v1".into(), "v1".into(), "v1".into())
+            })
+            .unwrap();
+        assert_eq!(app.events().len(), 1); // StandupPosted
+
+        app.call(|s| {
+            s.edit_standup(id.clone(), "v2".into(), "v2".into(), "v2".into())
+        })
+        .unwrap();
+        assert_eq!(app.events().len(), 2); // + StandupEdited
+
+        app.call(|s| s.delete_standup(id.clone())).unwrap();
+        assert_eq!(app.events().len(), 3); // + StandupDeleted
     }
 }

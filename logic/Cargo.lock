@@ -9,6 +9,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76a2e8124351fda1ef8aaaa3bbd7ebbcb486bbcd4225aca0aa0d84bb2db8fecb"
 
 [[package]]
+name = "async-standup-standup"
+version = "0.1.0"
+dependencies = [
+ "async-standup-types",
+ "bs58 0.4.0",
+ "calimero-sdk",
+ "calimero-storage",
+ "calimero-storage-macros",
+ "calimero-wasm-abi",
+ "serde_json",
+ "serial_test",
+]
+
+[[package]]
+name = "async-standup-types"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "bs58 0.4.0",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "base-x"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -396,30 +420,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
-]
-
-[[package]]
-name = "foundation-service"
-version = "0.1.0"
-dependencies = [
- "bs58 0.4.0",
- "calimero-sdk",
- "calimero-storage",
- "calimero-storage-macros",
- "calimero-wasm-abi",
- "async-standup-types",
- "serde_json",
- "serial_test",
-]
-
-[[package]]
-name = "async-standup-types"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "bs58 0.4.0",
- "serde",
- "thiserror 1.0.69",
 ]
 
 [[package]]
