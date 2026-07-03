@@ -1,0 +1,218 @@
+# Spec smoke test for team-todos.
+#
+# Exercises every spec mutate method (add_task, edit_task, toggle_task,
+# remove_task) end-to-end on two real merod nodes and asserts:
+#   - state replicates via get_tasks on the peer node
+#   - the AuthoredMap owner-gate rejects a non-owner remove_task
+#
+# Pre-flight: `bash logic/build-bundle.sh` must have produced
+# `logic/res/team-todos-1.0.0.mpk` (appName + appVersion from studio.config.json).
+
+name: team-todos spec smoke
+description: Exercise all spec mutate methods and verify CRDT replication + owner-gated remove across two nodes.
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.8
+  base_port: 12428
+  base_rpc_port: 12528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # --- Bootstrap application + namespace ---
+
+  - type: install_application
+    name: Install team-todos bundle on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/team-todos-1.0.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install team-todos bundle on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/team-todos-1.0.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create todo_list context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: todo-list
+    outputs:
+      todo_list_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  # --- Baseline: get_tasks returns empty list ---
+
+  - type: call
+    name: get_tasks baseline on app-node-1 (empty)
+    node: app-node-1
+    context_id: '{{todo_list_ctx}}'
+    method: get_tasks
+    args: {}
+    outputs:
+      initial_tasks: result.output
+
+  - type: json_assert
+    name: Task list is initially empty
+    statements:
+      - 'json_equal({{initial_tasks}}, [])'
+
+  # --- Exercise add_task ---
+
+  - type: call
+    name: Exercise add_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_list_ctx}}'
+    method: add_task
+    args:
+      title: "Write Q3 report"
+    outputs:
+      created_task_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for context sync after add_task
+    context_id: '{{todo_list_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm add_task visible on app-node-2
+    node: app-node-2
+    context_id: '{{todo_list_ctx}}'
+    method: get_tasks
+    args: {}
+    outputs:
+      task_after_add: result.output.0
+
+  - type: json_assert
+    name: add_task produced a visible Task on app-node-2
+    statements:
+      - 'json_subset({{task_after_add}}, {"title": "Write Q3 report", "done": false})'
+
+  # --- Exercise edit_task ---
+
+  - type: call
+    name: Exercise edit_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_list_ctx}}'
+    method: edit_task
+    args:
+      id: '{{created_task_id}}'
+      new_title: "Write and review Q3 report"
+
+  - type: wait_for_sync
+    name: Wait for context sync after edit_task
+    context_id: '{{todo_list_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm edit_task visible on app-node-2
+    node: app-node-2
+    context_id: '{{todo_list_ctx}}'
+    method: get_tasks
+    args: {}
+    outputs:
+      task_after_edit: result.output.0
+
+  - type: json_assert
+    name: edit_task updated the title on app-node-2
+    statements:
+      - 'json_subset({{task_after_edit}}, {"title": "Write and review Q3 report"})'
+
+  # --- Exercise toggle_task ---
+
+  - type: call
+    name: Exercise toggle_task on app-node-1
+    node: app-node-1
+    context_id: '{{todo_list_ctx}}'
+    method: toggle_task
+    args:
+      id: '{{created_task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for context sync after toggle_task
+    context_id: '{{todo_list_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm toggle_task visible on app-node-2
+    node: app-node-2
+    context_id: '{{todo_list_ctx}}'
+    method: get_tasks
+    args: {}
+    outputs:
+      task_after_toggle: result.output.0
+
+  - type: json_assert
+    name: toggle_task marked the task done on app-node-2
+    statements:
+      - 'json_subset({{task_after_toggle}}, {"done": true})'
+
+  # --- Exercise remove_task: owner-gate (non-owner rejected) ---
+
+  - type: call
+    name: Non-owner remove_task from app-node-2 must be rejected
+    node: app-node-2
+    context_id: '{{todo_list_ctx}}'
+    method: remove_task
+    args:
+      id: '{{created_task_id}}'
+    expect_error: true
+
+  # --- Exercise remove_task: owner succeeds ---
+
+  - type: call
+    name: Exercise remove_task (owner) on app-node-1
+    node: app-node-1
+    context_id: '{{todo_list_ctx}}'
+    method: remove_task
+    args:
+      id: '{{created_task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for context sync after remove_task
+    context_id: '{{todo_list_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm remove_task propagated to app-node-2
+    node: app-node-2
+    context_id: '{{todo_list_ctx}}'
+    method: get_tasks
+    args: {}
+    outputs:
+      tasks_after_remove: result.output
+
+  - type: json_assert
+    name: Task list is empty after owner remove on app-node-2
+    statements:
+      - 'json_equal({{tasks_after_remove}}, [])'
