@@ -1,0 +1,236 @@
+# Spec-smoke workflow for async-standup.
+#
+# Exercises every mutate method in the standup service end-to-end on real
+# merod nodes: post_standup, edit_standup, add_comment, delete_standup.
+# View methods (get_standups, get_comments, get_standups_by_date) are used
+# to observe the effects of mutates on the second node after sync.
+#
+# Usage (from project root, after a dev bundle has been built):
+#   merobox bootstrap run test/spec-smoke.workflow.yml
+#
+# Pre-flight: `bash logic/build-bundle.sh` must have produced
+# `logic/res/async-standup-1.0.0.mpk` (appName/appVersion from studio.config.json).
+
+name: async-standup spec smoke
+description: Verify the standup service replicates state across nodes and owner-gates mutations.
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.8
+  base_port: 12428
+  base_rpc_port: 12528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # --- Bootstrap application + namespace ---
+
+  - type: install_application
+    name: Install async-standup bundle on node 1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/async-standup-1.0.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install async-standup bundle on node 2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/async-standup-1.0.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on node 1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create standup context on node 1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: standup
+    outputs:
+      standup_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: Node 2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  # --- Deterministic floor: parameterless view returns empty list ---
+
+  - type: call
+    name: get_standups returns empty list on node 1 (initial state)
+    node: app-node-1
+    context_id: '{{standup_ctx}}'
+    method: get_standups
+    args: {}
+    outputs:
+      initial_standups: result.output
+
+  - type: json_assert
+    name: Initial standup list is empty
+    statements:
+      - 'json_equal({{initial_standups}}, [])'
+
+  # --- Exercise post_standup (mutate) ---
+
+  - type: call
+    name: Exercise post_standup on node 1
+    node: app-node-1
+    context_id: '{{standup_ctx}}'
+    method: post_standup
+    args:
+      done_items: "Shipped login flow"
+      blockers: "Waiting on API keys from infra"
+      planned_items: "Start dashboard layout"
+      date: "2025-01-15"
+    outputs:
+      standup_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for standup to sync across nodes after post_standup
+    context_id: '{{standup_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm post_standup visible on node 2 via get_standups
+    node: app-node-2
+    context_id: '{{standup_ctx}}'
+    method: get_standups
+    args: {}
+    outputs:
+      standups_n2_0: result.output.0
+
+  - type: json_assert
+    name: post_standup produced a StandupEntry visible on node 2
+    statements:
+      - 'json_subset({{standups_n2_0}}, {"done_items": "Shipped login flow", "blockers": "Waiting on API keys from infra", "planned_items": "Start dashboard layout", "date": "2025-01-15"})'
+
+  # --- Exercise get_standups_by_date (view with param) ---
+
+  - type: call
+    name: get_standups_by_date filters correctly on node 2
+    node: app-node-2
+    context_id: '{{standup_ctx}}'
+    method: get_standups_by_date
+    args:
+      date: "2025-01-15"
+    outputs:
+      dated_0: result.output.0
+
+  - type: json_assert
+    name: get_standups_by_date returns the posted entry for 2025-01-15
+    statements:
+      - 'json_subset({{dated_0}}, {"date": "2025-01-15", "done_items": "Shipped login flow"})'
+
+  # --- Exercise edit_standup (mutate) ---
+
+  - type: call
+    name: Exercise edit_standup on node 1
+    node: app-node-1
+    context_id: '{{standup_ctx}}'
+    method: edit_standup
+    args:
+      id: '{{standup_id}}'
+      done_items: "Shipped login flow + tests"
+      blockers: "Waiting on API keys from infra"
+      planned_items: "Start dashboard layout"
+
+  - type: wait_for_sync
+    name: Wait for edit to sync across nodes after edit_standup
+    context_id: '{{standup_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm edit_standup change visible on node 2
+    node: app-node-2
+    context_id: '{{standup_ctx}}'
+    method: get_standups
+    args: {}
+    outputs:
+      edited_0: result.output.0
+
+  - type: json_assert
+    name: edit_standup updated the done_items field on node 2
+    statements:
+      - 'json_subset({{edited_0}}, {"done_items": "Shipped login flow + tests"})'
+
+  # --- Exercise add_comment (mutate) ---
+
+  - type: call
+    name: Exercise add_comment on node 2
+    node: app-node-2
+    context_id: '{{standup_ctx}}'
+    method: add_comment
+    args:
+      standup_id: '{{standup_id}}'
+      body: "I can help with the API keys — ping me"
+    outputs:
+      comment_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for comment to sync across nodes after add_comment
+    context_id: '{{standup_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm add_comment visible on node 1 via get_comments
+    node: app-node-1
+    context_id: '{{standup_ctx}}'
+    method: get_comments
+    args:
+      standup_id: '{{standup_id}}'
+    outputs:
+      comment_0: result.output.0
+
+  - type: json_assert
+    name: add_comment produced a Comment visible on node 1
+    statements:
+      - 'json_subset({{comment_0}}, {"body": "I can help with the API keys — ping me"})'
+
+  # --- Exercise delete_standup (mutate) — owner only ---
+
+  - type: call
+    name: Exercise delete_standup on node 1 (owner)
+    node: app-node-1
+    context_id: '{{standup_ctx}}'
+    method: delete_standup
+    args:
+      id: '{{standup_id}}'
+
+  - type: wait_for_sync
+    name: Wait for delete to sync across nodes after delete_standup
+    context_id: '{{standup_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm standup is gone from node 2 after delete
+    node: app-node-2
+    context_id: '{{standup_ctx}}'
+    method: get_standups
+    args: {}
+    outputs:
+      after_delete: result.output
+
+  - type: json_assert
+    name: delete_standup removed the entry — list is empty on node 2
+    statements:
+      - 'json_equal({{after_delete}}, [])'
