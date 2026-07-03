@@ -186,12 +186,16 @@ impl TodoList {
 }
 
 /// Map an `AuthoredMap` access-control error to a domain `Forbidden`.
+///
+/// The storage layer surfaces owner-gate violations as "Action not allowed"
+/// (with spaces). We match on that substring to produce a friendly `Forbidden`
+/// error; everything else is a genuine storage error and is left as-is.
 fn map_authored_error(
     action: &'static str,
 ) -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
     move |e| {
         let s = e.to_string();
-        if s.contains("ActionNotAllowed") {
+        if s.contains("Action not allowed") || s.contains("not entry owner") {
             AppError::from(Error::Forbidden(format!(
                 "can only {action} your own tasks"
             )))

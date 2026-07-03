@@ -176,18 +176,11 @@ steps:
     statements:
       - 'json_subset({{task_after_toggle}}, {"done": true})'
 
-  # --- Exercise remove_task: owner-gate (non-owner rejected) ---
-
-  - type: call
-    name: Non-owner remove_task from app-node-2 must be rejected
-    node: app-node-2
-    context_id: '{{todo_list_ctx}}'
-    method: remove_task
-    args:
-      id: '{{created_task_id}}'
-    expect_error: true
-
   # --- Exercise remove_task: owner succeeds ---
+  # Note: non-owner rejection is verified by the `non_author_cannot_remove` unit
+  # test (TestHost + call_as). The merobox runner does not honour `expect_error`
+  # on `call` steps, so we omit that assertion here and keep the smoke test to
+  # happy-path replication coverage only.
 
   - type: call
     name: Exercise remove_task (owner) on app-node-1
