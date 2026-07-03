@@ -1,0 +1,22 @@
+{
+  "appName": "async-standup",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.async-standup",
+  "metadata": {
+    "name": "async-standup",
+    "description": "A shared async standup board where team members post daily updates, flag blockers, and comment on each other's progress — no meeting required",
+    "author": "Calimero",
+    "route": "/async-standup"
+  },
+  "theme": {
+    "primaryColor": "#1E40AF",
+    "accentColor": "#F59E0B",
+    "style": "calm-focus"
+  },
+  "services": [
+    {
+      "name": "standup",
+      "crate": "async-standup-standup"
+    }
+  ]
+}
