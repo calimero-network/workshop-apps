@@ -40,18 +40,19 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: "\u{1F4CB}", title: "No more sync meetings", body: "Post your standup any time — done, blockers, and plan — and the whole team sees it within seconds. Drop the daily call." },
+  { icon: "\u{1F6A7}", title: "Blockers front and centre", body: "Blocked items are visually highlighted on the dashboard so team leads can spot them at a glance and jump in with help." },
+  { icon: "\u{1F512}", title: "Private & decentralised", body: "Standup data lives on your own Calimero node. No company server, no SaaS subscription — your team’s history is yours to keep." },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ["What is a standup board?", "A shared board where each team member posts a short daily update — what they finished, what’s blocking them, and what they plan to do next. The dashboard shows everyone’s latest entry so the team stays in sync without a meeting."],
+  ["How do blockers get surfaced?", "Any standup with text in the Blockers field is visually highlighted on the dashboard. Teammates can comment directly on that standup to offer help — no separate thread required."],
+  ["What is a node?", "A node (merod) is the runtime that stores your standup data and runs the app logic. You host it yourself — locally or on your own server — so your team’s updates stay private and under your control."],
+  ["Where does the standup data live?", "On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your standups is held on a third-party server."],
+  ["Can I look back at past standups?", "Yes. The History tab lets you browse all standups by date, grouped by author, so you can review what the team accomplished over any period — great for retros and reporting."],
+  ["How do teammates join?", "Connect your node, then share an invitation link. Anyone you invite joins the context and starts seeing standups live — no accounts, no sign-up forms."],
+  ["Do I need crypto or a wallet?", "No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the team you invite."],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -100,40 +101,48 @@ function R({
 }
 
 const STEPS = [
-  { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: "01", t: "Connect your node", d: "Point the app at the Calimero node you control. Your standup history and keys stay on your machine." },
+  { k: "02", t: "Create a workspace", d: "Create or join a shared standup board. State is CRDT data that merges across all team members automatically." },
+  { k: "03", t: "Invite your team", d: "Share a link. Teammates join instantly and see everyone's live standups — no accounts required." },
+  { k: "04", t: "Stay in sync", d: "Post daily updates, flag blockers, and comment on teammates' plans. No meeting needed — ever." },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: standup cards appear and sync across peers ──── */
+type StandupItem = {
+  id: number;
+  who: string;
+  done: string;
+  blockers?: string;
+  planned: string;
+  isMe?: boolean;
+};
+const STANDUP_SCRIPT: StandupItem[] = [
+  { id: 1, who: "alice", done: "Shipped auth flow + tests", planned: "Start dashboard layout" },
+  { id: 2, who: "bob", done: "Fixed API timeout bug", blockers: "Waiting on staging keys", planned: "Write integration tests" },
+  { id: 3, who: "you", done: "Reviewed 3 PRs, updated docs", planned: "Pair with alice on dashboard", isMe: true },
 ];
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [shown, setShown] = useState<StandupItem[]>([]);
   const [pulse, setPulse] = useState(false);
+  const [activePeer, setActivePeer] = useState<string | null>(null);
 
   useEffect(() => {
     const timers: number[] = [];
     const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
     const run = () => {
       setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
+      STANDUP_SCRIPT.forEach((it, i) => {
+        at(600 + i * 1800, () => {
           setShown((p) => [...p, it]);
+          setActivePeer(it.who);
           setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
+          at(600 + i * 1800 + 500, () => { setPulse(false); setActivePeer(null); });
         });
       });
     };
     run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
+    const loop = window.setInterval(run, STANDUP_SCRIPT.length * 1800 + 2400);
     return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
   }, []);
 
@@ -144,17 +153,25 @@ function LivePreview() {
         <s style={{ background: '#ffbd2e' }} />
         <s style={{ background: C.green }} />
         <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · your node</span>
-        <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
+        <em className={pulse ? "on" : ""}>● {pulse ? "syncing" : "live"}</em>
       </div>
       <div className="body">
         <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
+          <i className={activePeer === "alice" ? "active" : ""}>A</i>
+          <i className={activePeer === "bob" ? "active" : ""}>B</i>
+          <b>+ you</b>
         </div>
         <div className="stream">
           {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+            <div key={it.id} className={`card ${it.isMe ? "me" : ""} ${it.blockers ? "blocked" : ""}`}>
+              <div className="card-header">
+                <span className="av">{it.isMe ? "·" : it.who[0].toUpperCase()}</span>
+                <span className="who">{it.isMe ? "you" : it.who}</span>
+                {it.blockers && <span className="blocker-badge">{"⚠"} blocked</span>}
+              </div>
+              <div className="card-row"><span className="lbl">{"✅"}</span><span>{it.done}</span></div>
+              {it.blockers && <div className="card-row blocker-row"><span className="lbl">{"\u{1F6A7}"}</span><span>{it.blockers}</span></div>}
+              <div className="card-row"><span className="lbl">{"\u{1F4CB}"}</span><span>{it.planned}</span></div>
             </div>
           ))}
         </div>
@@ -293,8 +310,8 @@ export default function LandingPage() {
       {/* ── final CTA ──────────────────────────────────────────── */}
       <CtaBand>
         <R v="zoom">
-          <h2>Connect your node to get started.</h2>
-          <p>It takes seconds — your data never leaves your control.</p>
+          <h2>Drop the daily meeting. Post a standup.</h2>
+          <p>Connect your node in seconds — your team's updates stay private and in sync.</p>
           <div className="btn"><ConnectButton /></div>
         </R>
       </CtaBand>
@@ -304,7 +321,7 @@ export default function LandingPage() {
         <div className="top">
           <div className="brand">
             <span className="wm"><span className="mk"><CalimeroLogo size={20} color={C.green} /></span> {APP_DISPLAY_NAME}</span>
-            <p>Private. Real-time. Yours.</p>
+            <p>Async standups. No meetings. Private by design.</p>
           </div>
           <div className="cols">
             <div>
@@ -340,8 +357,8 @@ export default function LandingPage() {
 const float = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(14px,-18px) scale(1.05);}`;
 const drift = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-22px,14px) scale(1.07);}`;
 const travel = keyframes`0%{left:0;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{left:100%;opacity:0;}`;
-const rowIn = keyframes`from{opacity:0;transform:translateY(8px) scale(0.97);}to{opacity:1;transform:none;}`;
-const rowInMe = keyframes`from{opacity:0;transform:translateY(8px) translateX(8px) scale(0.97);}to{opacity:1;transform:none;}`;
+const rowIn = keyframes`from{opacity:0;transform:translateY(10px) scale(0.97);}to{opacity:1;transform:none;}`;
+const cardGlow = keyframes`0%,100%{box-shadow:0 0 0 0 rgba(164,255,17,0);}50%{box-shadow:0 0 0 3px rgba(164,255,17,0.25);}`;
 
 /* ════════════════════════ layout ════════════════════════ */
 const Root = styled.div`
@@ -531,24 +548,63 @@ const Preview = styled.div`
     }
     em.on { color: ${C.green}; }
   }
-  .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
-  .peers { display: flex; align-items: center; gap: 0; }
+  .body { padding: 14px; min-height: 260px; display: flex; flex-direction: column; gap: 10px; }
+  .peers {
+    display: flex; align-items: center; gap: 0; margin-bottom: 2px;
+  }
   .peers i {
     width: 22px; height: 22px; border-radius: 50%;
     display: grid; place-items: center;
-    font-size: 10px; font-weight: 700; color: ${C.ink};
+    font-size: 10px; font-weight: 700; font-style: normal; color: ${C.ink};
     background: linear-gradient(135deg, ${C.green}, #cde88a);
     border: 1.5px solid ${C.ink};
     margin-left: -6px;
+    transition: transform 0.2s, box-shadow 0.2s;
   }
+  .peers i.active { transform: scale(1.18); box-shadow: 0 0 0 3px rgba(164,255,17,0.4); z-index: 1; }
   .peers i:first-child { margin-left: 0; }
   .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
-  .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+  .stream { display: flex; flex-direction: column; gap: 8px; }
+
+  /* standup cards in the preview */
+  .card {
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    background: rgba(255,255,255,0.06);
+    padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 5px;
+    animation: ${rowIn} 0.38s cubic-bezier(0.22,1,0.36,1) both, ${cardGlow} 0.6s ease-out both;
+    @media (prefers-reduced-motion: reduce) { animation: none; }
+  }
+  .card.me {
+    border-color: rgba(164,255,17,0.3);
+    background: rgba(164,255,17,0.08);
+  }
+  .card.blocked {
+    border-color: rgba(245,158,11,0.4);
+    background: rgba(245,158,11,0.07);
+  }
+  .card-header {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 3px;
+  }
+  .av {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: ${C.ink2}; color: ${C.green};
+    font-size: 9px; font-weight: 700; display: grid; place-items: center;
+    flex-shrink: 0;
+  }
+  .who { font-size: 11px; font-weight: 700; color: ${C.green}; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+  .blocker-badge {
+    margin-left: auto; font-size: 9.5px; font-weight: 700;
+    color: #fbbf24; background: rgba(245,158,11,0.18);
+    padding: 1px 6px; border-radius: 999px;
+  }
+  .card-row {
+    display: flex; align-items: flex-start; gap: 5px;
+    font-size: 11.5px; color: #dfe7db; line-height: 1.45;
+  }
+  .card-row .lbl { flex-shrink: 0; font-size: 11px; }
+  .card-row.blocker-row { color: #fbbf24; }
 `;
 
 /* sections */
