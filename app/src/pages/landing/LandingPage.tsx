@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '✅', title: 'Shared task list, no servers', body: 'Everyone on your team sees the same list in real time — no backend, no central database, just peer-to-peer CRDT sync.' },
+  { icon: '🔒', title: 'Authored ownership', body: 'Each task remembers who created it. Only the author can edit, complete, or remove their tasks — enforced on-chain by the Calimero runtime.' },
+  { icon: '⚡', title: 'Live updates in seconds', body: 'Add a task, toggle it done, delete it — every teammate sees the change within seconds, no refresh needed.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['What is a node?', 'A node (merod) is the runtime that stores your todo list and runs the app logic. You run your own — locally or on your infrastructure — so your data never leaves your control.'],
+  ['Where does my task list live?', 'On your own node, as CRDT collections that merge conflict-free across all teammates. There is no central database — your tasks are not held on any third-party server.'],
+  ['How do teammates join?', 'Connect your node, open the app, and share an invitation link. Anyone you invite joins your shared todo list instantly and sees the same live tasks — no accounts, no sign-up.'],
+  ['Can anyone edit my tasks?', 'No. Tasks are authored — the Calimero runtime enforces that only the creator of a task can edit, complete, or delete it. Other teammates can see your tasks but not change them.'],
+  ['What happens if I go offline?', 'Your node keeps your data. When you come back online, the CRDT sync engine reconciles any changes your teammates made while you were away — no conflicts, no data loss.'],
+  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet, no gas — just your node and the teammates you invite.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -101,41 +101,70 @@ function R({
 
 const STEPS = [
   { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '02', t: 'Create the list', d: 'Bootstrap a shared workspace in one click — a CRDT-backed todo list that lives on your node.' },
+  { k: '03', t: 'Invite teammates', d: 'Share a link. Anyone you invite joins instantly and sees the same live task list — no accounts.' },
+  { k: '04', t: 'Work together', d: 'Add tasks, tick them done, and remove clutter. Every change syncs to teammates in seconds.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: teammates add + complete tasks, loops ───────────── */
+type TodoItem = { id: number; author: string; title: string; done: boolean; me?: boolean };
+
+// Script: sequence of state snapshots the animation steps through.
+// Each step describes who triggered the action and what the list looks like after.
+type Step =
+  | { kind: 'add'; actor: string; task: TodoItem; pulse: true }
+  | { kind: 'done'; actor: string; taskId: number; pulse: true };
+
+const INITIAL_TASKS: TodoItem[] = [];
+const ANIM_STEPS: Step[] = [
+  { kind: 'add',  actor: 'A', pulse: true, task: { id: 1, author: 'A', title: 'Write Q3 report',     done: false } },
+  { kind: 'add',  actor: 'M', pulse: true, task: { id: 2, author: 'M', title: 'Review design mockups', done: false } },
+  { kind: 'add',  actor: 'you', pulse: true, task: { id: 3, author: 'you', title: 'Ship the release 🚀', done: false, me: true } },
+  { kind: 'done', actor: 'A', pulse: true, taskId: 1 },
+  { kind: 'done', actor: 'you', pulse: true, taskId: 3 },
 ];
+const STEP_INTERVAL = 1500;
+const LOOP_PAUSE   = 2600;
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
-  const [pulse, setPulse] = useState(false);
+  const [tasks, setTasks]   = useState<TodoItem[]>(INITIAL_TASKS);
+  const [pulse, setPulse]   = useState(false);
+  const [label, setLabel]   = useState<string | null>(null);
 
   useEffect(() => {
     const timers: number[] = [];
-    const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
+    const at = (ms: number, fn: () => void) => { timers.push(window.setTimeout(fn, ms)); };
+
     const run = () => {
-      setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
+      setTasks([]);
+      setPulse(false);
+      setLabel(null);
+
+      ANIM_STEPS.forEach((step, i) => {
+        at(400 + i * STEP_INTERVAL, () => {
           setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
+          if (step.kind === 'add') {
+            setLabel(`${step.actor} added a task`);
+            setTasks((prev) => [...prev, step.task]);
+          } else {
+            setLabel(`${step.actor} marked done`);
+            setTasks((prev) => prev.map((t) => t.id === step.taskId ? { ...t, done: true } : t));
+          }
+          at(400 + i * STEP_INTERVAL + 400, () => {
+            setPulse(false);
+            setLabel(null);
+          });
         });
       });
     };
+
     run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
+    const loop = window.setInterval(run, ANIM_STEPS.length * STEP_INTERVAL + LOOP_PAUSE);
     return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
   }, []);
+
+  const open = tasks.filter((t) => !t.done);
+  const done = tasks.filter((t) => t.done);
 
   return (
     <Preview aria-hidden="true">
@@ -144,20 +173,39 @@ function LivePreview() {
         <s style={{ background: '#ffbd2e' }} />
         <s style={{ background: C.green }} />
         <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · your node</span>
-        <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
+        <em className={pulse ? 'on' : ''}>● {pulse ? (label ?? 'syncing') : 'live'}</em>
       </div>
       <div className="body">
         <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
+          <i>A</i><i>M</i><b>+ you</b>
         </div>
-        <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+        {/* Open section */}
+        <div className="section-label">Open</div>
+        <div className="task-list">
+          {open.length === 0 && <div className="empty-hint">No open tasks yet…</div>}
+          {open.map((t) => (
+            <div key={t.id} className={`task-row${t.me ? ' me' : ''}`}>
+              <span className="circle">○</span>
+              <span className="task-title">{t.title}</span>
+              <span className="av">{t.author === 'you' ? 'Y' : t.author}</span>
             </div>
           ))}
         </div>
+        {/* Done section */}
+        {done.length > 0 && (
+          <>
+            <div className="section-label done-label">Done</div>
+            <div className="task-list">
+              {done.map((t) => (
+                <div key={t.id} className={`task-row done-row${t.me ? ' me' : ''}`}>
+                  <span className="circle done-circle">✓</span>
+                  <span className="task-title done-title">{t.title}</span>
+                  <span className="av">{t.author === 'you' ? 'Y' : t.author}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </Preview>
   );
@@ -222,7 +270,7 @@ export default function LandingPage() {
             </GhostBtn>
           </Cta>
           <TrustRow>
-            <span>Private by design</span><i />
+            <span>Authored ownership</span><i />
             <span>Real-time sync</span><i />
             <span>Peer-to-peer</span>
           </TrustRow>
@@ -236,7 +284,7 @@ export default function LandingPage() {
           <R v="up">
             <Kicker>How it works</Kicker>
             <H2>From your node to a shared app — in four moves</H2>
-            <Sub>No accounts, no servers, no setup friction. Connect a node and you’re collaborating.</Sub>
+            <Sub>No accounts, no servers, no setup friction. Connect a node and you're collaborating.</Sub>
           </R>
           <Pipeline>
             <span className="track" />
@@ -258,7 +306,7 @@ export default function LandingPage() {
       <Section id="features">
         <Inner>
           <R v="up">
-            <Kicker>Why it’s different</Kicker>
+            <Kicker>Why it's different</Kicker>
             <H2>Built on the Calimero network</H2>
           </R>
           <Cards>
@@ -293,8 +341,8 @@ export default function LandingPage() {
       {/* ── final CTA ──────────────────────────────────────────── */}
       <CtaBand>
         <R v="zoom">
-          <h2>Connect your node to get started.</h2>
-          <p>It takes seconds — your data never leaves your control.</p>
+          <h2>Give your team one place for everything.</h2>
+          <p>Connect your node and invite your team — your tasks, your rules, your data.</p>
           <div className="btn"><ConnectButton /></div>
         </R>
       </CtaBand>
@@ -304,7 +352,7 @@ export default function LandingPage() {
         <div className="top">
           <div className="brand">
             <span className="wm"><span className="mk"><CalimeroLogo size={20} color={C.green} /></span> {APP_DISPLAY_NAME}</span>
-            <p>Private. Real-time. Yours.</p>
+            <p>Tasks your team can trust.</p>
           </div>
           <div className="cols">
             <div>
@@ -340,8 +388,7 @@ export default function LandingPage() {
 const float = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(14px,-18px) scale(1.05);}`;
 const drift = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-22px,14px) scale(1.07);}`;
 const travel = keyframes`0%{left:0;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{left:100%;opacity:0;}`;
-const rowIn = keyframes`from{opacity:0;transform:translateY(8px) scale(0.97);}to{opacity:1;transform:none;}`;
-const rowInMe = keyframes`from{opacity:0;transform:translateY(8px) translateX(8px) scale(0.97);}to{opacity:1;transform:none;}`;
+const taskIn = keyframes`from{opacity:0;transform:translateY(6px) scale(0.97);}to{opacity:1;transform:none;}`;
 
 /* ════════════════════════ layout ════════════════════════ */
 const Root = styled.div`
@@ -531,8 +578,8 @@ const Preview = styled.div`
     }
     em.on { color: ${C.green}; }
   }
-  .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
-  .peers { display: flex; align-items: center; gap: 0; }
+  .body { padding: 14px 16px; min-height: 230px; display: flex; flex-direction: column; gap: 10px; }
+  .peers { display: flex; align-items: center; gap: 0; margin-bottom: 2px; }
   .peers i {
     width: 22px; height: 22px; border-radius: 50%;
     display: grid; place-items: center;
@@ -543,12 +590,37 @@ const Preview = styled.div`
   }
   .peers i:first-child { margin-left: 0; }
   .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
-  .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+  .section-label {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: ${C.mutedSoft}; margin-top: 4px;
+  }
+  .done-label { opacity: 0.7; }
+  .task-list { display: flex; flex-direction: column; gap: 5px; }
+  .empty-hint { font-size: 11px; color: ${C.mutedSoft}; padding: 2px 0; }
+  .task-row {
+    display: flex; align-items: center; gap: 7px;
+    padding: 6px 9px; border-radius: 8px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(164,255,17,0.12);
+    animation: ${taskIn} 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .task-row.me { border-color: rgba(164,255,17,0.35); background: rgba(164,255,17,0.07); }
+  .task-row.done-row { opacity: 0.6; }
+  .circle {
+    font-size: 11px; color: ${C.mutedSoft}; flex-shrink: 0;
+    width: 16px; text-align: center;
+  }
+  .done-circle { color: ${C.green}; }
+  .task-title {
+    flex: 1; font-size: 11.5px; color: #dfe7db; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .done-title { text-decoration: line-through; color: ${C.mutedSoft}; }
+  .task-row.me .task-title { color: ${C.green}; font-weight: 500; }
+  .av {
+    width: 16px; height: 16px; border-radius: 50%; background: ${C.ink2};
+    color: ${C.green}; font-size: 8px; font-weight: 700;
+    display: grid; place-items: center; flex-shrink: 0;
+  }
 `;
 
 /* sections */
