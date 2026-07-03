@@ -9,7 +9,7 @@
 #   merobox bootstrap run test/spec-smoke.workflow.yml
 #
 # Pre-flight: `bash logic/build-bundle.sh` must have produced
-# `logic/res/async-standup-1.0.0.mpk` (appName/appVersion from studio.config.json).
+# `logic/res/async-standup-0.1.3.mpk` (appName/version from Cargo.toml).
 
 name: async-standup spec smoke
 description: Verify the standup service replicates state across nodes and owner-gates mutations.
@@ -31,7 +31,7 @@ steps:
     name: Install async-standup bundle on node 1
     node: app-node-1
     dev: true
-    path: ./logic/res/async-standup-1.0.0.mpk
+    path: ./logic/res/async-standup-0.1.3.mpk
     outputs:
       app_id: applicationId
 
@@ -39,7 +39,7 @@ steps:
     name: Install async-standup bundle on node 2
     node: app-node-2
     dev: true
-    path: ./logic/res/async-standup-1.0.0.mpk
+    path: ./logic/res/async-standup-0.1.3.mpk
 
   - type: create_namespace
     name: Create namespace on node 1
