@@ -399,30 +399,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "team-todos-todo-list"
-version = "0.1.0"
-dependencies = [
- "bs58 0.4.0",
- "calimero-sdk",
- "calimero-storage",
- "calimero-storage-macros",
- "calimero-wasm-abi",
- "team-todos-types",
- "serde_json",
- "serial_test",
-]
-
-[[package]]
-name = "team-todos-types"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "bs58 0.4.0",
- "serde",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "futures-core"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1045,6 +1021,30 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "team-todos-todo-list"
+version = "0.1.0"
+dependencies = [
+ "bs58 0.4.0",
+ "calimero-sdk",
+ "calimero-storage",
+ "calimero-storage-macros",
+ "calimero-wasm-abi",
+ "serde_json",
+ "serial_test",
+ "team-todos-types",
+]
+
+[[package]]
+name = "team-todos-types"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "bs58 0.4.0",
+ "serde",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

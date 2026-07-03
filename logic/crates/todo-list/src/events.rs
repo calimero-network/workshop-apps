@@ -1,12 +1,14 @@
-//! Events emitted by the item-registry service. Borrowed `&'a str` fields keep
+//! Events emitted by the todo-list service. Borrowed `&'a str` fields keep
 //! emission allocation-free (the SDK serialises them before the borrow ends).
 
 #[calimero_sdk::app::event]
 pub enum Event<'a> {
-    /// A new item was added to the registry.
-    ItemAdded { id: &'a str, owner: &'a str },
-    /// An item's value was updated.
-    ItemUpdated { id: &'a str },
-    /// An item was deleted by its owner.
-    ItemDeleted { id: &'a str },
+    /// A new task was added to the list.
+    TaskAdded { id: &'a str },
+    /// A task's title was edited by its author.
+    TaskEdited { id: &'a str },
+    /// A task's done/open state was toggled by its author.
+    TaskToggled { id: &'a str },
+    /// A task was removed by its author.
+    TaskRemoved { id: &'a str },
 }

@@ -1,30 +1,22 @@
-//! Item-registry service — the neutral foundation template.
+//! Team todo-list service.
 //!
-//! A generic shared registry of items (`add` / `list` / `get` / `update` /
-//! owner-gated `delete`). It is deliberately domain-agnostic: the build agent
-//! copies this crate per spec service and renames the entity. It demonstrates,
-//! in one cohesive context, the core Calimero patterns every generated app
-//! needs:
+//! A single shared context where teammates add, edit, toggle, and remove tasks.
+//! Tasks are author-owned: only the member who created a task may edit, toggle,
+//! or delete it. `AuthoredMap` enforces this at the storage layer — non-author
+//! mutations are rejected with `ActionNotAllowed`.
 //!
+//! Patterns demonstrated:
 //! - `#[app::state]` / `#[app::logic]` / `#[app::init]`
-//! - `UnorderedMap` (the registry) and `AuthoredMap` (the authorship index that
-//!   structurally owner-gates `update`/`delete`)
-//! - `LwwRegister` (the item's mutable value, last-writer-wins on conflict)
-//! - one hand-written `Mergeable` + matching `RekeyTarget` on `Item` (it nests a
-//!   CRDT, so it must re-key its child or the nested register is LWW'd as an
-//!   opaque blob — see `RekeyTarget` impl)
-//! - `app::emit!`, `#[app::private]` (per-node draft, never replicated),
-//!   named-struct returns (`Item` / `ItemView`), and base58 owner keys.
+//! - `AuthoredMap` for per-author ownership
+//! - `app::emit!`, named-struct returns, base58 executor identity
 
 use calimero_sdk::app;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::env;
 use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
-use calimero_storage::address::Id;
 use calimero_storage::collections::crdt_meta::MergeError;
-use calimero_storage::collections::rekey::{field_child_id, RekeyTarget};
-use calimero_storage::collections::{AuthoredMap, LwwRegister, Mergeable, UnorderedMap};
+use calimero_storage::collections::{AuthoredMap, Mergeable};
 use calimero_storage::env as storage_env;
 use team_todos_types::{generate_id, validate_label, Error};
 
@@ -32,87 +24,49 @@ pub mod events;
 use events::Event;
 
 // ---------------------------------------------------------------------------
-// Data models
+// Data model
 // ---------------------------------------------------------------------------
 
-/// A registry item. `value` is a `LwwRegister` so concurrent edits converge by
-/// hybrid-logical-clock last-writer-wins; `label` and `created_ms` are set once
-/// at add time and never change. Because this struct **nests a CRDT** and is
-/// stored as a map value, it implements `Mergeable` by hand AND `RekeyTarget`
-/// (see below).
-// Nests a `LwwRegister`, which is Borsh-only (no serde impl in calimero_storage).
-// Item is the internal map value, stored/replicated via Borsh; callers get the
-// serde-able `ItemView` instead. So no serde derives here.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-#[borsh(crate = "calimero_sdk::borsh")]
-pub struct Item {
-    pub label: String,
-    /// The item's mutable body. LWW on concurrent updates.
-    pub value: LwwRegister<String>,
-    pub created_ms: u64,
-}
-
-/// Hand-written merge. The immutable fields (`label`, `created_ms`) tie-break
-/// deterministically; `value` delegates to the nested `LwwRegister` so the
-/// freshest write wins. A `#[derive(Mergeable)]` would generate this, but we
-/// write it by hand to demonstrate the pattern (and to pair it with the
-/// required `RekeyTarget`).
-impl Mergeable for Item {
-    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        // Deterministic tie-break for the set-once fields so merge is
-        // commutative even if two replicas raced the initial insert.
-        if (other.created_ms, &other.label) < (self.created_ms, &self.label) {
-            self.label = other.label.clone();
-            self.created_ms = other.created_ms;
-        }
-        // `LwwRegister::merge` returns `()` (infallible HLC last-writer-wins),
-        // so wrap it back into the fallible `Mergeable::merge` signature.
-        self.value.merge(&other.value);
-        Ok(())
-    }
-}
-
-/// Deterministic re-keying for a hand-written CRDT-value struct (#2577).
+/// A todo task.
 ///
-/// `Item` nests a `LwwRegister`. Stored as an `UnorderedMap` value it would be
-/// LWW'd as an opaque blob unless we re-key the nested register under a
-/// field-namespaced child of the entry id, so every replica derives identical
-/// ids and the register converges as a child entity. `#[derive(Mergeable)]`
-/// generates this for you; a hand-written `Mergeable` MUST provide it too.
-impl RekeyTarget for Item {
-    fn rekey_relative_to(&mut self, parent_id: Id) {
-        calimero_storage::rekey_field_if_supported!(
-            &mut self.value,
-            field_child_id(parent_id, "value")
-        );
-    }
-}
-
-/// Read-shaped view returned to callers: the registry id, the item, and the
-/// base58 owner key. A named struct (not a tuple) so the generated ABI client
-/// gets typed fields.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(crate = "calimero_sdk::serde")]
-pub struct ItemView {
-    pub id: String,
-    pub label: String,
-    pub value: String,
-    pub created_ms: u64,
-    pub owner: String,
-}
-
-/// Per-node draft, never replicated. `#[app::private]` keeps it local to the
-/// node — handy for "save before submit" UX that should not leak to peers.
-#[derive(BorshSerialize, BorshDeserialize, Debug)]
+/// Stored as a value in `AuthoredMap` — only the executor who inserted it may
+/// later update or remove it. All fields are serialisable with both Borsh
+/// (storage/replication) and serde (ABI output to callers).
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
-#[calimero_sdk::app::private]
-pub struct Draft {
-    pub text: String,
+#[serde(crate = "calimero_sdk::serde")]
+pub struct Task {
+    pub id: String,
+    /// Base58-encoded public key of the member who created this task.
+    pub author: String,
+    pub title: String,
+    pub done: bool,
+    /// Creation timestamp (nanoseconds since epoch, from `calimero_storage::env::time_now()`).
+    pub created_at: u64,
+    /// Last-mutation timestamp — used for deterministic last-writer-wins merge.
+    pub updated_at: u64,
 }
 
-impl Default for Draft {
-    fn default() -> Draft {
-        Draft { text: String::new() }
+/// `AuthoredMap` requires its value type to implement `Mergeable` even when only
+/// one author ever writes the entry. Since tasks are author-gated, concurrent
+/// edits from different authors cannot happen in practice; we still need a
+/// deterministic merge for replication. Strategy: last `updated_at` wins for
+/// mutable fields; immutable fields use a deterministic tie-break.
+impl Mergeable for Task {
+    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
+        // Mutable fields: take the replica with the most recent mutation.
+        if other.updated_at > self.updated_at {
+            self.title = other.title.clone();
+            self.done = other.done;
+            self.updated_at = other.updated_at;
+        }
+        // Set-once fields: deterministic tie-break so merge is commutative.
+        if (other.created_at, &other.author) < (self.created_at, &self.author) {
+            self.created_at = other.created_at;
+            self.author = other.author.clone();
+            self.id = other.id.clone();
+        }
+        Ok(())
     }
 }
 
@@ -120,172 +74,129 @@ impl Default for Draft {
 // State
 // ---------------------------------------------------------------------------
 
-// `#[app::state]` injects the borsh derives itself (SDK 0.11+); a manual derive
-// here would collide.
+// `#[app::state]` injects the Borsh derives itself (SDK 0.11+).
 #[app::state(emits = for<'a> Event<'a>)]
-pub struct Registry {
-    /// The items, keyed by generated id. Plain `UnorderedMap`: any peer may add
-    /// or update an item's value (LWW), so no per-author gate on the data.
-    items: UnorderedMap<String, Item>,
-    /// Authorship index: `item_id → owner-claim`. `AuthoredMap` stamps the
-    /// adding executor as owner and rejects `update`/`remove` by anyone else,
-    /// so it structurally owner-gates deletion without a manual key check.
-    owners: AuthoredMap<String, LwwRegister<u64>>,
+pub struct TodoList {
+    /// All tasks keyed by generated id. `AuthoredMap` ensures that `update` and
+    /// `remove` are only accepted from the executor who called `insert`.
+    tasks: AuthoredMap<String, Task>,
 }
 
 #[app::logic]
-impl Registry {
+impl TodoList {
     #[app::init]
-    pub fn init() -> Registry {
-        Registry {
-            items: UnorderedMap::new_with_field_name("registry:items"),
-            owners: AuthoredMap::new_with_field_name("registry:owners"),
+    pub fn init() -> TodoList {
+        TodoList {
+            tasks: AuthoredMap::new_with_field_name("todo:tasks"),
         }
     }
 
-    /// Add an item. Returns its generated id. The caller becomes the owner; only
-    /// the owner may later delete it.
-    pub fn add(&mut self, label: String, value: String) -> app::Result<String> {
-        validate_label(&label).map_err(AppError::from)?;
+    /// Add a new task. Returns its generated id.
+    /// The caller becomes the author and is the only one who may later
+    /// edit, toggle, or remove it.
+    pub fn add_task(&mut self, title: String) -> app::Result<String> {
+        validate_label(&title).map_err(AppError::from)?;
 
         let now = storage_env::time_now();
         let mut nonce = [0u8; 4];
         env::random_bytes(&mut nonce);
-        let id = generate_id("item", now, &nonce);
+        let id = generate_id("task", now, &nonce);
+        let author = bs58::encode(env::executor_id()).into_string();
 
-        let item = Item {
-            label,
-            value: LwwRegister::new(value),
-            created_ms: now,
+        let task = Task {
+            id: id.clone(),
+            author,
+            title,
+            done: false,
+            created_at: now,
+            updated_at: now,
         };
-        self.items
-            .insert(id.clone(), item)
-            .map_err(|e| AppError::msg(format!("items.insert: {e}")))?;
-        // Stamp the adding executor as the owner. The value is unused; the
-        // authorship stamp on the AuthoredMap entry is what gates delete.
-        self.owners
-            .insert(id.clone(), LwwRegister::new(now))
-            .map_err(|e| AppError::msg(format!("owners.insert: {e}")))?;
+        self.tasks
+            .insert(id.clone(), task)
+            .map_err(|e| AppError::msg(format!("tasks.insert: {e}")))?;
 
-        let owner = self.owner_b58();
-        app::emit!(Event::ItemAdded {
-            id: &id,
-            owner: &owner,
-        });
+        app::emit!(Event::TaskAdded { id: &id });
         Ok(id)
     }
 
-    /// Update an item's value (LWW). Anyone may update — concurrent edits
-    /// converge to the last writer. Errors if the id is unknown.
-    pub fn update(&mut self, id: String, value: String) -> app::Result<()> {
-        let mut guard = self
-            .items
-            .get_mut(&id)
-            .map_err(|e| AppError::msg(format!("items.get_mut: {e}")))?
-            .ok_or_else(|| AppError::from(Error::NotFound(id.clone())))?;
-        guard.value.set(value);
-        drop(guard);
+    /// Edit the title of a task. Author-gated: only the task creator may call this.
+    pub fn edit_task(&mut self, id: String, new_title: String) -> app::Result<()> {
+        validate_label(&new_title).map_err(AppError::from)?;
 
-        app::emit!(Event::ItemUpdated { id: &id });
+        let current = self
+            .tasks
+            .get(&id)
+            .map_err(|e| AppError::msg(format!("tasks.get: {e}")))?
+            .ok_or_else(|| AppError::from(Error::NotFound(id.clone())))?;
+
+        let updated = Task { title: new_title, updated_at: storage_env::time_now(), ..current };
+
+        self.tasks
+            .update(&id, updated)
+            .map_err(map_authored_error("edit"))?;
+
+        app::emit!(Event::TaskEdited { id: &id });
         Ok(())
     }
 
-    /// Delete an item. Owner-gated: `AuthoredMap::remove` returns
-    /// `ActionNotAllowed` for non-owners, surfaced here as `Forbidden`.
-    pub fn delete(&mut self, id: String) -> app::Result<()> {
+    /// Toggle the done/open state of a task. Author-gated.
+    pub fn toggle_task(&mut self, id: String) -> app::Result<()> {
+        let current = self
+            .tasks
+            .get(&id)
+            .map_err(|e| AppError::msg(format!("tasks.get: {e}")))?
+            .ok_or_else(|| AppError::from(Error::NotFound(id.clone())))?;
+
+        let updated = Task { done: !current.done, updated_at: storage_env::time_now(), ..current };
+
+        self.tasks
+            .update(&id, updated)
+            .map_err(map_authored_error("toggle"))?;
+
+        app::emit!(Event::TaskToggled { id: &id });
+        Ok(())
+    }
+
+    /// Remove a task. Author-gated: only the task creator may call this.
+    pub fn remove_task(&mut self, id: String) -> app::Result<()> {
         let removed = self
-            .owners
+            .tasks
             .remove(&id)
-            .map_err(map_owner_error())?;
+            .map_err(map_authored_error("delete"))?;
+
         if removed.is_none() {
             app::bail!(Error::NotFound(id));
         }
-        self.items
-            .remove(&id)
-            .map_err(|e| AppError::msg(format!("items.remove: {e}")))?;
 
-        app::emit!(Event::ItemDeleted { id: &id });
+        app::emit!(Event::TaskRemoved { id: &id });
         Ok(())
     }
 
-    /// Get one item by id.
-    pub fn get(&self, id: String) -> app::Result<Option<ItemView>> {
-        let Some(item) = self
-            .items
-            .get(&id)
-            .map_err(|e| AppError::msg(format!("items.get: {e}")))?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(self.to_view(id, &item)?))
-    }
-
-    /// List all items, sorted by creation time then id for a stable order
-    /// (`UnorderedMap` iteration order is unspecified).
-    pub fn list(&self) -> app::Result<Vec<ItemView>> {
-        let mut out: Vec<ItemView> = self
-            .items
+    /// List all tasks, sorted by creation time (oldest first).
+    pub fn get_tasks(&self) -> app::Result<Vec<Task>> {
+        let mut tasks: Vec<Task> = self
+            .tasks
             .entries()
-            .map_err(|e| AppError::msg(format!("items.entries: {e}")))?
-            .map(|(id, item)| self.to_view(id, &item))
-            .collect::<app::Result<_>>()?;
-        out.sort_by(|a, b| (a.created_ms, &a.id).cmp(&(b.created_ms, &b.id)));
-        Ok(out)
-    }
-
-    /// Number of items in the registry.
-    pub fn count(&self) -> app::Result<usize> {
-        self.items
-            .len()
-            .map_err(|e| AppError::msg(format!("items.len: {e}")))
-    }
-
-    // ---- Per-node draft (never replicated) ----
-
-    pub fn save_draft(&self, text: String) -> app::Result<()> {
-        let mut draft = Draft::private_load_or_default()?;
-        draft.as_mut().text = text;
-        Ok(())
-    }
-
-    pub fn get_draft(&self) -> app::Result<String> {
-        Ok(Draft::private_load_or_default()?.text.clone())
+            .map_err(|e| AppError::msg(format!("tasks.entries: {e}")))?
+            .map(|(_id, task)| task)
+            .collect();
+        tasks.sort_by_key(|t| t.created_at);
+        Ok(tasks)
     }
 }
 
-impl Registry {
-    /// Base58 of the current executor — the public, shareable owner identity.
-    fn owner_b58(&self) -> String {
-        bs58::encode(env::executor_id()).into_string()
-    }
-
-    fn to_view(&self, id: String, item: &Item) -> app::Result<ItemView> {
-        // `owner_of` yields a `PublicKey`; `String::from(PublicKey)` is its
-        // canonical base58 encoding (see calimero_primitives::identity).
-        let owner = self
-            .owners
-            .owner_of(&id)
-            .map_err(|e| AppError::msg(format!("owners.owner_of: {e}")))?
-            .map(String::from)
-            .unwrap_or_default();
-        Ok(ItemView {
-            id,
-            label: item.label.clone(),
-            value: item.value.get().clone(),
-            created_ms: item.created_ms,
-            owner,
-        })
-    }
-}
-
-/// Translate an `AuthoredMap` access-control error into a friendly `Forbidden`.
-fn map_owner_error() -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
+/// Map an `AuthoredMap` access-control error to a domain `Forbidden`.
+fn map_authored_error(
+    action: &'static str,
+) -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
     move |e| {
         let s = e.to_string();
         if s.contains("ActionNotAllowed") {
-            AppError::from(Error::Forbidden("only the owner may delete this item".into()))
+            AppError::from(Error::Forbidden(format!(
+                "can only {action} your own tasks"
+            )))
         } else {
-            AppError::msg(format!("owners.remove: {s}"))
+            AppError::msg(format!("tasks.{action}: {s}"))
         }
     }
 }
@@ -300,65 +211,119 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn add_get_and_list() {
-        let mut app = TestHost::new(Registry::init);
+    /// A distinct executor identity used to verify author-gating.
+    const OTHER: [u8; 32] = [0x99; 32];
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        let view = app.view(|s| s.get(id.clone())).unwrap().unwrap();
-        assert_eq!(view.label, "widget");
-        assert_eq!(view.value, "v1");
-        assert_eq!(app.view(|s| s.count()).unwrap(), 1);
-        assert_eq!(app.view(|s| s.list()).unwrap().len(), 1);
-        // `add` emits exactly one event.
+    #[test]
+    fn add_task_then_get_tasks() {
+        let mut app = TestHost::new(TodoList::init);
+
+        let id = app.call(|s| s.add_task("Write Q3 report".into())).unwrap();
+        let tasks = app.view(|s| s.get_tasks()).unwrap();
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, id);
+        assert_eq!(tasks[0].title, "Write Q3 report");
+        assert!(!tasks[0].done);
+        // add_task emits exactly one event.
         assert_eq!(app.events().len(), 1);
     }
 
     #[test]
-    fn update_changes_value() {
-        let mut app = TestHost::new(Registry::init);
+    fn edit_task_changes_title() {
+        let mut app = TestHost::new(TodoList::init);
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        app.call(|s| s.update(id.clone(), "v2".into())).unwrap();
-        assert_eq!(app.view(|s| s.get(id)).unwrap().unwrap().value, "v2");
+        let id = app.call(|s| s.add_task("Original title".into())).unwrap();
+        app.call(|s| s.edit_task(id.clone(), "Updated title".into())).unwrap();
+
+        let tasks = app.view(|s| s.get_tasks()).unwrap();
+        assert_eq!(tasks[0].title, "Updated title");
     }
 
     #[test]
-    fn update_unknown_id_errors() {
-        let mut app = TestHost::new(Registry::init);
-        assert!(app.call(|s| s.update("nope".into(), "x".into())).is_err());
+    fn toggle_task_flips_done_state() {
+        let mut app = TestHost::new(TodoList::init);
+
+        let id = app.call(|s| s.add_task("A task".into())).unwrap();
+        assert!(!app.view(|s| s.get_tasks()).unwrap()[0].done);
+
+        app.call(|s| s.toggle_task(id.clone())).unwrap();
+        assert!(app.view(|s| s.get_tasks()).unwrap()[0].done);
+
+        // Toggle again — should go back to open.
+        app.call(|s| s.toggle_task(id.clone())).unwrap();
+        assert!(!app.view(|s| s.get_tasks()).unwrap()[0].done);
     }
 
     #[test]
-    fn owner_can_delete() {
-        let mut app = TestHost::new(Registry::init);
+    fn remove_task_deletes_it() {
+        let mut app = TestHost::new(TodoList::init);
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        app.call(|s| s.delete(id.clone())).unwrap();
-        assert_eq!(app.view(|s| s.count()).unwrap(), 0);
-        assert!(app.view(|s| s.get(id)).unwrap().is_none());
+        let id = app.call(|s| s.add_task("To remove".into())).unwrap();
+        app.call(|s| s.remove_task(id)).unwrap();
+
+        assert!(app.view(|s| s.get_tasks()).unwrap().is_empty());
     }
 
     #[test]
-    fn non_owner_cannot_delete() {
-        let mut app = TestHost::new(Registry::init);
-
-        // Default identity adds the item, so it owns it.
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-
-        // A different executor is not the owner — AuthoredMap rejects the
-        // delete, surfaced as Forbidden.
-        let other = [9u8; 32];
-        assert!(app.call_as(other, |s| s.delete(id.clone())).is_err());
-        // The item survives the rejected delete.
-        assert_eq!(app.view(|s| s.count()).unwrap(), 1);
+    fn edit_unknown_task_errors() {
+        let mut app = TestHost::new(TodoList::init);
+        assert!(app.call(|s| s.edit_task("nope".into(), "title".into())).is_err());
     }
 
     #[test]
-    fn private_draft_roundtrips() {
-        let mut app = TestHost::new(Registry::init);
+    fn toggle_unknown_task_errors() {
+        let mut app = TestHost::new(TodoList::init);
+        assert!(app.call(|s| s.toggle_task("nope".into())).is_err());
+    }
 
-        app.call(|s| s.save_draft("hello".into())).unwrap();
-        assert_eq!(app.view(|s| s.get_draft()).unwrap(), "hello");
+    #[test]
+    fn remove_unknown_task_errors() {
+        let mut app = TestHost::new(TodoList::init);
+        assert!(app.call(|s| s.remove_task("nope".into())).is_err());
+    }
+
+    #[test]
+    fn non_author_cannot_edit() {
+        let mut app = TestHost::new(TodoList::init);
+        let id = app.call(|s| s.add_task("My task".into())).unwrap();
+
+        // A different executor must be rejected.
+        assert!(app
+            .call_as(OTHER, |s| s.edit_task(id, "hacked".into()))
+            .is_err());
+    }
+
+    #[test]
+    fn non_author_cannot_toggle() {
+        let mut app = TestHost::new(TodoList::init);
+        let id = app.call(|s| s.add_task("My task".into())).unwrap();
+
+        assert!(app.call_as(OTHER, |s| s.toggle_task(id)).is_err());
+    }
+
+    #[test]
+    fn non_author_cannot_remove() {
+        let mut app = TestHost::new(TodoList::init);
+        let id = app.call(|s| s.add_task("My task".into())).unwrap();
+
+        assert!(app.call_as(OTHER, |s| s.remove_task(id.clone())).is_err());
+        // Task must still exist after the rejected remove.
+        assert_eq!(app.view(|s| s.get_tasks()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn get_tasks_sorts_by_creation_time() {
+        let mut app = TestHost::new(TodoList::init);
+
+        // Two tasks added sequentially; they should be ordered oldest-first.
+        let _id1 = app.call(|s| s.add_task("First".into())).unwrap();
+        let _id2 = app.call(|s| s.add_task("Second".into())).unwrap();
+
+        let tasks = app.view(|s| s.get_tasks()).unwrap();
+        assert_eq!(tasks.len(), 2);
+        assert!(tasks[0].created_at <= tasks[1].created_at);
+        assert_eq!(tasks[0].title, "First");
+        assert_eq!(tasks[1].title, "Second");
     }
 }
