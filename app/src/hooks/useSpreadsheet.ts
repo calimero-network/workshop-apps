@@ -1,53 +1,24 @@
 /**
- * useSpreadsheet — shell data hook for the p2p-sheets spreadsheet app.
+ * useSpreadsheet — live data hook for the p2p-sheets spreadsheet app.
  *
- * Shell pass: all state is local (no client calls). The wire pass will replace
- * the no-op mutations with real P2psheetsClient calls and wire useSubscription
- * for live sync across peers.
+ * Wire pass: replaces the shell stubs with real SpreadsheetClient calls and
+ * wires useSubscription for live CRDT sync across peers.
  *
- * Exports the domain types (Sheet, Cell, Cursor, FunctionDef) used by every
- * component so they import from one place.
+ * Pattern:
+ *  - useMemo creates the typed client when mero + contextId + executorPublicKey resolve.
+ *  - refresh() fetches sheets, cells (per-sheet), cursors, and functions.
+ *  - useSubscription re-fetches on every context sync event (local + remote peers).
+ *  - Every mutation calls the client then refresh() for an optimistic refetch.
  */
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMero, useSubscription } from '@calimero-network/mero-react';
+import { SpreadsheetClient } from '../api/spreadsheet/SpreadsheetClient';
+import type { Sheet, Cell, Cursor, FunctionDef } from '../api/spreadsheet/SpreadsheetClient';
 
-// ── Domain types ────────────────────────────────────────────────────────────
+// Re-export domain types so components import from one place
+export type { Sheet, Cell, Cursor, FunctionDef };
 
-export interface Sheet {
-  id: string;
-  name: string;
-  position: number;
-  created_at: number;
-}
-
-export interface Cell {
-  id: string;
-  sheet_id: string;
-  row: number;
-  col: number;
-  raw_value: string;
-  computed_value: string;
-  updated_at: number;
-}
-
-export interface Cursor {
-  id: string;
-  author: string;
-  sheet_id: string;
-  row: number;
-  col: number;
-  color: string;
-  updated_at: number;
-}
-
-export interface FunctionDef {
-  name: string;
-  syntax: string;
-  description: string;
-  example: string;
-}
-
-// ── Built-in functions (static reference data) ──────────────────────────────
-
+// ── Built-in function reference (static fallback) ────────────────────────────
 export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   {
     name: 'SUM',
@@ -87,7 +58,7 @@ export const BUILTIN_FUNCTIONS: FunctionDef[] = [
   },
 ];
 
-// ── Hook interface ───────────────────────────────────────────────────────────
+// ── Hook interfaces ──────────────────────────────────────────────────────────
 
 export interface UseSpreadsheetArgs {
   contextId: string | null;
@@ -101,8 +72,10 @@ export interface UseSpreadsheetReturn {
   functions: FunctionDef[];
   loading: boolean;
   error: Error | null;
-  /** True when contextId + executorPublicKey are resolved. */
+  /** True when contextId + executorPublicKey are resolved and client is ready. */
   ready: boolean;
+  // Project init (called once by the workspace creator after bootstrap)
+  initProject: (name: string) => Promise<void>;
   // Sheet mutations
   createSheet: (name: string) => Promise<void>;
   renameSheet: (sheetId: string, newName: string) => Promise<void>;
@@ -110,11 +83,11 @@ export interface UseSpreadsheetReturn {
   // Cell mutations
   setCell: (sheetId: string, row: number, col: number, rawValue: string) => Promise<void>;
   clearCell: (sheetId: string, row: number, col: number) => Promise<void>;
-  // Cursor
+  // Cursor (fire-and-forget)
   updateCursor: (sheetId: string, row: number, col: number) => Promise<void>;
   // Export
   exportAll: () => Promise<Sheet[]>;
-  // Function search (local filter on BUILTIN_FUNCTIONS)
+  // Function search (local filter)
   searchFunctions: (prefix: string) => FunctionDef[];
   refresh: () => Promise<void>;
 }
@@ -125,113 +98,148 @@ export function useSpreadsheet({
   contextId,
   executorPublicKey,
 }: UseSpreadsheetArgs): UseSpreadsheetReturn {
+  const { mero } = useMero();
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [cells, setCells] = useState<Cell[]>([]);
-  // cursors: empty in shell pass — populated in wire pass via get_cursors + subscription
-  const [cursors] = useState<Cursor[]>([]);
+  const [cursors, setCursors] = useState<Cursor[]>([]);
+  const [functions, setFunctions] = useState<FunctionDef[]>(BUILTIN_FUNCTIONS);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
 
-  const ready = contextId !== null && executorPublicKey !== null;
+  // Memoized typed client — null until mero + context + identity all resolve.
+  const client = useMemo(
+    () =>
+      mero && contextId && executorPublicKey
+        ? new SpreadsheetClient(mero, contextId, executorPublicKey)
+        : null,
+    [mero, contextId, executorPublicKey],
+  );
 
-  // Auto-create a default sheet once the workspace resolves.
-  // Wire pass: replaced by get_cells / list_sheets calls.
-  useEffect(() => {
-    if (ready && sheets.length === 0) {
-      setSheets([
-        { id: 'sheet-default', name: 'Sheet 1', position: 0, created_at: Date.now() },
+  // ── Refresh: fetch all sheets, their cells, cursors, and functions ────────
+
+  const refresh = useCallback(async () => {
+    if (!client) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [fetchedSheets, fetchedCursors, fetchedFunctions] = await Promise.all([
+        client.listSheets(),
+        client.getCursors(),
+        client.getFunctions(),
       ]);
+
+      // Fetch cells for every sheet in parallel
+      const allCells: Cell[] = [];
+      if (fetchedSheets.length > 0) {
+        const cellArrays = await Promise.all(
+          fetchedSheets.map((sheet) => client.getCells({ sheet_id: sheet.id })),
+        );
+        for (const arr of cellArrays) allCells.push(...arr);
+      }
+
+      setSheets(fetchedSheets.sort((a, b) => a.position - b.position));
+      setCells(allCells);
+      setCursors(fetchedCursors);
+      // Only replace the built-in functions if the backend returned a non-empty list
+      if (fetchedFunctions.length > 0) setFunctions(fetchedFunctions);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
     }
-  }, [ready, sheets.length]);
+  }, [client]);
+
+  // Initial fetch and re-fetch when client changes (new context)
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  // Live updates: re-fetch on any CRDT sync event for this context
+  useSubscription(contextId ? [contextId] : [], () => { void refresh(); });
+
+  // Cursor cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (client) { void client.removeCursor(); }
+    };
+  }, [client]);
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
+
+  const initProject = useCallback(async (name: string) => {
+    if (!client) return;
+    await client.initProject({ name });
+    await refresh();
+  }, [client, refresh]);
 
   const createSheet = useCallback(async (name: string) => {
-    const id = `sheet-${Date.now()}`;
-    setSheets((prev) => [
-      ...prev,
-      { id, name, position: prev.length, created_at: Date.now() },
-    ]);
-  }, []);
+    if (!client) return;
+    await client.createSheet({ name });
+    await refresh();
+  }, [client, refresh]);
 
   const renameSheet = useCallback(async (sheetId: string, newName: string) => {
-    setSheets((prev) =>
-      prev.map((s) => (s.id === sheetId ? { ...s, name: newName } : s)),
-    );
-  }, []);
+    if (!client) return;
+    await client.renameSheet({ sheet_id: sheetId, new_name: newName });
+    await refresh();
+  }, [client, refresh]);
 
   const deleteSheet = useCallback(async (sheetId: string) => {
-    setSheets((prev) => {
-      if (prev.length <= 1) return prev; // cannot delete the last sheet
-      return prev.filter((s) => s.id !== sheetId);
-    });
-    setCells((prev) => prev.filter((c) => c.sheet_id !== sheetId));
-  }, []);
+    if (!client) return;
+    await client.deleteSheet({ sheet_id: sheetId });
+    await refresh();
+  }, [client, refresh]);
 
   const setCell = useCallback(
     async (sheetId: string, row: number, col: number, rawValue: string) => {
-      if (!rawValue.trim()) return;
-      const id = `cell-${sheetId}-${row}-${col}`;
-      setCells((prev) => {
-        const idx = prev.findIndex(
-          (c) => c.sheet_id === sheetId && c.row === row && c.col === col,
-        );
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = {
-            ...next[idx],
-            raw_value: rawValue,
-            computed_value: rawValue,
-            updated_at: Date.now(),
-          };
-          return next;
-        }
-        return [
-          ...prev,
-          {
-            id,
-            sheet_id: sheetId,
-            row,
-            col,
-            raw_value: rawValue,
-            computed_value: rawValue,
-            updated_at: Date.now(),
-          },
-        ];
-      });
+      if (!client) return;
+      if (rawValue.startsWith('=')) {
+        // Store as formula — backend evaluates and returns computed_value
+        await client.setCellFormula({ sheet_id: sheetId, row, col, formula: rawValue });
+      } else {
+        await client.setCell({ sheet_id: sheetId, row, col, raw_value: rawValue });
+      }
+      await refresh();
     },
-    [],
+    [client, refresh],
   );
 
   const clearCell = useCallback(async (sheetId: string, row: number, col: number) => {
-    setCells((prev) =>
-      prev.filter(
-        (c) => !(c.sheet_id === sheetId && c.row === row && c.col === col),
-      ),
-    );
-  }, []);
+    if (!client) return;
+    await client.clearCell({ sheet_id: sheetId, row, col });
+    await refresh();
+  }, [client, refresh]);
 
-  // shell pass: no-op — wire pass calls client.update_cursor
+  // Fire-and-forget cursor broadcast — never block the UI waiting for it
   const updateCursor = useCallback(
-    async (_sheetId: string, _row: number, _col: number) => {},
-    [],
+    async (sheetId: string, row: number, col: number) => {
+      if (!client) return;
+      void client.updateCursor({ sheet_id: sheetId, row, col });
+    },
+    [client],
   );
 
-  const exportAll = useCallback(async () => sheets, [sheets]);
+  const exportAll = useCallback(async (): Promise<Sheet[]> => {
+    if (!client) return sheets;
+    return client.exportAll();
+  }, [client, sheets]);
 
-  const searchFunctions = useCallback((prefix: string): FunctionDef[] => {
-    if (!prefix) return BUILTIN_FUNCTIONS;
-    const upper = prefix.toUpperCase();
-    return BUILTIN_FUNCTIONS.filter((f) => f.name.startsWith(upper));
-  }, []);
-
-  // shell pass: no-op — wire pass fetches from client
-  const refresh = useCallback(async () => {}, []);
+  const searchFunctions = useCallback(
+    (prefix: string): FunctionDef[] => {
+      if (!prefix) return functions;
+      const upper = prefix.toUpperCase();
+      return functions.filter((f) => f.name.startsWith(upper));
+    },
+    [functions],
+  );
 
   return {
     sheets,
     cells,
     cursors,
-    functions: BUILTIN_FUNCTIONS,
-    loading: false,
-    error: null,
-    ready,
+    functions,
+    loading,
+    error,
+    ready: client !== null,
+    initProject,
     createSheet,
     renameSheet,
     deleteSheet,

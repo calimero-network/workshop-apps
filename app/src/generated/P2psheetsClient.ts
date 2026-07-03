@@ -1,19 +1,14 @@
-/** @generated stub from spec — will be replaced by abi-codegen after backend compiles. */
+/** @generated stub — re-exports the real SpreadsheetClient from api/spreadsheet. */
 
-import { MeroJs } from '@calimero-network/mero-react';
-
-
-
-export class P2psheetsClient {
-  private mero: MeroJs;
-  private contextId: string;
-  private executorPublicKey: string;
-
-  constructor(mero: MeroJs, contextId: string, executorPublicKey: string) {
-    this.mero = mero;
-    this.contextId = contextId;
-    this.executorPublicKey = executorPublicKey;
-  }
-
-
-}
+export { SpreadsheetClient as P2psheetsClient } from '../api/spreadsheet/SpreadsheetClient';
+export type {
+  Sheet,
+  Cell,
+  Cursor,
+  FunctionDef,
+  SheetData,
+  CellData,
+  CursorData,
+  Spreadsheet,
+  AbiEvent,
+} from '../api/spreadsheet/SpreadsheetClient';

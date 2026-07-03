@@ -50,6 +50,24 @@ export default function AppPage() {
   // ── Project bootstrap flow ──────────────────────────────────────
   const [projectName, setProjectName] = useState('Untitled Spreadsheet');
 
+  // After bootstrap completes, initProject must be called with the project name.
+  // We store the pending name here; a useEffect fires it once ws.ready transitions
+  // to true (the client is available by then, so ss.initProject works).
+  const [pendingInitName, setPendingInitName] = useState<string | null>(null);
+  const wasReadyRef = useRef(false);
+  const initProjectRef = useRef(ss.initProject);
+  useEffect(() => { initProjectRef.current = ss.initProject; });
+  useEffect(() => {
+    if (ws.ready && !wasReadyRef.current && pendingInitName) {
+      wasReadyRef.current = true;
+      const name = pendingInitName;
+      setPendingInitName(null);
+      void initProjectRef.current(name);
+    } else if (ws.ready) {
+      wasReadyRef.current = true;
+    }
+  }, [ws.ready, pendingInitName]);
+
   // ── Spreadsheet state ───────────────────────────────────────────
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null);
   const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null);
@@ -244,7 +262,10 @@ export default function AppPage() {
             <PrimaryBtn
               data-testid="action-init_project"
               disabled={!projectName.trim()}
-              onClick={() => ws.bootstrap()}
+              onClick={() => {
+                setPendingInitName(projectName.trim());
+                void ws.bootstrap();
+              }}
             >
               Create workspace
             </PrimaryBtn>
