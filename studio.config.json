@@ -1,0 +1,22 @@
+{
+  "appName": "team-todos",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.team-todos",
+  "metadata": {
+    "name": "team-todos",
+    "description": "A shared todo list where teammates add, complete, and manage tasks together in real time",
+    "author": "Calimero",
+    "route": "/team-todos"
+  },
+  "theme": {
+    "primaryColor": "#2563EB",
+    "accentColor": "#10B981",
+    "style": "clean-minimal"
+  },
+  "services": [
+    {
+      "name": "todo-list",
+      "crate": "team-todos-todo-list"
+    }
+  ]
+}
