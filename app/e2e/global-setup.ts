@@ -3,7 +3,7 @@
  * authenticates each, installs the chat bundle on each.
  */
 import { execSync, execFileSync, spawn, ChildProcess } from 'child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, createWriteStream } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, createWriteStream, readdirSync, statSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import nacl from 'tweetnacl';
@@ -36,13 +36,26 @@ function resolveMerodBinary(): string {
 
 // App-agnostic: the .mpk name is derived from studio.config.json so this
 // infra file is identical across the foundation and every generated app.
+// logic/build-bundle.sh auto-bumps the version from the registry, so the
+// config can lag behind the file the build produced — prefer the exact
+// config-derived name, fall back to the newest .mpk in logic/res.
 function resolveMpkPath(): string {
   const cfgPath = path.resolve(__dirname, '..', '..', 'studio.config.json');
   const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'));
-  return path.resolve(
-    __dirname, '..', '..', 'logic', 'res',
-    `${cfg.appName}-${cfg.appVersion}.mpk`,
-  );
+  const resDir = path.resolve(__dirname, '..', '..', 'logic', 'res');
+  const exact = path.resolve(resDir, `${cfg.appName}-${cfg.appVersion}.mpk`);
+  if (existsSync(exact)) return exact;
+  const newest = existsSync(resDir)
+    ? readdirSync(resDir)
+        .filter((f) => f.endsWith('.mpk'))
+        .map((f) => path.resolve(resDir, f))
+        .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0]
+    : undefined;
+  if (newest) {
+    console.log(`[global-setup] ${path.basename(exact)} not found — using newest bundle ${path.basename(newest)}`);
+    return newest;
+  }
+  return exact; // nothing built at all — keep the exact path so the error below names it
 }
 
 const MEROD_BINARY = resolveMerodBinary();

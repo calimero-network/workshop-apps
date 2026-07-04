@@ -140,6 +140,18 @@ jobs:
             echo "no logic/build-bundle.sh — skipping bundle build" | tee -a merobox.log verify-out.txt
           fi
 
+      # The committed smoke workflow pins its install_application `path:`
+      # to the .mpk version known when it was generated; build-bundle.sh can
+      # auto-bump past it. Re-point at the bundle this run actually built.
+      - name: Sync smoke workflow bundle path
+        continue-on-error: true
+        run: |
+          if [ -f test/spec-smoke.workflow.yml ] && ls logic/res/*.mpk >/dev/null 2>&1; then
+            MPK="./$(ls -t logic/res/*.mpk | head -1)"
+            sed -i -E "s|^([[:space:]]*path:[[:space:]]*).*\.mpk[[:space:]]*$|\1$MPK|" test/spec-smoke.workflow.yml
+            echo "smoke workflow bundle path -> $MPK" | tee -a merobox.log verify-out.txt
+          fi
+
       # Schema gate FIRST (the validateMeroboxWorkflows gate): a bad
       # step type / missing field is a pure workflow-file problem.
       - name: merobox validate
