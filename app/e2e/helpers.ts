@@ -51,6 +51,11 @@ export function getNode(index: number): NodeState {
 /**
  * Navigate to the app with auth tokens in the URL hash for a specific node.
  * MeroProvider's parseAuthCallback picks these up automatically.
+ *
+ * On timeout, the error carries the browser's console errors and every
+ * failed/4xx-5xx network call made during the handshake — the redirect is
+ * gated on the app validating the session against the node, so a bare
+ * waitForURL timeout says nothing about WHY (CORS, 401/403, unreachable).
  */
 export async function loginViaHash(page: Page, nodeIndex = 0) {
   const node = getNode(nodeIndex);
@@ -61,8 +66,33 @@ export async function loginViaHash(page: Page, nodeIndex = 0) {
     application_id: node.appId,
   }).toString();
 
-  await page.goto(`/#${hash}`);
-  await page.waitForURL(`**${appRoute()}`, { timeout: 30_000 });
+  const diag: string[] = [];
+  const onConsole = (m: any) => {
+    if (m.type() === 'error') diag.push(`console.error: ${String(m.text()).slice(0, 300)}`);
+  };
+  const onRequestFailed = (r: any) =>
+    diag.push(`request failed: ${r.method()} ${r.url()} — ${r.failure()?.errorText || 'unknown'}`);
+  const onResponse = (r: any) => {
+    if (r.status() >= 400) diag.push(`HTTP ${r.status()}: ${r.request().method()} ${r.url()}`);
+  };
+  page.on('console', onConsole);
+  page.on('requestfailed', onRequestFailed);
+  page.on('response', onResponse);
+  try {
+    await page.goto(`/#${hash}`);
+    await page.waitForURL(`**${appRoute()}`, { timeout: 30_000 });
+  } catch (e) {
+    const tail = diag.slice(-12).join('\n  ');
+    throw new Error(
+      `login handshake never reached ${appRoute()} (node ${node.adminUrl}).\n` +
+      `  ${tail || 'no console/network errors captured during the wait'}\n` +
+      `${(e as Error).message}`,
+    );
+  } finally {
+    page.off('console', onConsole);
+    page.off('requestfailed', onRequestFailed);
+    page.off('response', onResponse);
+  }
 }
 
 /** Clear all mero auth state. */
