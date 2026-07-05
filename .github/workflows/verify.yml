@@ -50,9 +50,12 @@ jobs:
         run: pipx install merobox || pip install --user merobox
 
       # ── ACQUIRE MEROD (native, no Docker) ──────────────────────────
-      # Prebuilt release from calimero-network/core. Pre-launch: track
-      # the LATEST RC (newest prerelease) by default; pin via the
-      # repo/org Actions variable MEROD_VERSION when needed.
+      # Prebuilt release from calimero-network/core. The version is DERIVED
+      # from the app's own SDK tag in logic/Cargo.toml, so the gate always
+      # runs the app on the runtime it was built for — and tracks core
+      # updates automatically when the template's SDK bumps (no hardcoded
+      # version anywhere). Precedence: MEROD_VERSION Actions variable →
+      # Cargo.toml tag → newest core prerelease (last resort).
       - name: Resolve merod version
         id: merodver
         env:
@@ -60,18 +63,21 @@ jobs:
           PINNED: ${{ vars.MEROD_VERSION }}
         run: |
           set -euo pipefail
-          if [ -n "${PINNED:-}" ]; then
-            ver="$PINNED"
-          else
+          ver="${PINNED:-}"
+          if [ -z "$ver" ] && [ -f logic/Cargo.toml ]; then
+            ver="$(sed -nE 's/.*calimero-sdk.*tag *= *"([^"]+)".*/\1/p' logic/Cargo.toml | head -1)"
+            [ -n "$ver" ] && echo "merod version from app SDK tag: $ver"
+          fi
+          if [ -z "$ver" ]; then
             ver="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
               'https://api.github.com/repos/calimero-network/core/releases?per_page=30' \
               | jq -r '[ .[] | select(.prerelease==true)
                           | select(any(.assets[].name; .=="merod_x86_64-unknown-linux-gnu.tar.gz")) ]
                         | .[0].tag_name')"
+            echo "merod version from newest prerelease (no SDK tag found): $ver"
           fi
           test -n "$ver" && test "$ver" != "null"
           echo "version=$ver" >> "$GITHUB_OUTPUT"
-          echo "merod version: $ver"
       - name: Cache merod
         id: merod-cache
         uses: actions/cache@v4
