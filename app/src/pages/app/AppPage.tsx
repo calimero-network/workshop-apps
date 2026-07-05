@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import styled from 'styled-components';
-import { useMero } from '@calimero-network/mero-react';
+import { useMero, useSubscription } from '@calimero-network/mero-react';
 import { C } from '../../theme';
 import { APP_DISPLAY_NAME } from '../../config';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -28,9 +28,10 @@ interface StandupCardProps {
   isOwn: boolean;
   onEdit: (entry: StandupEntry) => void;
   standup: UseStandupReturn;
+  contextId: string | null;
 }
 
-function StandupCard({ entry, isOwn, onEdit, standup }: StandupCardProps) {
+function StandupCard({ entry, isOwn, onEdit, standup, contextId }: StandupCardProps) {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
@@ -51,6 +52,12 @@ function StandupCard({ entry, isOwn, onEdit, standup }: StandupCardProps) {
   useEffect(() => {
     if (commentsOpen) { void loadComments(); }
   }, [commentsOpen, loadComments]);
+
+  // Reload comments on any sync event while the thread is open, so a
+  // teammate's new comment on this standup shows up without re-toggling.
+  useSubscription(contextId ? [contextId] : [], () => {
+    if (commentsOpen) { void loadComments(); }
+  });
 
   const submitComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -173,10 +180,12 @@ function StandupCard({ entry, isOwn, onEdit, standup }: StandupCardProps) {
 function DashboardView({
   standup,
   executorPublicKey,
+  contextId,
   onEdit,
 }: {
   standup: UseStandupReturn;
   executorPublicKey: string | null;
+  contextId: string | null;
   onEdit: (entry: StandupEntry) => void;
 }) {
   // Latest standup per author, sorted by most recent first.
@@ -212,6 +221,7 @@ function DashboardView({
           isOwn={entry.author === executorPublicKey}
           onEdit={onEdit}
           standup={standup}
+          contextId={contextId}
         />
       ))}
     </Content>
@@ -223,10 +233,12 @@ function DashboardView({
 function HistoryView({
   standup,
   executorPublicKey,
+  contextId,
   onEdit,
 }: {
   standup: UseStandupReturn;
   executorPublicKey: string | null;
+  contextId: string | null;
   onEdit: (entry: StandupEntry) => void;
 }) {
   const [date, setDate] = useState(todayISO());
@@ -251,6 +263,17 @@ function HistoryView({
 
   useEffect(() => { void load(date); }, [date, load]);
 
+  // Group standups by author so the day's activity reads per-teammate.
+  const byAuthor = useMemo(() => {
+    const map = new Map<string, StandupEntry[]>();
+    for (const entry of entries) {
+      const list = map.get(entry.author);
+      if (list) list.push(entry);
+      else map.set(entry.author, [entry]);
+    }
+    return Array.from(map.entries());
+  }, [entries]);
+
   return (
     <Content>
       <HistoryBar>
@@ -272,14 +295,23 @@ function HistoryView({
           <p>Try selecting a different date.</p>
         </EmptyState>
       )}
-      {entries.map((entry) => (
-        <StandupCard
-          key={entry.id}
-          entry={entry}
-          isOwn={entry.author === executorPublicKey}
-          onEdit={onEdit}
-          standup={standup}
-        />
+      {byAuthor.map(([author, authorEntries]) => (
+        <AuthorGroup key={author}>
+          <AuthorGroupHeader>
+            <AuthorBadge>{abbrevKey(author)}</AuthorBadge>
+            <span>{authorEntries.length} standup{authorEntries.length === 1 ? '' : 's'}</span>
+          </AuthorGroupHeader>
+          {authorEntries.map((entry) => (
+            <StandupCard
+              key={entry.id}
+              entry={entry}
+              isOwn={entry.author === executorPublicKey}
+              onEdit={onEdit}
+              standup={standup}
+              contextId={contextId}
+            />
+          ))}
+        </AuthorGroup>
       ))}
     </Content>
   );
@@ -497,6 +529,7 @@ export default function AppPage() {
         <DashboardView
           standup={standup}
           executorPublicKey={ws.executorPublicKey}
+          contextId={ws.contextId}
           onEdit={editEntry}
         />
       )}
@@ -504,6 +537,7 @@ export default function AppPage() {
         <HistoryView
           standup={standup}
           executorPublicKey={ws.executorPublicKey}
+          contextId={ws.contextId}
           onEdit={editEntry}
         />
       )}
@@ -805,6 +839,21 @@ const DateInput = styled.input`
   border-radius: 8px;
   outline: none;
   &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px rgba(164,255,17,0.15); }
+`;
+
+const AuthorGroup = styled.div`
+  margin-bottom: 22px;
+`;
+
+const AuthorGroupHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  span {
+    font-size: 12px;
+    color: ${C.muted};
+  }
 `;
 
 /* form */

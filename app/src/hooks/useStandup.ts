@@ -1,17 +1,17 @@
 /**
  * useStandup — CRDT-backed data hook for the async standup board.
  *
- * Wraps AsyncstandupClient and provides live-updating standup entries and
+ * Wraps StandupClient and provides live-updating standup entries and
  * comment helpers. useSubscription re-fetches on any sync event so changes
  * from all peers appear within seconds, no polling required.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMero, useSubscription } from '@calimero-network/mero-react';
 import {
-  AsyncstandupClient,
+  StandupClient,
   StandupEntry,
   Comment,
-} from '../generated/AsyncstandupClient';
+} from '../api/standup/StandupClient';
 
 export type { StandupEntry, Comment };
 
@@ -54,7 +54,7 @@ export function useStandup({ contextId, executorPublicKey }: UseStandupArgs): Us
   const client = useMemo(
     () =>
       mero && contextId && executorPublicKey
-        ? new AsyncstandupClient(mero, contextId, executorPublicKey)
+        ? new StandupClient(mero, contextId, executorPublicKey)
         : null,
     [mero, contextId, executorPublicKey],
   );
