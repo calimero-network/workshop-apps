@@ -11,7 +11,7 @@ importers:
   app:
     dependencies:
       '@calimero-network/mero-icons':
-        specifier: latest
+        specifier: 0.0.6
         version: 0.0.6(react@19.2.5)
       '@calimero-network/mero-js':
         specifier: 7.0.0
