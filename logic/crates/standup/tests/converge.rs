@@ -13,11 +13,12 @@
 //!   1. Seed a standup at **genesis** — the `AuthoredMap` write happens once
 //!      under the single genesis identity, then the state is snapshotted
 //!      byte-identical into all replicas (no concurrent AuthoredMap merge).
-//!   2. In `.ops(...)`, call `edit_standup` — which reads `owner_of` (a
-//!      read-only `AuthoredMap` op, always returns the genesis identity that
-//!      matches every replica's executor) and then writes only to
-//!      `standups` (UnorderedMap). This is the pure `StandupEntry` Mergeable
-//!      convergence case.
+//!   2. In `.ops(...)`, call `edit_standup` — which checks the caller against
+//!      the `author` field already stored on the `StandupEntry` itself (a
+//!      plain `UnorderedMap` read, always the genesis identity that matches
+//!      every replica's executor) and then writes only to `standups`
+//!      (UnorderedMap). This is the pure `StandupEntry` Mergeable convergence
+//!      case; no `AuthoredMap` op is touched by the concurrent ops.
 //!
 //! `#[serial]`: `converge_app` clears/repopulates the process-global merge
 //! registry per run; `#[serial]` avoids contention and matches canonical
@@ -46,9 +47,9 @@ fn standup_edits_converge() {
         s
     })
     .replicas(3)
-    // Each replica concurrently edits the seeded standup. `edit_standup` reads
-    // `standup_authors.owner_of` (read-only) and writes only to `standups`
-    // (UnorderedMap) — the pure StandupEntry Mergeable convergence case.
+    // Each replica concurrently edits the seeded standup. `edit_standup` checks
+    // the caller against `StandupEntry.author` (read-only) and writes only to
+    // `standups` (UnorderedMap) — the pure StandupEntry Mergeable convergence case.
     .ops(|s| {
         if let Some(su) = s.get_standups().ok().and_then(|v| v.into_iter().next()) {
             let _ = s.edit_standup(
