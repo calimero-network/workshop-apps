@@ -60,6 +60,14 @@ test.describe(`anyone on the team: browse standups by date`, () => {
     await page.getByTestId('field-date').fill('2025-01-15');
     await page.getByTestId('action-post_standup').click();
 
+    // Submitting returns to the dashboard. Wait for the standup to actually
+    // commit and render there BEFORE switching to History: HistoryView does a
+    // one-shot fetch on date change (no live subscription), so navigating away
+    // too early races the write and the date query comes back empty.
+    await expect(
+      page.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Reviewed quarterly goals' })
+    ).toBeVisible({ timeout: 10_000 });
+
     // Navigate to the History tab (browse by date)
     await page.getByRole('button', { name: 'History' }).click();
 

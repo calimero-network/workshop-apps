@@ -33,17 +33,39 @@ async function createWorkspace(page: Page) {
 }
 
 async function inviteAndJoin(hostPage: Page, joinerPage: Page) {
+  // Host mints a shareable invite code for its workspace namespace.
   await hostPage.getByRole('button', { name: 'Invite' }).click();
   await hostPage.getByRole('button', { name: 'Generate invite code' }).click();
   const codeBox = hostPage.locator('textarea[readonly]');
   await expect(codeBox).not.toHaveValue('', { timeout: 10_000 });
   const code = await codeBox.inputValue();
-  await hostPage.getByRole('button', { name: 'Close' }).click();
+  await hostPage.getByRole('button', { name: 'Close' }).click().catch(() => {});
 
-  await joinerPage.getByRole('button', { name: 'Join with invitation' }).click();
-  await joinerPage.getByPlaceholder('Paste your invite code…').fill(code);
-  await joinerPage.getByRole('button', { name: 'Join workspace' }).click();
-  await expect(joinerPage.getByRole('button', { name: 'Dashboard' })).toBeVisible({ timeout: 15_000 });
+  // Merod persists joined namespaces across this serial run, so on a later
+  // test the joiner may already have resolved into the shared workspace
+  // (everyone converges on the host's single namespace) and land straight on
+  // the Dashboard — nothing to re-join. Otherwise it sits on the "Welcome"
+  // gate whose "Join with invitation" button mounts/unmounts while namespace/
+  // context discovery settles (the same remount race createWorkspace poll-
+  // clicks around). A single click hits a detached element and times out, so
+  // poll-click across a longer window and bail out as soon as the Dashboard
+  // tab appears.
+  const dashboard = joinerPage.getByRole('button', { name: 'Dashboard' });
+  const codeInput = joinerPage.getByPlaceholder('Paste your invite code…');
+  const welcomeJoin = joinerPage.getByRole('button', { name: 'Join with invitation' });
+  const deadline = Date.now() + 45_000;
+  while (Date.now() < deadline) {
+    if (await dashboard.isVisible().catch(() => false)) return;
+    if (!(await codeInput.isVisible().catch(() => false))) {
+      await welcomeJoin.click({ timeout: 3_000 }).catch(() => { /* mid-remount — retry */ });
+    }
+    if (await codeInput.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await codeInput.fill(code);
+      await joinerPage.getByRole('button', { name: 'Join workspace' }).click().catch(() => {});
+      if (await dashboard.isVisible({ timeout: 20_000 }).catch(() => false)) return;
+    }
+  }
+  await expect(dashboard).toBeVisible({ timeout: 15_000 });
 }
 
 test.describe(`teammate: comment on someone's blocker`, () => {
