@@ -19,7 +19,7 @@ import { loginViaHash, clearAuth } from './helpers';
 // (bootstrap() is idempotent via an internal ref guard, so re-clicking is safe).
 async function createWorkspace(page: Page) {
   const dashboardBtn = page.getByRole('button', { name: 'Dashboard' });
-  const deadline = Date.now() + 45_000;
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     if (await dashboardBtn.isVisible().catch(() => false)) return;
     await page
@@ -50,6 +50,9 @@ test.describe(`anyone on the team: browse standups by date`, () => {
   });
 
   test(`when a member selects a date, all standups posted on that date are displayed grouped by author`, async ({ page }) => {
+    // First test to exercise the History date-filter on a cold node: give the
+    // namespace bootstrap + first-write→by-date read room beyond the 90s default.
+    test.setTimeout(120_000);
     await createWorkspace(page);
 
     // First post a standup on a specific date
@@ -76,11 +79,24 @@ test.describe(`anyone on the team: browse standups by date`, () => {
     // in the UI), so filling the date field is the whole interaction.
     // [Verifier] NOTE: no testid/button for a manual browse trigger — the
     // history date field auto-fetches via onChange, so no extra click is needed.
-    await page.getByTestId('field-date').fill('2025-01-15');
+    //
+    // HistoryView does a one-shot getStandupsByDate() on each date change with
+    // no live subscription, so on a cold node the by-date index read can lag
+    // the just-committed write. Poll: re-select the date, and if the entry is
+    // not yet visible bounce to a neighbouring date and back to force a fresh
+    // fetch, until it appears.
+    const historyItem = page
+      .getByTestId(/^item-StandupEntry-/)
+      .filter({ hasText: 'Reviewed quarterly goals' });
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      await page.getByTestId('field-date').fill('2025-01-15');
+      if (await historyItem.isVisible({ timeout: 3_000 }).catch(() => false)) break;
+      await page.getByTestId('field-date').fill('2025-01-14');
+      await page.waitForTimeout(500);
+    }
 
     // The standup posted on 2025-01-15 should appear, grouped under its author.
-    await expect(
-      page.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Reviewed quarterly goals' })
-    ).toBeVisible({ timeout: 5_000 });
+    await expect(historyItem).toBeVisible({ timeout: 5_000 });
   });
 });

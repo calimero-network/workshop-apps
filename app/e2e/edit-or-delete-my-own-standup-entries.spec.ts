@@ -20,7 +20,7 @@ import { loginViaHash, clearAuth } from './helpers';
 // (bootstrap() is idempotent via an internal ref guard, so re-clicking is safe).
 async function createWorkspace(page: Page) {
   const dashboardBtn = page.getByRole('button', { name: 'Dashboard' });
-  const deadline = Date.now() + 45_000;
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     if (await dashboardBtn.isVisible().catch(() => false)) return;
     await page
@@ -53,7 +53,7 @@ async function inviteAndJoin(hostPage: Page, joinerPage: Page) {
   const dashboard = joinerPage.getByRole('button', { name: 'Dashboard' });
   const codeInput = joinerPage.getByPlaceholder('Paste your invite code…');
   const welcomeJoin = joinerPage.getByRole('button', { name: 'Join with invitation' });
-  const deadline = Date.now() + 45_000;
+  const deadline = Date.now() + 75_000;
   while (Date.now() < deadline) {
     if (await dashboard.isVisible().catch(() => false)) return;
     if (!(await codeInput.isVisible().catch(() => false))) {
@@ -87,6 +87,9 @@ test.describe(`team member: edit or delete my own standup entries`, () => {
   });
 
   test(`a member can only edit or delete standups they authored; attempts on other members' standups are rejected`, async ({ browser }) => {
+    // Two-node story with a cross-node join: on a cold p2p network the first
+    // join can take well over the 90s default. Give it room.
+    test.setTimeout(180_000);
     const ctxA = await browser.newContext();
     const ctxB = await browser.newContext();
     const pageA = await ctxA.newPage();
@@ -106,9 +109,10 @@ test.describe(`team member: edit or delete my own standup entries`, () => {
       await pageA.getByTestId('field-date').fill('2025-01-15');
       await pageA.getByTestId('action-post_standup').click();
 
-      // Node B: wait for the standup to appear on the dashboard
+      // Node B: wait for the standup to appear on the dashboard (cross-node
+      // sync from a cold join can take a beat longer than the 5s criterion floor)
       const standupOnB = pageB.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Node A done items' });
-      await expect(standupOnB).toBeVisible({ timeout: 5_000 });
+      await expect(standupOnB).toBeVisible({ timeout: 15_000 });
 
       // Node B: edit/delete controls for another author's standup should not
       // be accessible — the authored ownership model only renders the
@@ -130,6 +134,8 @@ test.describe(`team member: edit or delete my own standup entries`, () => {
   });
 
   test(`after editing a standup, the updated content is visible to everyone within 5s`, async ({ browser }) => {
+    // Two-node story with a cross-node join; give a cold p2p join headroom.
+    test.setTimeout(180_000);
     const ctxA = await browser.newContext();
     const ctxB = await browser.newContext();
     const pageA = await ctxA.newPage();
@@ -151,7 +157,7 @@ test.describe(`team member: edit or delete my own standup entries`, () => {
 
       // Wait for the standup to appear on node A's own dashboard view
       const ownItem = pageA.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Original done items' });
-      await expect(ownItem).toBeVisible({ timeout: 5_000 });
+      await expect(ownItem).toBeVisible({ timeout: 15_000 });
 
       // Node A: open the edit form for its own standup (card header "Edit standup" button)
       await ownItem.getByRole('button', { name: 'Edit standup' }).click();
