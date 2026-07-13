@@ -2,8 +2,16 @@
 // the floor only writes this file if it does not already exist. The verifier-
 // writer subagent enriches `test.skip` lines into real assertions; you can
 // too. Do NOT delete the smoke test (it's the floor the verify gate trusts).
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import { loginViaHash, clearAuth } from './helpers';
+
+// This app gates all standup/dashboard UI behind a per-namespace workspace:
+// a fresh node has no context yet, so it lands on a "Welcome" screen with a
+// "Create workspace" button before the Dashboard/History/Post Standup tabs exist.
+async function createWorkspace(page: Page) {
+  await page.getByRole('button', { name: 'Create workspace' }).click();
+  await expect(page.getByRole('button', { name: 'Dashboard' })).toBeVisible({ timeout: 15_000 });
+}
 
 test.describe(`team lead: see everyone's latest standup at a glance`, () => {
   test.beforeEach(async ({ page }) => {
@@ -24,22 +32,23 @@ test.describe(`team lead: see everyone's latest standup at a glance`, () => {
   });
 
   test(`the dashboard always shows the most recent standup from each team member, with blockers visually highlighted`, async ({ page }) => {
-    // Post a standup that includes a blocker, then verify the dashboard renders it
-    // with the blocker content visually present (highlighted region).
+    await createWorkspace(page);
+
+    // Post a standup that includes a blocker, then verify the dashboard renders it.
+    await page.getByRole('button', { name: 'Post Standup' }).click();
     await page.getByTestId('field-done_items').fill('Reviewed PRs');
     await page.getByTestId('field-blockers').fill('Deploy pipeline is broken');
     await page.getByTestId('field-planned_items').fill('Fix CI configuration');
     await page.getByTestId('field-date').fill('2025-01-15');
     await page.getByTestId('action-post_standup').click();
 
-    // The dashboard must show the submitted standup
-    const standupItem = page.getByTestId('item-StandupEntry').filter({ hasText: 'Reviewed PRs' });
+    // Submitting returns to the dashboard, which must show the standup card.
+    const standupItem = page.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Reviewed PRs' });
     await expect(standupItem).toBeVisible({ timeout: 5_000 });
 
-    // The blocker content must be present and rendered inside the standup card.
-    // The spec requires blockers to be "visually highlighted" — we assert the
-    // blocker text is visible within the card; visual styling is covered by the
-    // data-testid='item-StandupEntry-blockers' or a [data-has-blocker] attribute.
+    // The blocker content must be present and rendered inside the standup card;
+    // the card itself carries a `$hasBlocker` border/box-shadow highlight and the
+    // blocker field renders in a visually distinct (amber, bordered) block.
     await expect(standupItem.filter({ hasText: 'Deploy pipeline is broken' })).toBeVisible({ timeout: 5_000 });
   });
 });

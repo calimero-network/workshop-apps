@@ -2,8 +2,31 @@
 // the floor only writes this file if it does not already exist. The verifier-
 // writer subagent enriches `test.skip` lines into real assertions; you can
 // too. Do NOT delete the smoke test (it's the floor the verify gate trusts).
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import { loginViaHash, clearAuth } from './helpers';
+
+// This app gates all standup/dashboard UI behind a per-namespace workspace:
+// a fresh node has no context yet, so it lands on a "Welcome" screen with
+// "Create workspace" / "Join with invitation" buttons. Peers join the same
+// workspace via an invite code minted from the TopBar "Invite" button.
+async function createWorkspace(page: Page) {
+  await page.getByRole('button', { name: 'Create workspace' }).click();
+  await expect(page.getByRole('button', { name: 'Dashboard' })).toBeVisible({ timeout: 15_000 });
+}
+
+async function inviteAndJoin(hostPage: Page, joinerPage: Page) {
+  await hostPage.getByRole('button', { name: 'Invite' }).click();
+  await hostPage.getByRole('button', { name: 'Generate invite code' }).click();
+  const codeBox = hostPage.locator('textarea[readonly]');
+  await expect(codeBox).not.toHaveValue('', { timeout: 10_000 });
+  const code = await codeBox.inputValue();
+  await hostPage.getByRole('button', { name: 'Close' }).click();
+
+  await joinerPage.getByRole('button', { name: 'Join with invitation' }).click();
+  await joinerPage.getByPlaceholder('Paste your invite code…').fill(code);
+  await joinerPage.getByRole('button', { name: 'Join workspace' }).click();
+  await expect(joinerPage.getByRole('button', { name: 'Dashboard' })).toBeVisible({ timeout: 15_000 });
+}
 
 test.describe(`team member: edit or delete my own standup entries`, () => {
   test.beforeEach(async ({ page }) => {
@@ -32,38 +55,34 @@ test.describe(`team member: edit or delete my own standup entries`, () => {
       await loginViaHash(pageA, 0);
       await loginViaHash(pageB, 1);
 
+      await createWorkspace(pageA);
+      await inviteAndJoin(pageA, pageB);
+
       // Node A: post a standup
+      await pageA.getByRole('button', { name: 'Post Standup' }).click();
       await pageA.getByTestId('field-done_items').fill('Node A done items');
       await pageA.getByTestId('field-blockers').fill('Node A blocker');
       await pageA.getByTestId('field-planned_items').fill('Node A plans');
       await pageA.getByTestId('field-date').fill('2025-01-15');
       await pageA.getByTestId('action-post_standup').click();
 
-      // Node B: wait for the standup to appear
-      const standupItem = pageB.getByTestId('item-StandupEntry').filter({ hasText: 'Node A done items' });
-      await expect(standupItem).toBeVisible({ timeout: 5_000 });
+      // Node B: wait for the standup to appear on the dashboard
+      const standupOnB = pageB.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Node A done items' });
+      await expect(standupOnB).toBeVisible({ timeout: 5_000 });
 
-      // Node B: edit and delete controls for another author's standup should not be accessible
-      // (either hidden or disabled — the authored ownership model gates mutation to the author)
-      const editBtn = standupItem.getByTestId('action-edit_standup');
-      const deleteBtn = standupItem.getByTestId('action-delete_standup');
-      const editVisible = await editBtn.isVisible().catch(() => false);
-      const deleteVisible = await deleteBtn.isVisible().catch(() => false);
-      if (editVisible) {
-        await expect(editBtn).toBeDisabled();
-      }
-      if (deleteVisible) {
-        await expect(deleteBtn).toBeDisabled();
-      }
-      // If neither button is visible, the UI correctly hides controls for non-authors — pass.
+      // Node B: edit/delete controls for another author's standup should not
+      // be accessible — the authored ownership model only renders the
+      // ".actions" (Edit/Delete) block when `isOwn` is true.
+      const editVisible = await standupOnB.getByRole('button', { name: 'Edit standup' }).isVisible().catch(() => false);
+      const deleteVisible = await standupOnB.getByTestId('action-delete_standup').isVisible().catch(() => false);
+      expect(editVisible).toBe(false);
+      expect(deleteVisible).toBe(false);
 
       // Node A: its own standup should have accessible edit/delete controls
-      const ownItem = pageA.getByTestId('item-StandupEntry').filter({ hasText: 'Node A done items' });
+      const ownItem = pageA.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Node A done items' });
       await expect(ownItem).toBeVisible({ timeout: 5_000 });
-      // At least one of edit/delete must be available to the author
-      const authorEditVisible = await ownItem.getByTestId('action-edit_standup').isVisible().catch(() => false);
-      const authorDeleteVisible = await ownItem.getByTestId('action-delete_standup').isVisible().catch(() => false);
-      expect(authorEditVisible || authorDeleteVisible).toBe(true);
+      await expect(ownItem.getByRole('button', { name: 'Edit standup' })).toBeVisible();
+      await expect(ownItem.getByTestId('action-delete_standup')).toBeVisible();
     } finally {
       await ctxA.close();
       await ctxB.close();
@@ -79,21 +98,25 @@ test.describe(`team member: edit or delete my own standup entries`, () => {
       await loginViaHash(pageA, 0);
       await loginViaHash(pageB, 1);
 
+      await createWorkspace(pageA);
+      await inviteAndJoin(pageA, pageB);
+
       // Node A: post a standup
+      await pageA.getByRole('button', { name: 'Post Standup' }).click();
       await pageA.getByTestId('field-done_items').fill('Original done items');
       await pageA.getByTestId('field-blockers').fill('Original blocker');
       await pageA.getByTestId('field-planned_items').fill('Original plans');
       await pageA.getByTestId('field-date').fill('2025-01-15');
       await pageA.getByTestId('action-post_standup').click();
 
-      // Wait for the standup to appear on node A's own view
-      const ownItem = pageA.getByTestId('item-StandupEntry').filter({ hasText: 'Original done items' });
+      // Wait for the standup to appear on node A's own dashboard view
+      const ownItem = pageA.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Original done items' });
       await expect(ownItem).toBeVisible({ timeout: 5_000 });
 
-      // Node A: trigger edit on the standup
-      await ownItem.getByTestId('action-edit_standup').click();
+      // Node A: open the edit form for its own standup (card header "Edit standup" button)
+      await ownItem.getByRole('button', { name: 'Edit standup' }).click();
 
-      // Fill in updated values
+      // Fill in updated values and save (edit mode has no date field)
       await pageA.getByTestId('field-done_items').fill('Shipped login flow + tests');
       await pageA.getByTestId('field-blockers').fill('Waiting on API keys from infra');
       await pageA.getByTestId('field-planned_items').fill('Start dashboard layout');
@@ -101,7 +124,7 @@ test.describe(`team member: edit or delete my own standup entries`, () => {
 
       // Node B: updated content should be visible within 5s
       await expect(
-        pageB.getByTestId('item-StandupEntry').filter({ hasText: 'Shipped login flow + tests' })
+        pageB.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Shipped login flow + tests' })
       ).toBeVisible({ timeout: 5_000 });
     } finally {
       await ctxA.close();

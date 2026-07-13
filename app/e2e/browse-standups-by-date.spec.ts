@@ -2,8 +2,16 @@
 // the floor only writes this file if it does not already exist. The verifier-
 // writer subagent enriches `test.skip` lines into real assertions; you can
 // too. Do NOT delete the smoke test (it's the floor the verify gate trusts).
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import { loginViaHash, clearAuth } from './helpers';
+
+// This app gates all standup/dashboard UI behind a per-namespace workspace:
+// a fresh node has no context yet, so it lands on a "Welcome" screen with a
+// "Create workspace" button before the Dashboard/History/Post Standup tabs exist.
+async function createWorkspace(page: Page) {
+  await page.getByRole('button', { name: 'Create workspace' }).click();
+  await expect(page.getByRole('button', { name: 'Dashboard' })).toBeVisible({ timeout: 15_000 });
+}
 
 test.describe(`anyone on the team: browse standups by date`, () => {
   test.beforeEach(async ({ page }) => {
@@ -24,26 +32,29 @@ test.describe(`anyone on the team: browse standups by date`, () => {
   });
 
   test(`when a member selects a date, all standups posted on that date are displayed grouped by author`, async ({ page }) => {
+    await createWorkspace(page);
+
     // First post a standup on a specific date
+    await page.getByRole('button', { name: 'Post Standup' }).click();
     await page.getByTestId('field-done_items').fill('Reviewed quarterly goals');
     await page.getByTestId('field-blockers').fill('None');
     await page.getByTestId('field-planned_items').fill('Team sync prep');
     await page.getByTestId('field-date').fill('2025-01-15');
     await page.getByTestId('action-post_standup').click();
 
-    // Navigate to the HistoryPage (browse by date)
-    // [Verifier] NOTE: navigation to HistoryPage via role-based selector since no testid for the nav link
-    await page.getByRole('link', { name: /history|browse/i }).click().catch(async () => {
-      await page.getByRole('button', { name: /history|browse/i }).click();
-    });
+    // Navigate to the History tab (browse by date)
+    await page.getByRole('button', { name: 'History' }).click();
 
-    // Select the date that was used when posting the standup
+    // Select the date that was used when posting the standup. HistoryView
+    // auto-loads on date change (no separate "browse" trigger button exists
+    // in the UI), so filling the date field is the whole interaction.
+    // [Verifier] NOTE: no testid/button for a manual browse trigger — the
+    // history date field auto-fetches via onChange, so no extra click is needed.
     await page.getByTestId('field-date').fill('2025-01-15');
-    await page.getByTestId('action-get_standups_by_date').click();
 
-    // The standup posted on 2025-01-15 should appear, grouped by author
+    // The standup posted on 2025-01-15 should appear, grouped under its author.
     await expect(
-      page.getByTestId('item-StandupEntry').filter({ hasText: 'Reviewed quarterly goals' })
+      page.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Reviewed quarterly goals' })
     ).toBeVisible({ timeout: 5_000 });
   });
 });

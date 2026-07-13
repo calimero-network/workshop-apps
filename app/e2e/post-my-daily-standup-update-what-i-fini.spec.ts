@@ -2,8 +2,31 @@
 // the floor only writes this file if it does not already exist. The verifier-
 // writer subagent enriches `test.skip` lines into real assertions; you can
 // too. Do NOT delete the smoke test (it's the floor the verify gate trusts).
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import { loginViaHash, clearAuth } from './helpers';
+
+// This app gates all standup/dashboard UI behind a per-namespace workspace:
+// a fresh node has no context yet, so it lands on a "Welcome" screen with
+// "Create workspace" / "Join with invitation" buttons. Peers join the same
+// workspace via an invite code minted from the TopBar "Invite" button.
+async function createWorkspace(page: Page) {
+  await page.getByRole('button', { name: 'Create workspace' }).click();
+  await expect(page.getByRole('button', { name: 'Dashboard' })).toBeVisible({ timeout: 15_000 });
+}
+
+async function inviteAndJoin(hostPage: Page, joinerPage: Page) {
+  await hostPage.getByRole('button', { name: 'Invite' }).click();
+  await hostPage.getByRole('button', { name: 'Generate invite code' }).click();
+  const codeBox = hostPage.locator('textarea[readonly]');
+  await expect(codeBox).not.toHaveValue('', { timeout: 10_000 });
+  const code = await codeBox.inputValue();
+  await hostPage.getByRole('button', { name: 'Close' }).click();
+
+  await joinerPage.getByRole('button', { name: 'Join with invitation' }).click();
+  await joinerPage.getByPlaceholder('Paste your invite code…').fill(code);
+  await joinerPage.getByRole('button', { name: 'Join workspace' }).click();
+  await expect(joinerPage.getByRole('button', { name: 'Dashboard' })).toBeVisible({ timeout: 15_000 });
+}
 
 test.describe(`team member: post my daily standup update — what I finished, what's blocking me, and what I plan to tackle next`, () => {
   test.beforeEach(async ({ page }) => {
@@ -32,7 +55,12 @@ test.describe(`team member: post my daily standup update — what I finished, wh
       await loginViaHash(pageA, 0);
       await loginViaHash(pageB, 1);
 
-      // Node A: fill in and submit the standup form
+      // Node A creates the shared workspace; Node B joins it via invite code.
+      await createWorkspace(pageA);
+      await inviteAndJoin(pageA, pageB);
+
+      // Node A: navigate to the standup form and submit
+      await pageA.getByRole('button', { name: 'Post Standup' }).click();
       await pageA.getByTestId('field-done_items').fill('Shipped login flow');
       await pageA.getByTestId('field-blockers').fill('Waiting on API keys from infra');
       await pageA.getByTestId('field-planned_items').fill('Start dashboard layout');
@@ -41,7 +69,7 @@ test.describe(`team member: post my daily standup update — what I finished, wh
 
       // Node B: the submitted standup should appear on the dashboard within 5s
       await expect(
-        pageB.getByTestId('item-StandupEntry').filter({ hasText: 'Shipped login flow' })
+        pageB.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Shipped login flow' })
       ).toBeVisible({ timeout: 5_000 });
     } finally {
       await ctxA.close();

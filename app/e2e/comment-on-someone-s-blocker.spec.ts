@@ -2,8 +2,31 @@
 // the floor only writes this file if it does not already exist. The verifier-
 // writer subagent enriches `test.skip` lines into real assertions; you can
 // too. Do NOT delete the smoke test (it's the floor the verify gate trusts).
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import { loginViaHash, clearAuth } from './helpers';
+
+// This app gates all standup/dashboard UI behind a per-namespace workspace:
+// a fresh node has no context yet, so it lands on a "Welcome" screen with
+// "Create workspace" / "Join with invitation" buttons. Peers join the same
+// workspace via an invite code minted from the TopBar "Invite" button.
+async function createWorkspace(page: Page) {
+  await page.getByRole('button', { name: 'Create workspace' }).click();
+  await expect(page.getByRole('button', { name: 'Dashboard' })).toBeVisible({ timeout: 15_000 });
+}
+
+async function inviteAndJoin(hostPage: Page, joinerPage: Page) {
+  await hostPage.getByRole('button', { name: 'Invite' }).click();
+  await hostPage.getByRole('button', { name: 'Generate invite code' }).click();
+  const codeBox = hostPage.locator('textarea[readonly]');
+  await expect(codeBox).not.toHaveValue('', { timeout: 10_000 });
+  const code = await codeBox.inputValue();
+  await hostPage.getByRole('button', { name: 'Close' }).click();
+
+  await joinerPage.getByRole('button', { name: 'Join with invitation' }).click();
+  await joinerPage.getByPlaceholder('Paste your invite code…').fill(code);
+  await joinerPage.getByRole('button', { name: 'Join workspace' }).click();
+  await expect(joinerPage.getByRole('button', { name: 'Dashboard' })).toBeVisible({ timeout: 15_000 });
+}
 
 test.describe(`teammate: comment on someone's blocker`, () => {
   test.beforeEach(async ({ page }) => {
@@ -35,26 +58,33 @@ test.describe(`teammate: comment on someone's blocker`, () => {
       await loginViaHash(pageB, 1);
       await loginViaHash(pageC, 2);
 
+      // Node A creates the shared workspace; B and C both join it.
+      await createWorkspace(pageA);
+      await inviteAndJoin(pageA, pageB);
+      await inviteAndJoin(pageA, pageC);
+
       // Node A: post a standup with a blocker
+      await pageA.getByRole('button', { name: 'Post Standup' }).click();
       await pageA.getByTestId('field-done_items').fill('Finished API integration');
       await pageA.getByTestId('field-blockers').fill('Need DB credentials from ops');
       await pageA.getByTestId('field-planned_items').fill('Write integration tests');
       await pageA.getByTestId('field-date').fill('2025-01-15');
       await pageA.getByTestId('action-post_standup').click();
 
-      // Node B: wait for the standup to appear, then post a comment on it
-      const standupOnB = pageB.getByTestId('item-StandupEntry').filter({ hasText: 'Need DB credentials from ops' });
+      // Node B: wait for the standup to appear, open its comment thread, and post a comment
+      const standupOnB = pageB.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Need DB credentials from ops' });
       await expect(standupOnB).toBeVisible({ timeout: 5_000 });
+      await standupOnB.getByRole('button', { name: /comments/i }).click();
 
-      // Fill in the comment body and submit
       await standupOnB.getByTestId('field-body').fill('I can help with the API keys — ping me');
       await standupOnB.getByTestId('action-add_comment').click();
 
       // Node C: the comment should be visible on that standup within 5s
-      const standupOnC = pageC.getByTestId('item-StandupEntry').filter({ hasText: 'Need DB credentials from ops' });
+      const standupOnC = pageC.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Need DB credentials from ops' });
       await expect(standupOnC).toBeVisible({ timeout: 5_000 });
+      await standupOnC.getByRole('button', { name: /comments/i }).click();
       await expect(
-        pageC.getByTestId('item-Comment').filter({ hasText: 'I can help with the API keys — ping me' })
+        standupOnC.getByTestId('item-Comment').filter({ hasText: 'I can help with the API keys — ping me' })
       ).toBeVisible({ timeout: 5_000 });
     } finally {
       await ctxA.close();
