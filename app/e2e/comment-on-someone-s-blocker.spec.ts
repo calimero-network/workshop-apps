@@ -9,9 +9,27 @@ import { loginViaHash, clearAuth } from './helpers';
 // a fresh node has no context yet, so it lands on a "Welcome" screen with
 // "Create workspace" / "Join with invitation" buttons. Peers join the same
 // workspace via an invite code minted from the TopBar "Invite" button.
+// Clicking "Create workspace" flips `ws.loading` synchronously (bootstrap()
+// calls setBootstrapping(true) before any await), and the Welcome screen only
+// renders while `!ws.ready && !ws.loading`. Combined with the namespace/
+// context discovery polling still settling right after login, the button can
+// mount/unmount a few times in the first couple of seconds — Playwright
+// reports this as "element was detached from the DOM, retrying" and gives up
+// after the 15s action timeout. Poll-click across a longer window instead of
+// a single click, bailing out as soon as the resulting Dashboard tab appears
+// (bootstrap() is idempotent via an internal ref guard, so re-clicking is safe).
 async function createWorkspace(page: Page) {
-  await page.getByRole('button', { name: 'Create workspace' }).click();
-  await expect(page.getByRole('button', { name: 'Dashboard' })).toBeVisible({ timeout: 15_000 });
+  const dashboardBtn = page.getByRole('button', { name: 'Dashboard' });
+  const deadline = Date.now() + 45_000;
+  while (Date.now() < deadline) {
+    if (await dashboardBtn.isVisible().catch(() => false)) return;
+    await page
+      .getByRole('button', { name: 'Create workspace' })
+      .click({ timeout: 3_000 })
+      .catch(() => { /* button mid-remount from a settling poll — retry */ });
+    if (await dashboardBtn.isVisible({ timeout: 2_000 }).catch(() => false)) return;
+  }
+  await expect(dashboardBtn).toBeVisible({ timeout: 15_000 });
 }
 
 async function inviteAndJoin(hostPage: Page, joinerPage: Page) {
