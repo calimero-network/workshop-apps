@@ -4,77 +4,31 @@ import { useMero } from '@calimero-network/mero-react';
 import { C } from '../../theme';
 import { APP_DISPLAY_NAME } from '../../config';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { useIssueTracker } from '../../hooks/useIssueTracker';
+import { useComments } from '../../hooks/useComments';
 import { describeError } from '../../utils/errors';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
 import TaskDetailModal from './TaskDetailModal';
-import { PRIORITIES, type Category, type Comment, type Priority, type Task } from './types';
+import { PRIORITIES, type Priority } from './types';
 
 /**
  * BoardView — the spec's primary frontend view: active (non-archived) tasks
  * grouped by category, with create-category / create-task / filter controls.
  *
- * SHELL PASS (ABI-free): state below is local mock data, not the generated
- * AbiClient. The next pass swaps this for a `useTasks`/`useCategories` hook
- * pair over the real client — the view structure, fields, and testids stay.
- * Keep the workspace resolution (bootstrap / join) and Invite/Join wiring —
- * those are real infra, not entity data.
+ * Wired to the generated `IssueTrackerClient` via `useIssueTracker` (board
+ * data: categories + active tasks) and `useComments` (per-task discussion
+ * thread). `useSubscription` inside those hooks re-fetches on every sync
+ * event, so changes from teammates land within 5s with no polling.
  */
-const CURRENT_USER = 'you';
-
-let idCounter = 0;
-function nextId(prefix: string): string {
-  idCounter += 1;
-  return `${prefix}-${idCounter}`;
-}
-
-function seedCategories(): Category[] {
-  return [
-    { id: nextId('cat'), name: 'Backend', created_at: 1 },
-    { id: nextId('cat'), name: 'Frontend', created_at: 2 },
-  ];
-}
-
 export default function AppPage() {
   const { logout } = useMero();
   const ws = useWorkspace();
+  const board = useIssueTracker({ contextId: ws.contextId, executorPublicKey: ws.executorPublicKey });
+  const currentUser = ws.executorPublicKey ?? '';
 
-  const [categories, setCategories] = useState<Category[]>(seedCategories);
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    const [backend, frontend] = categories.length ? categories : seedCategories();
-    return [
-      {
-        id: nextId('task'),
-        title: 'Fix login bug',
-        description: "Users can't log in on Safari",
-        assignee: 'alice',
-        priority: 'high',
-        status: 'open',
-        archived: false,
-        category_id: backend?.id ?? '',
-        author: 'alice',
-        created_at: 1,
-      },
-      {
-        id: nextId('task'),
-        title: 'Polish board animations',
-        description: '',
-        assignee: 'bob',
-        priority: 'low',
-        status: 'open',
-        archived: false,
-        category_id: frontend?.id ?? '',
-        author: 'bob',
-        created_at: 2,
-      },
-    ];
-  });
-  const [commentsByTask, setCommentsByTask] = useState<Record<string, Comment[]>>(() => {
-    const seedTaskId = tasks[0]?.id;
-    return seedTaskId
-      ? { [seedTaskId]: [{ id: nextId('cmt'), task_id: seedTaskId, author: 'alice', body: 'Repros on Safari 17 only.', pr_link: null, created_at: 1, updated_at: 1 }] }
-      : {};
-  });
+  const categories = board.categories;
+  const tasks = board.tasks;
 
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newTitle, setNewTitle] = useState('');
@@ -97,12 +51,17 @@ export default function AppPage() {
   );
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
+  const comments = useComments({
+    contextId: ws.contextId,
+    executorPublicKey: ws.executorPublicKey,
+    taskId: selectedTaskId,
+  });
 
   const createCategory = (e: React.FormEvent) => {
     e.preventDefault();
     const name = newCategoryName.trim();
     if (!name) return;
-    setCategories((prev) => [...prev, { id: nextId('cat'), name, created_at: prev.length + 1 }]);
+    void board.createCategory(name);
     setNewCategoryName('');
   };
 
@@ -111,25 +70,11 @@ export default function AppPage() {
     const title = newTitle.trim();
     const categoryId = newCategoryId || categories[0]?.id;
     if (!title || !categoryId) return;
-    setTasks((prev) => [...prev, {
-      id: nextId('task'),
-      title,
-      description: newDescription.trim(),
-      assignee: newAssignee.trim(),
-      priority: 'medium',
-      status: 'open',
-      archived: false,
-      category_id: categoryId,
-      author: CURRENT_USER,
-      created_at: prev.length + 1,
-    }]);
+    void board.createTask(title, newDescription.trim(), categoryId, newAssignee.trim());
     setNewTitle('');
     setNewDescription('');
     setNewAssignee('');
   };
-
-  const patchTask = (id: string, patch: Partial<Task>) =>
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 
   const closeDetail = () => setSelectedTaskId(null);
 
@@ -229,7 +174,7 @@ export default function AppPage() {
         </Primary>
       </TaskForm>
 
-      {ws.error && <ErrLine>{describeError(ws.error)}</ErrLine>}
+      {(ws.error || board.error) && <ErrLine>{describeError(ws.error ?? board.error)}</ErrLine>}
 
       <Board>
         {categories.map((cat) => (
@@ -261,35 +206,17 @@ export default function AppPage() {
         <TaskDetailModal
           task={selectedTask}
           categories={categories}
-          comments={commentsByTask[selectedTask.id] ?? []}
-          currentUser={CURRENT_USER}
+          comments={comments.comments}
+          currentUser={currentUser}
           onClose={closeDetail}
-          onAssign={(assignee) => patchTask(selectedTask.id, { assignee })}
-          onSetPriority={(priority) => patchTask(selectedTask.id, { priority })}
-          onMove={(categoryId) => patchTask(selectedTask.id, { category_id: categoryId })}
-          onComplete={() => patchTask(selectedTask.id, { status: 'completed' })}
-          onArchive={() => { patchTask(selectedTask.id, { archived: true }); closeDetail(); }}
-          onAddComment={(body, prLink) => setCommentsByTask((prev) => ({
-            ...prev,
-            [selectedTask.id]: [...(prev[selectedTask.id] ?? []), {
-              id: nextId('cmt'),
-              task_id: selectedTask.id,
-              author: CURRENT_USER,
-              body,
-              pr_link: prLink,
-              created_at: (prev[selectedTask.id]?.length ?? 0) + 1,
-              updated_at: (prev[selectedTask.id]?.length ?? 0) + 1,
-            }],
-          }))}
-          onEditComment={(commentId, body) => setCommentsByTask((prev) => ({
-            ...prev,
-            [selectedTask.id]: (prev[selectedTask.id] ?? []).map((c) =>
-              c.id === commentId && c.author === CURRENT_USER ? { ...c, body, updated_at: c.updated_at + 1 } : c),
-          }))}
-          onDeleteComment={(commentId) => setCommentsByTask((prev) => ({
-            ...prev,
-            [selectedTask.id]: (prev[selectedTask.id] ?? []).filter((c) => !(c.id === commentId && c.author === CURRENT_USER)),
-          }))}
+          onAssign={(assignee) => board.assignTask(selectedTask.id, assignee)}
+          onSetPriority={(priority) => board.setPriority(selectedTask.id, priority)}
+          onMove={(categoryId) => board.moveTask(selectedTask.id, categoryId)}
+          onComplete={() => board.completeTask(selectedTask.id)}
+          onArchive={() => { void board.archiveTask(selectedTask.id); closeDetail(); }}
+          onAddComment={(body, prLink) => comments.addComment(body, prLink)}
+          onEditComment={(commentId, body) => comments.editComment(commentId, body)}
+          onDeleteComment={(commentId) => comments.deleteComment(commentId)}
         />
       )}
 
