@@ -2,71 +2,8 @@
 // the floor only writes this file if it does not already exist. The verifier-
 // writer subagent enriches `test.skip` lines into real assertions; you can
 // too. Do NOT delete the smoke test (it's the floor the verify gate trusts).
-import { test, expect, Page } from '@playwright/test';
-import { loginViaHash, clearAuth } from './helpers';
-
-// This app gates all standup/dashboard UI behind a per-namespace workspace:
-// a fresh node has no context yet, so it lands on a "Welcome" screen with
-// "Create workspace" / "Join with invitation" buttons. Peers join the same
-// workspace via an invite code minted from the TopBar "Invite" button.
-// Clicking "Create workspace" flips `ws.loading` synchronously (bootstrap()
-// calls setBootstrapping(true) before any await), and the Welcome screen only
-// renders while `!ws.ready && !ws.loading`. Combined with the namespace/
-// context discovery polling still settling right after login, the button can
-// mount/unmount a few times in the first couple of seconds — Playwright
-// reports this as "element was detached from the DOM, retrying" and gives up
-// after the 15s action timeout. Poll-click across a longer window instead of
-// a single click, bailing out as soon as the resulting Dashboard tab appears
-// (bootstrap() is idempotent via an internal ref guard, so re-clicking is safe).
-async function createWorkspace(page: Page) {
-  const dashboardBtn = page.getByRole('button', { name: 'Dashboard' });
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    if (await dashboardBtn.isVisible().catch(() => false)) return;
-    await page
-      .getByRole('button', { name: 'Create workspace' })
-      .click({ timeout: 3_000 })
-      .catch(() => { /* button mid-remount from a settling poll — retry */ });
-    if (await dashboardBtn.isVisible({ timeout: 2_000 }).catch(() => false)) return;
-  }
-  await expect(dashboardBtn).toBeVisible({ timeout: 15_000 });
-}
-
-async function inviteAndJoin(hostPage: Page, joinerPage: Page) {
-  // Host mints a shareable invite code for its workspace namespace.
-  await hostPage.getByRole('button', { name: 'Invite' }).click();
-  await hostPage.getByRole('button', { name: 'Generate invite code' }).click();
-  const codeBox = hostPage.locator('textarea[readonly]');
-  await expect(codeBox).not.toHaveValue('', { timeout: 10_000 });
-  const code = await codeBox.inputValue();
-  await hostPage.getByRole('button', { name: 'Close' }).click().catch(() => {});
-
-  // Merod persists joined namespaces across this serial run, so on a later
-  // test the joiner may already have resolved into the shared workspace
-  // (everyone converges on the host's single namespace) and land straight on
-  // the Dashboard — nothing to re-join. Otherwise it sits on the "Welcome"
-  // gate whose "Join with invitation" button mounts/unmounts while namespace/
-  // context discovery settles (the same remount race createWorkspace poll-
-  // clicks around). A single click hits a detached element and times out, so
-  // poll-click across a longer window and bail out as soon as the Dashboard
-  // tab appears.
-  const dashboard = joinerPage.getByRole('button', { name: 'Dashboard' });
-  const codeInput = joinerPage.getByPlaceholder('Paste your invite code…');
-  const welcomeJoin = joinerPage.getByRole('button', { name: 'Join with invitation' });
-  const deadline = Date.now() + 75_000;
-  while (Date.now() < deadline) {
-    if (await dashboard.isVisible().catch(() => false)) return;
-    if (!(await codeInput.isVisible().catch(() => false))) {
-      await welcomeJoin.click({ timeout: 3_000 }).catch(() => { /* mid-remount — retry */ });
-    }
-    if (await codeInput.isVisible({ timeout: 1_000 }).catch(() => false)) {
-      await codeInput.fill(code);
-      await joinerPage.getByRole('button', { name: 'Join workspace' }).click().catch(() => {});
-      if (await dashboard.isVisible({ timeout: 20_000 }).catch(() => false)) return;
-    }
-  }
-  await expect(dashboard).toBeVisible({ timeout: 15_000 });
-}
+import { test, expect } from '@playwright/test';
+import { loginViaHash, clearAuth, createWorkspace, inviteAndJoin } from './helpers';
 
 test.describe(`teammate: comment on someone's blocker`, () => {
   test.beforeEach(async ({ page }) => {
@@ -104,40 +41,32 @@ test.describe(`teammate: comment on someone's blocker`, () => {
       await createWorkspace(pageA);
       await inviteAndJoin(pageA, pageB);
 
-      // Node A: post a standup with a blocker
-      await pageA.getByRole('button', { name: 'Post Standup' }).click();
+      // Node A: the standup composer is already on the Dashboard tab (the
+      // default tab) — no nav click needed, just fill and submit.
       await pageA.getByTestId('field-done_items').fill('Finished API integration');
       await pageA.getByTestId('field-blockers').fill('Need DB credentials from ops');
       await pageA.getByTestId('field-planned_items').fill('Write integration tests');
       await pageA.getByTestId('field-date').fill('2025-01-15');
       await pageA.getByTestId('action-post_standup').click();
 
-      // Node B: wait for the standup to appear, open its comment thread, and post a comment
-      const standupOnB = pageB.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Need DB credentials from ops' });
+      // Node B: wait for the standup to appear, then post a comment. The
+      // comment thread + form render unconditionally on each card (no
+      // expand/collapse toggle exists), so no extra click is needed to reach
+      // the comment input.
+      const standupOnB = pageB.getByTestId(/^item-standup-/).filter({ hasText: 'Need DB credentials from ops' });
       await expect(standupOnB).toBeVisible({ timeout: 15_000 });
-      await standupOnB.getByRole('button', { name: /comments/i }).click();
 
-      await standupOnB.getByTestId('field-body').fill('I can help with the API keys — ping me');
-      await standupOnB.getByTestId('action-add_comment').click();
+      await standupOnB.getByTestId(/^field-body-/).fill('I can help with the API keys — ping me');
+      await standupOnB.getByTestId(/^action-add_comment-/).click();
 
-      // Node A (every other member): the comment posted by B must appear attached
-      // to that same standup. A card's thread only re-queries getComments() on a
-      // sync event while it is open, so if the comment lands between the initial
-      // open-load and the next event, bounce the thread (close/reopen) to force a
-      // fresh fetch until the comment shows.
-      const standupOnA = pageA.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Need DB credentials from ops' });
+      // Node A (every other member): the comment posted by B must appear
+      // attached to that same standup. The card subscribes to context sync
+      // events and re-fetches its comment thread on every one, so it should
+      // show up live without any manual re-fetch trigger.
+      const standupOnA = pageA.getByTestId(/^item-standup-/).filter({ hasText: 'Need DB credentials from ops' });
       await expect(standupOnA).toBeVisible({ timeout: 15_000 });
-      const commentToggleA = standupOnA.getByRole('button', { name: /comments/i });
-      const commentOnA = standupOnA.getByTestId('item-Comment').filter({ hasText: 'I can help with the API keys — ping me' });
-      await commentToggleA.click();
-      const deadline = Date.now() + 15_000;
-      while (Date.now() < deadline) {
-        if (await commentOnA.isVisible().catch(() => false)) break;
-        await commentToggleA.click(); // close
-        await commentToggleA.click(); // reopen → fresh getComments()
-        await pageA.waitForTimeout(1_000);
-      }
-      await expect(commentOnA).toBeVisible({ timeout: 5_000 });
+      const commentOnA = standupOnA.getByTestId(/^item-comment-/).filter({ hasText: 'I can help with the API keys — ping me' });
+      await expect(commentOnA).toBeVisible({ timeout: 15_000 });
     } finally {
       await ctxA.close();
       await ctxB.close();

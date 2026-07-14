@@ -2,71 +2,8 @@
 // the floor only writes this file if it does not already exist. The verifier-
 // writer subagent enriches `test.skip` lines into real assertions; you can
 // too. Do NOT delete the smoke test (it's the floor the verify gate trusts).
-import { test, expect, Page } from '@playwright/test';
-import { loginViaHash, clearAuth } from './helpers';
-
-// This app gates all standup/dashboard UI behind a per-namespace workspace:
-// a fresh node has no context yet, so it lands on a "Welcome" screen with
-// "Create workspace" / "Join with invitation" buttons. Peers join the same
-// workspace via an invite code minted from the TopBar "Invite" button.
-// Clicking "Create workspace" flips `ws.loading` synchronously (bootstrap()
-// calls setBootstrapping(true) before any await), and the Welcome screen only
-// renders while `!ws.ready && !ws.loading`. Combined with the namespace/
-// context discovery polling still settling right after login, the button can
-// mount/unmount a few times in the first couple of seconds — Playwright
-// reports this as "element was detached from the DOM, retrying" and gives up
-// after the 15s action timeout. Poll-click across a longer window instead of
-// a single click, bailing out as soon as the resulting Dashboard tab appears
-// (bootstrap() is idempotent via an internal ref guard, so re-clicking is safe).
-async function createWorkspace(page: Page) {
-  const dashboardBtn = page.getByRole('button', { name: 'Dashboard' });
-  const deadline = Date.now() + 45_000;
-  while (Date.now() < deadline) {
-    if (await dashboardBtn.isVisible().catch(() => false)) return;
-    await page
-      .getByRole('button', { name: 'Create workspace' })
-      .click({ timeout: 3_000 })
-      .catch(() => { /* button mid-remount from a settling poll — retry */ });
-    if (await dashboardBtn.isVisible({ timeout: 2_000 }).catch(() => false)) return;
-  }
-  await expect(dashboardBtn).toBeVisible({ timeout: 15_000 });
-}
-
-async function inviteAndJoin(hostPage: Page, joinerPage: Page) {
-  // Host mints a shareable invite code for its workspace namespace.
-  await hostPage.getByRole('button', { name: 'Invite' }).click();
-  await hostPage.getByRole('button', { name: 'Generate invite code' }).click();
-  const codeBox = hostPage.locator('textarea[readonly]');
-  await expect(codeBox).not.toHaveValue('', { timeout: 10_000 });
-  const code = await codeBox.inputValue();
-  await hostPage.getByRole('button', { name: 'Close' }).click().catch(() => {});
-
-  // Merod persists joined namespaces across this serial run, so on a later
-  // test the joiner may already have resolved into the shared workspace
-  // (everyone converges on the host's single namespace) and land straight on
-  // the Dashboard — nothing to re-join. Otherwise it sits on the "Welcome"
-  // gate whose "Join with invitation" button mounts/unmounts while namespace/
-  // context discovery settles (the same remount race createWorkspace poll-
-  // clicks around). A single click hits a detached element and times out, so
-  // poll-click across a longer window and bail out as soon as the Dashboard
-  // tab appears.
-  const dashboard = joinerPage.getByRole('button', { name: 'Dashboard' });
-  const codeInput = joinerPage.getByPlaceholder('Paste your invite code…');
-  const welcomeJoin = joinerPage.getByRole('button', { name: 'Join with invitation' });
-  const deadline = Date.now() + 45_000;
-  while (Date.now() < deadline) {
-    if (await dashboard.isVisible().catch(() => false)) return;
-    if (!(await codeInput.isVisible().catch(() => false))) {
-      await welcomeJoin.click({ timeout: 3_000 }).catch(() => { /* mid-remount — retry */ });
-    }
-    if (await codeInput.isVisible({ timeout: 1_000 }).catch(() => false)) {
-      await codeInput.fill(code);
-      await joinerPage.getByRole('button', { name: 'Join workspace' }).click().catch(() => {});
-      if (await dashboard.isVisible({ timeout: 20_000 }).catch(() => false)) return;
-    }
-  }
-  await expect(dashboard).toBeVisible({ timeout: 15_000 });
-}
+import { test, expect } from '@playwright/test';
+import { loginViaHash, clearAuth, createWorkspace, inviteAndJoin } from './helpers';
 
 test.describe(`team member: post my daily standup update — what I finished, what's blocking me, and what I plan to tackle next`, () => {
   test.beforeEach(async ({ page }) => {
@@ -99,8 +36,8 @@ test.describe(`team member: post my daily standup update — what I finished, wh
       await createWorkspace(pageA);
       await inviteAndJoin(pageA, pageB);
 
-      // Node A: navigate to the standup form and submit
-      await pageA.getByRole('button', { name: 'Post Standup' }).click();
+      // Node A: the standup composer is already on the Dashboard tab (the
+      // default tab) — no nav click needed, just fill and submit.
       await pageA.getByTestId('field-done_items').fill('Shipped login flow');
       await pageA.getByTestId('field-blockers').fill('Waiting on API keys from infra');
       await pageA.getByTestId('field-planned_items').fill('Start dashboard layout');
@@ -109,7 +46,7 @@ test.describe(`team member: post my daily standup update — what I finished, wh
 
       // Node B: the submitted standup should appear on the dashboard within 5s
       await expect(
-        pageB.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Shipped login flow' })
+        pageB.getByTestId(/^item-standup-/).filter({ hasText: 'Shipped login flow' })
       ).toBeVisible({ timeout: 5_000 });
     } finally {
       await ctxA.close();

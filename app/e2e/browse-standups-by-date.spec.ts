@@ -2,34 +2,8 @@
 // the floor only writes this file if it does not already exist. The verifier-
 // writer subagent enriches `test.skip` lines into real assertions; you can
 // too. Do NOT delete the smoke test (it's the floor the verify gate trusts).
-import { test, expect, Page } from '@playwright/test';
-import { loginViaHash, clearAuth } from './helpers';
-
-// This app gates all standup/dashboard UI behind a per-namespace workspace:
-// a fresh node has no context yet, so it lands on a "Welcome" screen with a
-// "Create workspace" button before the Dashboard/History/Post Standup tabs exist.
-// Clicking "Create workspace" flips `ws.loading` synchronously (bootstrap()
-// calls setBootstrapping(true) before any await), and the Welcome screen only
-// renders while `!ws.ready && !ws.loading`. Combined with the namespace/
-// context discovery polling still settling right after login, the button can
-// mount/unmount a few times in the first couple of seconds — Playwright
-// reports this as "element was detached from the DOM, retrying" and gives up
-// after the 15s action timeout. Poll-click across a longer window instead of
-// a single click, bailing out as soon as the resulting Dashboard tab appears
-// (bootstrap() is idempotent via an internal ref guard, so re-clicking is safe).
-async function createWorkspace(page: Page) {
-  const dashboardBtn = page.getByRole('button', { name: 'Dashboard' });
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    if (await dashboardBtn.isVisible().catch(() => false)) return;
-    await page
-      .getByRole('button', { name: 'Create workspace' })
-      .click({ timeout: 3_000 })
-      .catch(() => { /* button mid-remount from a settling poll — retry */ });
-    if (await dashboardBtn.isVisible({ timeout: 2_000 }).catch(() => false)) return;
-  }
-  await expect(dashboardBtn).toBeVisible({ timeout: 15_000 });
-}
+import { test, expect } from '@playwright/test';
+import { loginViaHash, clearAuth, createWorkspace } from './helpers';
 
 test.describe(`anyone on the team: browse standups by date`, () => {
   test.beforeEach(async ({ page }) => {
@@ -55,8 +29,8 @@ test.describe(`anyone on the team: browse standups by date`, () => {
     test.setTimeout(120_000);
     await createWorkspace(page);
 
-    // First post a standup on a specific date
-    await page.getByRole('button', { name: 'Post Standup' }).click();
+    // First post a standup on a specific date. The composer is already on
+    // the Dashboard tab (the default tab) — no nav click needed.
     await page.getByTestId('field-done_items').fill('Reviewed quarterly goals');
     await page.getByTestId('field-blockers').fill('None');
     await page.getByTestId('field-planned_items').fill('Team sync prep');
@@ -68,7 +42,7 @@ test.describe(`anyone on the team: browse standups by date`, () => {
     // one-shot fetch on date change (no live subscription), so navigating away
     // too early races the write and the date query comes back empty.
     await expect(
-      page.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Reviewed quarterly goals' })
+      page.getByTestId(/^item-standup-/).filter({ hasText: 'Reviewed quarterly goals' })
     ).toBeVisible({ timeout: 10_000 });
 
     // Navigate to the History tab (browse by date)
@@ -86,7 +60,7 @@ test.describe(`anyone on the team: browse standups by date`, () => {
     // not yet visible bounce to a neighbouring date and back to force a fresh
     // fetch, until it appears.
     const historyItem = page
-      .getByTestId(/^item-StandupEntry-/)
+      .getByTestId(/^item-standup-/)
       .filter({ hasText: 'Reviewed quarterly goals' });
     const deadline = Date.now() + 20_000;
     while (Date.now() < deadline) {

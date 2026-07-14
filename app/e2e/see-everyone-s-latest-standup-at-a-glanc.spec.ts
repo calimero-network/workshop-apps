@@ -2,34 +2,8 @@
 // the floor only writes this file if it does not already exist. The verifier-
 // writer subagent enriches `test.skip` lines into real assertions; you can
 // too. Do NOT delete the smoke test (it's the floor the verify gate trusts).
-import { test, expect, Page } from '@playwright/test';
-import { loginViaHash, clearAuth } from './helpers';
-
-// This app gates all standup/dashboard UI behind a per-namespace workspace:
-// a fresh node has no context yet, so it lands on a "Welcome" screen with a
-// "Create workspace" button before the Dashboard/History/Post Standup tabs exist.
-// Clicking "Create workspace" flips `ws.loading` synchronously (bootstrap()
-// calls setBootstrapping(true) before any await), and the Welcome screen only
-// renders while `!ws.ready && !ws.loading`. Combined with the namespace/
-// context discovery polling still settling right after login, the button can
-// mount/unmount a few times in the first couple of seconds — Playwright
-// reports this as "element was detached from the DOM, retrying" and gives up
-// after the 15s action timeout. Poll-click across a longer window instead of
-// a single click, bailing out as soon as the resulting Dashboard tab appears
-// (bootstrap() is idempotent via an internal ref guard, so re-clicking is safe).
-async function createWorkspace(page: Page) {
-  const dashboardBtn = page.getByRole('button', { name: 'Dashboard' });
-  const deadline = Date.now() + 45_000;
-  while (Date.now() < deadline) {
-    if (await dashboardBtn.isVisible().catch(() => false)) return;
-    await page
-      .getByRole('button', { name: 'Create workspace' })
-      .click({ timeout: 3_000 })
-      .catch(() => { /* button mid-remount from a settling poll — retry */ });
-    if (await dashboardBtn.isVisible({ timeout: 2_000 }).catch(() => false)) return;
-  }
-  await expect(dashboardBtn).toBeVisible({ timeout: 15_000 });
-}
+import { test, expect } from '@playwright/test';
+import { loginViaHash, clearAuth, createWorkspace } from './helpers';
 
 test.describe(`team lead: see everyone's latest standup at a glance`, () => {
   test.beforeEach(async ({ page }) => {
@@ -52,8 +26,8 @@ test.describe(`team lead: see everyone's latest standup at a glance`, () => {
   test(`the dashboard always shows the most recent standup from each team member, with blockers visually highlighted`, async ({ page }) => {
     await createWorkspace(page);
 
-    // Post a standup that includes a blocker, then verify the dashboard renders it.
-    await page.getByRole('button', { name: 'Post Standup' }).click();
+    // Post a standup that includes a blocker; the composer is already on the
+    // Dashboard tab (the default tab) — no nav click needed.
     await page.getByTestId('field-done_items').fill('Reviewed PRs');
     await page.getByTestId('field-blockers').fill('Deploy pipeline is broken');
     await page.getByTestId('field-planned_items').fill('Fix CI configuration');
@@ -61,7 +35,7 @@ test.describe(`team lead: see everyone's latest standup at a glance`, () => {
     await page.getByTestId('action-post_standup').click();
 
     // Submitting returns to the dashboard, which must show the standup card.
-    const standupItem = page.getByTestId(/^item-StandupEntry-/).filter({ hasText: 'Reviewed PRs' });
+    const standupItem = page.getByTestId(/^item-standup-/).filter({ hasText: 'Reviewed PRs' });
     await expect(standupItem).toBeVisible({ timeout: 5_000 });
 
     // The blocker content must be present and rendered inside the standup card;
