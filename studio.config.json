@@ -1,0 +1,22 @@
+{
+  "appName": "team-issue-tracker",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.team-issue-tracker",
+  "metadata": {
+    "name": "team-issue-tracker",
+    "description": "A shared board for the team to create, assign, prioritize, discuss, and organize issues",
+    "author": "Calimero",
+    "route": "/team-issue-tracker"
+  },
+  "theme": {
+    "primaryColor": "#2563EB",
+    "accentColor": "#F59E0B",
+    "style": "modern-clean"
+  },
+  "services": [
+    {
+      "name": "issue-tracker",
+      "crate": "team-issue-tracker-issue-tracker"
+    }
+  ]
+}
