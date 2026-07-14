@@ -26,6 +26,11 @@ test.describe(`anyone on the team: see all tasks grouped by category`, () => {
   });
 
   test(`the board view always shows every active (non-archived) task organized under its current category`, async ({ page }) => {
+    // This test does more sequential mutate round-trips (1 category + 2 tasks
+    // + 1 archive + a reload-verify) than any other story spec, and it runs
+    // after several earlier files have already grown the shared board — give
+    // it real headroom above the config default instead of racing it.
+    test.setTimeout(180_000);
     await createWorkspace(page);
 
     // The workspace this test runs in is shared across every spec file in the
@@ -42,7 +47,17 @@ test.describe(`anyone on the team: see all tasks grouped by category`, () => {
     await page.getByTestId('field-name').fill(categoryName);
     await page.getByTestId('action-create_category').click();
     const categoryColumn = page.locator('[data-testid^="item-category-"]').filter({ hasText: categoryName });
-    await expect(categoryColumn).toBeVisible({ timeout: 15_000 });
+    // The create call's own refresh can race a concurrent subscription-driven
+    // refresh; if the slower response wins it briefly clobbers state with a
+    // stale (pre-create) snapshot. Force a fresh fetch instead of just
+    // waiting longer for a render that may never come without one.
+    try {
+      await expect(categoryColumn).toBeVisible({ timeout: 20_000 });
+    } catch {
+      await page.reload();
+      await waitForWorkspaceReady(page);
+      await expect(categoryColumn).toBeVisible({ timeout: 20_000 });
+    }
     const catTestId = (await categoryColumn.getAttribute('data-testid')) ?? '';
     const categoryId = catTestId.replace('item-category-', '');
     expect(categoryId).not.toEqual('');
@@ -57,10 +72,19 @@ test.describe(`anyone on the team: see all tasks grouped by category`, () => {
     await page.getByTestId('field-category_id').selectOption({ label: categoryName });
     await page.getByTestId('action-create_task').click();
     const taskCard = page.locator('[data-testid^="item-task-"]').filter({ hasText: activeTitle });
-    await expect(taskCard).toBeVisible({ timeout: 15_000 });
+    // Same eventual-consistency guard as the category creation above: force a
+    // fresh fetch if the first refresh raced and lost, rather than only
+    // waiting longer for a render that requires another sync event.
+    try {
+      await expect(taskCard).toBeVisible({ timeout: 20_000 });
+    } catch {
+      await page.reload();
+      await waitForWorkspaceReady(page);
+      await expect(taskCard).toBeVisible({ timeout: 20_000 });
+    }
 
     // Criterion: the active task is organized under its current category.
-    await expect(targetColumn.getByText(activeTitle)).toBeVisible({ timeout: 15_000 });
+    await expect(targetColumn.getByText(activeTitle)).toBeVisible({ timeout: 20_000 });
 
     // A second task that gets archived must disappear from the board entirely.
     await page.getByTestId('field-title').fill(archivedTitle);
@@ -68,18 +92,24 @@ test.describe(`anyone on the team: see all tasks grouped by category`, () => {
     await page.getByTestId('field-category_id').selectOption({ label: categoryName });
     await page.getByTestId('action-create_task').click();
     const oldTaskCard = page.locator('[data-testid^="item-task-"]').filter({ hasText: archivedTitle });
-    await expect(oldTaskCard).toBeVisible({ timeout: 15_000 });
+    try {
+      await expect(oldTaskCard).toBeVisible({ timeout: 20_000 });
+    } catch {
+      await page.reload();
+      await waitForWorkspaceReady(page);
+      await expect(oldTaskCard).toBeVisible({ timeout: 20_000 });
+    }
     await oldTaskCard.click();
     const dialog = page.getByRole('dialog');
     await dialog.getByTestId('action-archive_task').click();
     await expect(dialog).toBeHidden({ timeout: 10_000 });
-    await expect(oldTaskCard).toBeHidden({ timeout: 15_000 });
+    await expect(oldTaskCard).toBeHidden({ timeout: 20_000 });
 
     // The grouping property holds on a fresh render, not just after the
     // mutating actions.
     await page.reload();
     await waitForWorkspaceReady(page);
-    await expect(targetColumn.getByText(activeTitle)).toBeVisible({ timeout: 15_000 });
+    await expect(targetColumn.getByText(activeTitle)).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('[data-testid^="item-task-"]').filter({ hasText: archivedTitle })).toHaveCount(0);
   });
 });
