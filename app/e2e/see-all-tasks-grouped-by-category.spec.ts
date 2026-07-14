@@ -25,19 +25,28 @@ test.describe(`anyone on the team: see all tasks grouped by category`, () => {
   });
 
   test(`the board view always shows every active (non-archived) task organized under its current category`, async ({ page }) => {
-    await page.getByTestId('field-name').fill('General');
+    // The workspace this test runs in is shared across every spec file in
+    // the suite (createWorkspace reuses node 0's first namespace/context), so
+    // other files' categories may already exist on the board and the task
+    // form's category selector may not default to the one this test just
+    // created. Use a run-unique name and always select it explicitly rather
+    // than relying on the form's `categories[0]` fallback.
+    const categoryName = `General-${Date.now()}`;
+    await page.getByTestId('field-name').fill(categoryName);
     await page.getByTestId('action-create_category').click();
-    const categoryColumn = page.locator('[data-testid^="item-category-"]').filter({ hasText: 'General' });
+    const categoryColumn = page.locator('[data-testid^="item-category-"]').filter({ hasText: categoryName });
     await expect(categoryColumn).toBeVisible({ timeout: 10_000 });
 
     // An active task must render under its current category.
     await page.getByTestId('field-title').fill('Write specs');
+    await page.getByTestId('field-category_id').selectOption({ label: categoryName });
     await page.getByTestId('field-assignee').fill('alice');
     await page.getByTestId('action-create_task').click();
     await expect(categoryColumn.getByText('Write specs')).toBeVisible({ timeout: 10_000 });
 
     // A second task that gets archived must disappear from the board entirely.
     await page.getByTestId('field-title').fill('Old task');
+    await page.getByTestId('field-category_id').selectOption({ label: categoryName });
     await page.getByTestId('field-assignee').fill('bob');
     await page.getByTestId('action-create_task').click();
     const oldTaskCard = page.locator('[data-testid^="item-task-"]').filter({ hasText: 'Old task' });
@@ -50,7 +59,7 @@ test.describe(`anyone on the team: see all tasks grouped by category`, () => {
     // mutating actions.
     await page.reload();
     await waitForWorkspaceReady(page);
-    const categoryColumnAfterReload = page.locator('[data-testid^="item-category-"]').filter({ hasText: 'General' });
+    const categoryColumnAfterReload = page.locator('[data-testid^="item-category-"]').filter({ hasText: categoryName });
     await expect(categoryColumnAfterReload.getByText('Write specs')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('[data-testid^="item-task-"]').filter({ hasText: 'Old task' })).toHaveCount(0);
   });

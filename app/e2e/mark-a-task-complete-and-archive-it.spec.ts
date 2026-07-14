@@ -38,6 +38,10 @@ test.describe(`team member: mark a task complete and archive it`, () => {
     await expect(pageA.locator('[data-testid^="item-category-"]').filter({ hasText: 'Ops' })).toBeVisible({ timeout: 10_000 });
 
     await pageA.getByTestId('field-title').fill('Ship release');
+    // The board is shared across every spec file in the suite, so the form's
+    // default category (categories[0]) is not guaranteed to be the one just
+    // created here — select it explicitly.
+    await pageA.getByTestId('field-category_id').selectOption({ label: 'Ops' });
     await pageA.getByTestId('field-assignee').fill('alice');
     await pageA.getByTestId('action-create_task').click();
     const taskCardA = pageA.locator('[data-testid^="item-task-"]').filter({ hasText: 'Ship release' });

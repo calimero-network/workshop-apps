@@ -43,6 +43,10 @@ test.describe(`team member: create a new issue and assign it to a teammate`, () 
 
     await pageA.getByTestId('field-title').fill('Fix login bug');
     await pageA.getByTestId('field-description').fill("Users can't log in on Safari");
+    // The board is shared across every spec file in the suite, so the form's
+    // default category (categories[0]) is not guaranteed to be the one just
+    // created here — select it explicitly.
+    await pageA.getByTestId('field-category_id').selectOption({ label: 'Backend' });
     await pageA.getByTestId('field-assignee').fill('bob');
     await pageA.getByTestId('action-create_task').click();
 
