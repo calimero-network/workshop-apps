@@ -46,6 +46,23 @@ jobs:
           rustup target add wasm32-unknown-unknown
           rustup component add rust-src || true
 
+      # Cache the cargo registry/git + the WASM build dir so re-verifies don't
+      # recompile the whole dependency graph every run (the long pole — a cold
+      # WASM build dominates wall-clock). Keyed on Cargo.lock so a dep change
+      # invalidates it; restore-keys let an unrelated source edit reuse most of
+      # the prior build. Safe: a stale cache only ever slows a build, never
+      # corrupts one (cargo re-checks freshness).
+      - name: Cache cargo + WASM build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            logic/target
+          key: cargo-wasm-${{ hashFiles('logic/Cargo.lock') }}
+          restore-keys: |
+            cargo-wasm-
+
       - name: Install merobox
         run: pipx install merobox || pip install --user merobox
 
