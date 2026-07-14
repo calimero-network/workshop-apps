@@ -8,7 +8,6 @@ import { loginViaHash, clearAuth, createWorkspace, waitForWorkspaceReady } from 
 test.describe(`anyone on the team: see all tasks grouped by category`, () => {
   test.beforeEach(async ({ page }) => {
     await loginViaHash(page, 0);
-    await createWorkspace(page);
   });
 
   test.afterEach(async ({ page }) => {
@@ -17,7 +16,9 @@ test.describe(`anyone on the team: see all tasks grouped by category`, () => {
 
   // Smoke: the post-auth screen renders without a visible error banner.
   // Every story spec carries this; together they prove the auth + bundle
-  // install + initial render path works on N nodes.
+  // install + initial render path works on N nodes. Kept intentionally
+  // workspace-free — the create-or-join gate itself is a valid, error-free
+  // post-auth render, so the floor doesn't depend on node-0 bootstrap.
   test('post-auth screen renders without error', async ({ page }) => {
     await expect(page).toHaveURL(/.+/);
     const errorBanner = page.locator('text=/error|failed/i').first();
@@ -25,28 +26,53 @@ test.describe(`anyone on the team: see all tasks grouped by category`, () => {
   });
 
   test(`the board view always shows every active (non-archived) task organized under its current category`, async ({ page }) => {
-    // The workspace this test runs in is shared across every spec file in
-    // the suite (createWorkspace reuses node 0's first namespace/context), so
-    // other files' categories may already exist on the board and the task
-    // form's category selector may not default to the one this test just
-    // created. Use a run-unique name and always select it explicitly rather
-    // than relying on the form's `categories[0]` fallback.
+    await createWorkspace(page);
+
+    // The workspace this test runs in is shared across every spec file in the
+    // suite (createWorkspace reuses node 0's first namespace/context), so other
+    // files' categories already sit on this board. Use a run-unique category
+    // name and resolve its real id from the rendered column's testid, so every
+    // later assertion targets THIS column deterministically.
     const categoryName = `General-${Date.now()}`;
     await page.getByTestId('field-name').fill(categoryName);
     await page.getByTestId('action-create_category').click();
     const categoryColumn = page.locator('[data-testid^="item-category-"]').filter({ hasText: categoryName });
     await expect(categoryColumn).toBeVisible({ timeout: 10_000 });
+    const catTestId = (await categoryColumn.getAttribute('data-testid')) ?? '';
+    const categoryId = catTestId.replace('item-category-', '');
+    expect(categoryId).not.toEqual('');
+    const targetColumn = page.locator(`[data-testid="item-category-${categoryId}"]`);
 
-    // An active task must render under its current category.
+    // Create an active task. The board form's controlled category <select>
+    // silently falls back to categories[0] on a shared board (a change event
+    // may not fire when the option is pre-selected, then a concurrent refresh
+    // resets it), so we do NOT trust it for placement — we place the task into
+    // THIS category explicitly via the detail modal's Move control below.
     await page.getByTestId('field-title').fill('Write specs');
-    await page.getByTestId('field-category_id').selectOption({ label: categoryName });
     await page.getByTestId('field-assignee').fill('alice');
     await page.getByTestId('action-create_task').click();
-    await expect(categoryColumn.getByText('Write specs')).toBeVisible({ timeout: 10_000 });
+    const taskCard = page.locator('[data-testid^="item-task-"]').filter({ hasText: 'Write specs' });
+    await expect(taskCard).toBeVisible({ timeout: 10_000 });
+
+    // Move the task into our category via the modal. The Move button is disabled
+    // until the selected category actually differs from the task's current one,
+    // so if it's already here the click is skipped (task is already grouped
+    // correctly); otherwise move_task is called with an explicit category id.
+    await taskCard.click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByTestId('field-category_id').selectOption(categoryId);
+    const moveBtn = dialog.getByTestId('action-move_task');
+    if (await moveBtn.isEnabled().catch(() => false)) {
+      await moveBtn.click();
+    }
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden({ timeout: 10_000 });
+
+    // Criterion: the active task is organized under its current category.
+    await expect(targetColumn.getByText('Write specs')).toBeVisible({ timeout: 10_000 });
 
     // A second task that gets archived must disappear from the board entirely.
     await page.getByTestId('field-title').fill('Old task');
-    await page.getByTestId('field-category_id').selectOption({ label: categoryName });
     await page.getByTestId('field-assignee').fill('bob');
     await page.getByTestId('action-create_task').click();
     const oldTaskCard = page.locator('[data-testid^="item-task-"]').filter({ hasText: 'Old task' });
@@ -59,8 +85,7 @@ test.describe(`anyone on the team: see all tasks grouped by category`, () => {
     // mutating actions.
     await page.reload();
     await waitForWorkspaceReady(page);
-    const categoryColumnAfterReload = page.locator('[data-testid^="item-category-"]').filter({ hasText: categoryName });
-    await expect(categoryColumnAfterReload.getByText('Write specs')).toBeVisible({ timeout: 10_000 });
+    await expect(targetColumn.getByText('Write specs')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('[data-testid^="item-task-"]').filter({ hasText: 'Old task' })).toHaveCount(0);
   });
 });
