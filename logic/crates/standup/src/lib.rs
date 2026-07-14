@@ -20,7 +20,9 @@ use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::env;
 use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
+use calimero_storage::address::Id;
 use calimero_storage::collections::crdt_meta::MergeError;
+use calimero_storage::collections::rekey::RekeyTarget;
 use calimero_storage::collections::{AuthoredMap, LwwRegister, Mergeable, UnorderedMap};
 use calimero_storage::env as storage_env;
 use async_standup_types::{generate_id, Error};
@@ -69,6 +71,13 @@ impl Mergeable for StandupEntry {
     }
 }
 
+/// `StandupEntry` has no nested CRDT collection fields (every field is a plain
+/// `String`/`u64`), so there is nothing to re-key relative to its parent id —
+/// a required no-op impl (`Mergeable: RekeyTarget` supertrait).
+impl RekeyTarget for StandupEntry {
+    fn rekey_relative_to(&mut self, _parent_id: Id) {}
+}
+
 /// A comment on a standup entry. Write-once (no edit/delete in API), so the
 /// merge is a deterministic tie-break by created_at then id.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -91,6 +100,12 @@ impl Mergeable for Comment {
         }
         Ok(())
     }
+}
+
+/// `Comment` likewise has no nested CRDT collection fields — a required no-op
+/// impl (`Mergeable: RekeyTarget` supertrait).
+impl RekeyTarget for Comment {
+    fn rekey_relative_to(&mut self, _parent_id: Id) {}
 }
 
 // ---------------------------------------------------------------------------
