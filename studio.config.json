@@ -1,7 +1,7 @@
 {
   "appName": "team-issue-tracker",
-  "appVersion": "1.0.0",
-  "package": "com.calimero.team-issue-tracker",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.ronit-calimero-network-cfee7c9a.team-issue-tracker",
   "metadata": {
     "name": "team-issue-tracker",
     "description": "A shared board for the team to create, assign, prioritize, discuss, and organize issues",
