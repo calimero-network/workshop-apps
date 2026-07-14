@@ -1,31 +1,36 @@
-# Two-node smoke test for the neutral item-registry foundation service.
+# Two-node smoke test for the team-issue-tracker `issue-tracker` service.
 #
 # Exercises the parts the v2 generator most often breaks, end-to-end on real
 # nodes (what the in-process TestHost / converge harness can't cover):
-#   - the `service` crate installed + a context created for it from a bundle
-#   - registry state (UnorderedMap<String, Item> with a nested LwwRegister)
-#     replicating across two peers
-#   - the AuthoredMap owner-gate: a non-owner `delete` is rejected on a real
-#     signed-delta path (the gate the bare converge harness can't verify)
+#   - the `issue-tracker` crate installed + a context created for it from a bundle
+#   - Category/Task state (UnorderedMap<String, T> with nested LwwRegister
+#     fields) replicating across two peers
+#   - the AuthoredMap owner-gate on Comment: edit/delete are rejected for a
+#     non-author on a real signed-delta path (the gate the bare converge
+#     harness can't verify)
+#   - every spec mutate method (create_category, create_task, assign_task,
+#     set_priority, move_task, complete_task, archive_task, add_comment,
+#     edit_comment, delete_comment) observed from the peer that didn't call it
 #
-# Usage (run from the chat project root, after a dev bundle has been built):
+# Usage (run from the project root, after a dev bundle has been built):
 #   merobox bootstrap run test/smoke.workflow.yml
 #
 # Pre-flight: `bash logic/build-bundle.sh` must have produced
-# `logic/res/foundation-1.0.0.mpk` (appName/appVersion from studio.config.json).
+# `logic/res/team-issue-tracker-1.0.0.mpk` (appName/appVersion from
+# studio.config.json).
 
-name: Foundation item-registry smoke
-description: Verify the item-registry service replicates state and owner-gates delete across two nodes.
+name: team-issue-tracker smoke
+description: Verify the issue-tracker service replicates state, owner-gates comment edit/delete, and exercises every spec mutate method across two nodes.
 log_level: info
 nodes:
   count: 2
-  prefix: foundation-node
-  # ponytail: pinned off `:edge` to the rc.8-matching tag so the verify merod
-  # matches the SDK the logic pins (0.11.0-rc.11). Bump in lockstep with
-  # logic/Cargo.toml's SDK tag, or bootstrap skews. ASSUMPTION: ghcr publishes
-  # an image tag matching the core git tag `0.11.0-rc.11`; if the registry uses a
-  # different naming scheme, correct this tag (and verifierWorkflow.js).
-  image: ghcr.io/calimero-network/merod:0.11.0-rc.11
+  prefix: app-node
+  # Pinned to the tag matching logic/Cargo.toml's calimero-sdk tag
+  # (0.11.0-rc.13) so the verify merod matches the SDK the logic pins. Bump in
+  # lockstep with logic/Cargo.toml's SDK tag, or bootstrap skews. ASSUMPTION:
+  # ghcr publishes an image tag matching the core git tag `0.11.0-rc.13`; if
+  # the registry uses a different naming scheme, correct this tag.
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.13
   # High base ports to avoid colliding with a host-native merod on the
   # defaults (2428 P2P / 2528 RPC). Each node gets base + i.
   base_port: 12428      # P2P / swarm
@@ -38,132 +43,453 @@ steps:
   # --- Bootstrap application + namespace ---
 
   - type: install_application
-    name: Install foundation bundle on node 1
-    node: foundation-node-1
+    name: Install team-issue-tracker bundle on node 1
+    node: app-node-1
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/team-issue-tracker-1.0.0.mpk
     outputs:
       app_id: applicationId
 
   - type: install_application
-    name: Install foundation bundle on node 2
-    node: foundation-node-2
+    name: Install team-issue-tracker bundle on node 2
+    node: app-node-2
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/team-issue-tracker-1.0.0.mpk
 
   - type: create_namespace
     name: Create namespace on node 1
-    node: foundation-node-1
+    node: app-node-1
     application_id: '{{app_id}}'
     outputs:
       namespace_id: namespaceId
 
   - type: create_context
-    name: Create service context on node 1
-    node: foundation-node-1
+    name: Create issue-tracker service context on node 1
+    node: app-node-1
     application_id: '{{app_id}}'
     group_id: '{{namespace_id}}'
-    service_name: service
+    service_name: issue-tracker
     outputs:
-      ctx: contextId
+      issue_tracker_ctx: contextId
 
   - type: create_namespace_invitation
     name: Issue namespace invitation
-    node: foundation-node-1
+    node: app-node-1
     namespace_id: '{{namespace_id}}'
     outputs:
       invitation: invitation
 
   - type: join_namespace
     name: Node 2 joins namespace
-    node: foundation-node-2
+    node: app-node-2
     namespace_id: '{{namespace_id}}'
     invitation: '{{invitation}}'
 
-  # --- Registry state replicates across peers ---
+  # --- Deterministic floor: parameterless/no-op views agree across peers ---
 
   - type: call
-    name: Node 1 adds an item
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: add
-    args:
-      label: widget
-      value: v1
+    name: List categories from node 1 (empty)
+    node: app-node-1
+    context_id: '{{issue_tracker_ctx}}'
+    method: list_categories
+    args: {}
     outputs:
-      item_id: result
+      categories_n1: result.output
+
+  - type: json_assert
+    name: No categories exist yet on node 1
+    statements:
+      - 'json_equal({{categories_n1}}, [])'
+
+  - type: call
+    name: List active tasks from node 2 (empty)
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: list_tasks
+    args:
+      include_archived: false
+    outputs:
+      tasks_n2: result.output
+
+  - type: json_assert
+    name: No tasks exist yet on node 2
+    statements:
+      - 'json_equal({{tasks_n2}}, [])'
+
+  # --- create_category: node 1 creates, node 2 observes ---
+
+  - type: call
+    name: Exercise create_category on node 1
+    node: app-node-1
+    context_id: '{{issue_tracker_ctx}}'
+    method: create_category
+    args:
+      name: Backend
+    outputs:
+      category_id: result.output
 
   - type: wait_for_sync
-    name: Wait for the add to sync across both nodes
-    context_id: '{{ctx}}'
-    nodes: [foundation-node-1, foundation-node-2]
+    name: Wait for create_category to sync
+    context_id: '{{issue_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
     timeout: 30
     trigger_sync: true
 
-  # Both nodes must see the same single-item list — replication of the
-  # UnorderedMap<String, Item> (incl. the nested LwwRegister value).
   - type: call
-    name: List items from node 1
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: list
+    name: List categories from node 2
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: list_categories
     args: {}
     outputs:
-      list_n1: result
-
-  - type: call
-    name: List items from node 2
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: list
-    args: {}
-    outputs:
-      list_n2: result
+      category_0: result.output.0
 
   - type: json_assert
-    name: Both nodes see the same item list
+    name: Node 2 sees the new Backend category
     statements:
-      - 'equal({{list_n1}}, {{list_n2}})'
+      - 'json_subset({{category_0}}, {"name": "Backend"})'
 
-  # --- Owner-gated delete (AuthoredMap) ---
-  # Node 2 is not the owner of the item node 1 added, so its delete must be
-  # rejected. This is the per-entry authorization the bare converge harness
-  # cannot test (it needs the signed-delta apply path).
+  # --- create_task: node 1 creates into the category, node 2 observes ---
+
   - type: call
-    name: Non-owner delete from node 2 must be rejected
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: delete
+    name: Exercise create_task on node 1
+    node: app-node-1
+    context_id: '{{issue_tracker_ctx}}'
+    method: create_task
     args:
-      id: '{{item_id}}'
+      title: "Fix login bug"
+      description: "Users can't log in on Safari"
+      category_id: '{{category_id}}'
+      assignee: alice
+    outputs:
+      task_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for create_task to sync
+    context_id: '{{issue_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: List active tasks from node 2
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: list_tasks
+    args:
+      include_archived: false
+    outputs:
+      task_0: result.output.0
+
+  - type: json_assert
+    name: Node 2 sees the new task assigned to alice, open and not archived
+    statements:
+      - 'json_subset({{task_0}}, {"title": "Fix login bug", "assignee": "alice", "status": "open", "archived": false})'
+
+  # --- assign_task ---
+
+  - type: call
+    name: Exercise assign_task on node 1
+    node: app-node-1
+    context_id: '{{issue_tracker_ctx}}'
+    method: assign_task
+    args:
+      task_id: '{{task_id}}'
+      assignee: bob
+
+  - type: wait_for_sync
+    name: Wait for assign_task to sync
+    context_id: '{{issue_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: List tasks from node 2 after reassignment
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: list_tasks
+    args:
+      include_archived: false
+    outputs:
+      task_after_assign: result.output.0
+
+  - type: json_assert
+    name: Node 2 sees the task reassigned to bob
+    statements:
+      - 'json_subset({{task_after_assign}}, {"assignee": "bob"})'
+
+  # --- set_priority ---
+
+  - type: call
+    name: Exercise set_priority on node 1
+    node: app-node-1
+    context_id: '{{issue_tracker_ctx}}'
+    method: set_priority
+    args:
+      task_id: '{{task_id}}'
+      priority: high
+
+  - type: wait_for_sync
+    name: Wait for set_priority to sync
+    context_id: '{{issue_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: List tasks from node 2 after priority change
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: list_tasks
+    args:
+      include_archived: false
+    outputs:
+      task_after_priority: result.output.0
+
+  - type: json_assert
+    name: Node 2 sees the updated high priority
+    statements:
+      - 'json_subset({{task_after_priority}}, {"priority": "high"})'
+
+  # --- move_task: create a second category, then move the task into it ---
+
+  - type: call
+    name: Exercise create_category (second category) on node 1
+    node: app-node-1
+    context_id: '{{issue_tracker_ctx}}'
+    method: create_category
+    args:
+      name: Frontend
+    outputs:
+      category_id_2: result.output
+
+  - type: call
+    name: Exercise move_task on node 1
+    node: app-node-1
+    context_id: '{{issue_tracker_ctx}}'
+    method: move_task
+    args:
+      task_id: '{{task_id}}'
+      category_id: '{{category_id_2}}'
+
+  - type: wait_for_sync
+    name: Wait for move_task to sync
+    context_id: '{{issue_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: List tasks from node 2 after move
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: list_tasks
+    args:
+      include_archived: false
+    outputs:
+      task_category_after_move: result.output.0.category_id
+
+  - type: json_assert
+    name: Node 2 sees the task filed under the Frontend category
+    statements:
+      - 'json_equal({{task_category_after_move}}, {{category_id_2}})'
+
+  # --- add_comment (with a PR link) ---
+
+  - type: call
+    name: Exercise add_comment on node 1
+    node: app-node-1
+    context_id: '{{issue_tracker_ctx}}'
+    method: add_comment
+    args:
+      task_id: '{{task_id}}'
+      body: "Fixed in PR"
+      pr_link: "https://github.com/org/repo/pull/42"
+    outputs:
+      comment_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for add_comment to sync
+    context_id: '{{issue_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: List comments from node 2
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: list_comments
+    args:
+      task_id: '{{task_id}}'
+    outputs:
+      comment_0: result.output.0
+
+  - type: json_assert
+    name: Node 2 sees the comment and its PR link
+    statements:
+      - 'json_subset({{comment_0}}, {"body": "Fixed in PR", "pr_link": "https://github.com/org/repo/pull/42"})'
+
+  # --- edit_comment: rejected for a non-author, accepted for the author ---
+
+  - type: call
+    name: Non-author edit_comment from node 2 must be rejected
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: edit_comment
+    args:
+      comment_id: '{{comment_id}}'
+      body: "Malicious edit"
     expect_error: true
 
-  # The owner (node 1) can delete it.
   - type: call
-    name: Owner delete from node 1 succeeds
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: delete
+    name: Exercise edit_comment on node 1 (the author)
+    node: app-node-1
+    context_id: '{{issue_tracker_ctx}}'
+    method: edit_comment
     args:
-      id: '{{item_id}}'
+      comment_id: '{{comment_id}}'
+      body: "Fixed in PR #42, verified"
 
   - type: wait_for_sync
-    name: Wait for the delete to sync across both nodes
-    context_id: '{{ctx}}'
-    nodes: [foundation-node-1, foundation-node-2]
+    name: Wait for edit_comment to sync
+    context_id: '{{issue_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
     timeout: 30
     trigger_sync: true
 
   - type: call
-    name: Node 2 sees the empty registry
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: count
-    args: {}
+    name: List comments from node 2 after edit
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: list_comments
+    args:
+      task_id: '{{task_id}}'
     outputs:
-      count_n2: result
+      comment_after_edit: result.output.0
 
   - type: json_assert
-    name: Registry is empty on node 2 after the owner delete
+    name: Node 2 sees the author's edited comment body
     statements:
-      - 'equal({{count_n2}}, 0)'
+      - 'json_subset({{comment_after_edit}}, {"body": "Fixed in PR #42, verified"})'
+
+  # --- delete_comment: rejected for a non-author, accepted for the author ---
+
+  - type: call
+    name: Non-author delete_comment from node 2 must be rejected
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: delete_comment
+    args:
+      comment_id: '{{comment_id}}'
+    expect_error: true
+
+  - type: call
+    name: Exercise delete_comment on node 1 (the author)
+    node: app-node-1
+    context_id: '{{issue_tracker_ctx}}'
+    method: delete_comment
+    args:
+      comment_id: '{{comment_id}}'
+
+  - type: wait_for_sync
+    name: Wait for delete_comment to sync
+    context_id: '{{issue_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: List comments from node 2 after delete
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: list_comments
+    args:
+      task_id: '{{task_id}}'
+    outputs:
+      comments_after_delete: result.output
+
+  - type: json_assert
+    name: Node 2 sees no comments left on the task
+    statements:
+      - 'json_equal({{comments_after_delete}}, [])'
+
+  # --- complete_task ---
+
+  - type: call
+    name: Exercise complete_task on node 1
+    node: app-node-1
+    context_id: '{{issue_tracker_ctx}}'
+    method: complete_task
+    args:
+      task_id: '{{task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for complete_task to sync
+    context_id: '{{issue_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: List all tasks (incl. archived) from node 2 after completion
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: list_tasks
+    args:
+      include_archived: true
+    outputs:
+      task_after_complete: result.output.0
+
+  - type: json_assert
+    name: Node 2 sees the task marked completed
+    statements:
+      - 'json_subset({{task_after_complete}}, {"status": "completed"})'
+
+  # --- archive_task ---
+
+  - type: call
+    name: Exercise archive_task on node 1
+    node: app-node-1
+    context_id: '{{issue_tracker_ctx}}'
+    method: archive_task
+    args:
+      task_id: '{{task_id}}'
+
+  - type: wait_for_sync
+    name: Wait for archive_task to sync
+    context_id: '{{issue_tracker_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: List active tasks from node 2 after archive
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: list_tasks
+    args:
+      include_archived: false
+    outputs:
+      active_tasks_after_archive: result.output
+
+  - type: json_assert
+    name: The archived task no longer appears in the active list on node 2
+    statements:
+      - 'json_equal({{active_tasks_after_archive}}, [])'
+
+  - type: call
+    name: List all tasks (incl. archived) from node 2 after archive
+    node: app-node-2
+    context_id: '{{issue_tracker_ctx}}'
+    method: list_tasks
+    args:
+      include_archived: true
+    outputs:
+      task_after_archive: result.output.0
+
+  - type: json_assert
+    name: Node 2 sees the task flagged archived
+    statements:
+      - 'json_subset({{task_after_archive}}, {"archived": true})'
