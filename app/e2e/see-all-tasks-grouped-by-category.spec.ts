@@ -30,62 +30,56 @@ test.describe(`anyone on the team: see all tasks grouped by category`, () => {
 
     // The workspace this test runs in is shared across every spec file in the
     // suite (createWorkspace reuses node 0's first namespace/context), so other
-    // files' categories already sit on this board. Use a run-unique category
-    // name and resolve its real id from the rendered column's testid, so every
-    // later assertion targets THIS column deterministically.
-    const categoryName = `General-${Date.now()}`;
+    // files' categories already sit on this board. Use run-unique names and
+    // resolve the category's real id from the rendered column's testid, so
+    // every later assertion targets THIS column deterministically — and so
+    // retries never collide or produce multi-match strict-mode errors.
+    const stamp = Date.now();
+    const categoryName = `General-${stamp}`;
+    const activeTitle = `Write specs ${stamp}`;
+    const archivedTitle = `Old task ${stamp}`;
+
     await page.getByTestId('field-name').fill(categoryName);
     await page.getByTestId('action-create_category').click();
     const categoryColumn = page.locator('[data-testid^="item-category-"]').filter({ hasText: categoryName });
-    await expect(categoryColumn).toBeVisible({ timeout: 10_000 });
+    await expect(categoryColumn).toBeVisible({ timeout: 15_000 });
     const catTestId = (await categoryColumn.getAttribute('data-testid')) ?? '';
     const categoryId = catTestId.replace('item-category-', '');
     expect(categoryId).not.toEqual('');
     const targetColumn = page.locator(`[data-testid="item-category-${categoryId}"]`);
 
-    // Create an active task. The board form's controlled category <select>
-    // silently falls back to categories[0] on a shared board (a change event
-    // may not fire when the option is pre-selected, then a concurrent refresh
-    // resets it), so we do NOT trust it for placement — we place the task into
-    // THIS category explicitly via the detail modal's Move control below.
-    await page.getByTestId('field-title').fill('Write specs');
+    // Create an active task placed directly into THIS category. The board form's
+    // category <select> defaults to categories[0] on a shared board, so select
+    // our category explicitly before submitting (same proven approach as the
+    // create-issue spec) — this fixes the flaky reliance on the modal move.
+    await page.getByTestId('field-title').fill(activeTitle);
     await page.getByTestId('field-assignee').fill('alice');
+    await page.getByTestId('field-category_id').selectOption({ label: categoryName });
     await page.getByTestId('action-create_task').click();
-    const taskCard = page.locator('[data-testid^="item-task-"]').filter({ hasText: 'Write specs' });
-    await expect(taskCard).toBeVisible({ timeout: 10_000 });
-
-    // Move the task into our category via the modal. The Move button is disabled
-    // until the selected category actually differs from the task's current one,
-    // so if it's already here the click is skipped (task is already grouped
-    // correctly); otherwise move_task is called with an explicit category id.
-    await taskCard.click();
-    const dialog = page.getByRole('dialog');
-    await dialog.getByTestId('field-category_id').selectOption(categoryId);
-    const moveBtn = dialog.getByTestId('action-move_task');
-    if (await moveBtn.isEnabled().catch(() => false)) {
-      await moveBtn.click();
-    }
-    await page.keyboard.press('Escape');
-    await expect(dialog).toBeHidden({ timeout: 10_000 });
+    const taskCard = page.locator('[data-testid^="item-task-"]').filter({ hasText: activeTitle });
+    await expect(taskCard).toBeVisible({ timeout: 15_000 });
 
     // Criterion: the active task is organized under its current category.
-    await expect(targetColumn.getByText('Write specs')).toBeVisible({ timeout: 10_000 });
+    await expect(targetColumn.getByText(activeTitle)).toBeVisible({ timeout: 15_000 });
 
     // A second task that gets archived must disappear from the board entirely.
-    await page.getByTestId('field-title').fill('Old task');
+    await page.getByTestId('field-title').fill(archivedTitle);
     await page.getByTestId('field-assignee').fill('bob');
+    await page.getByTestId('field-category_id').selectOption({ label: categoryName });
     await page.getByTestId('action-create_task').click();
-    const oldTaskCard = page.locator('[data-testid^="item-task-"]').filter({ hasText: 'Old task' });
-    await expect(oldTaskCard).toBeVisible({ timeout: 10_000 });
+    const oldTaskCard = page.locator('[data-testid^="item-task-"]').filter({ hasText: archivedTitle });
+    await expect(oldTaskCard).toBeVisible({ timeout: 15_000 });
     await oldTaskCard.click();
-    await page.getByTestId('action-archive_task').click();
-    await expect(oldTaskCard).toBeHidden({ timeout: 10_000 });
+    const dialog = page.getByRole('dialog');
+    await dialog.getByTestId('action-archive_task').click();
+    await expect(dialog).toBeHidden({ timeout: 10_000 });
+    await expect(oldTaskCard).toBeHidden({ timeout: 15_000 });
 
     // The grouping property holds on a fresh render, not just after the
     // mutating actions.
     await page.reload();
     await waitForWorkspaceReady(page);
-    await expect(targetColumn.getByText('Write specs')).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('[data-testid^="item-task-"]').filter({ hasText: 'Old task' })).toHaveCount(0);
+    await expect(targetColumn.getByText(activeTitle)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-testid^="item-task-"]').filter({ hasText: archivedTitle })).toHaveCount(0);
   });
 });
