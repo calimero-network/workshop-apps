@@ -21,11 +21,11 @@ nodes:
   count: 2
   prefix: foundation-node
   # ponytail: pinned off `:edge` to the rc.8-matching tag so the verify merod
-  # matches the SDK the logic pins (0.11.0-rc.8). Bump in lockstep with
+  # matches the SDK the logic pins (0.11.0-rc.11). Bump in lockstep with
   # logic/Cargo.toml's SDK tag, or bootstrap skews. ASSUMPTION: ghcr publishes
-  # an image tag matching the core git tag `0.11.0-rc.8`; if the registry uses a
+  # an image tag matching the core git tag `0.11.0-rc.11`; if the registry uses a
   # different naming scheme, correct this tag (and verifierWorkflow.js).
-  image: ghcr.io/calimero-network/merod:0.11.0-rc.8
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.11
   # High base ports to avoid colliding with a host-native merod on the
   # defaults (2428 P2P / 2528 RPC). Each node gets base + i.
   base_port: 12428      # P2P / swarm

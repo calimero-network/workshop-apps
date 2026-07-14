@@ -61,16 +61,16 @@ export default function InviteModal({ onInvite, onClose }: InviteModalProps) {
         <p className="sub">Generate an invite code and share it with anyone you want to join this workspace.</p>
 
         {!code ? (
-          <PrimaryBtn style={{ width: '100%', marginTop: 22 }} onClick={handleGenerate} disabled={loading}>
+          <PrimaryBtn data-testid="generate-invite-btn" style={{ width: '100%', marginTop: 22 }} onClick={handleGenerate} disabled={loading}>
             {loading ? <Spin /> : 'Generate invite code'}
           </PrimaryBtn>
         ) : (
           <>
             <Field>
               <label>Invite code</label>
-              <textarea readOnly value={code} rows={4} onFocus={(e) => e.currentTarget.select()} />
+              <textarea data-testid="invite-code-output" readOnly value={code} rows={4} onFocus={(e) => e.currentTarget.select()} />
             </Field>
-            <PrimaryBtn style={{ width: '100%' }} onClick={handleCopy}>
+            <PrimaryBtn data-testid="copy-invite-btn" style={{ width: '100%' }} onClick={handleCopy}>
               {copied ? 'Copied ✓' : 'Copy invite code'}
             </PrimaryBtn>
             <p className="hint">The recipient pastes this into “Join with invitation”.</p>

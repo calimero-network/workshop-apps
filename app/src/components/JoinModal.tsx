@@ -52,6 +52,7 @@ export default function JoinModal({ onJoin, onClose }: JoinModalProps) {
           <label htmlFor="join-code">Invite code</label>
           <textarea
             id="join-code"
+            data-testid="join-code-input"
             autoFocus
             value={code}
             onChange={(e) => { setCode(e.target.value); setError(null); }}
@@ -65,7 +66,7 @@ export default function JoinModal({ onJoin, onClose }: JoinModalProps) {
 
         <Actions>
           <SecondaryBtn onClick={onClose} disabled={joining}>Cancel</SecondaryBtn>
-          <PrimaryBtn onClick={handleJoin} disabled={!code.trim() || joining}>
+          <PrimaryBtn data-testid="join-submit-btn" onClick={handleJoin} disabled={!code.trim() || joining}>
             {joining ? <Spin /> : 'Join workspace'}
           </PrimaryBtn>
         </Actions>

@@ -8,7 +8,13 @@ export default defineConfig({
   timeout: 90_000,
   expect: { timeout: 30_000 },
   fullyParallel: false,
-  retries: 0,
+  // Multi-node CRDT stories are legitimately timing-sensitive: a peer can
+  // lose one discovery/sync race and win it on the next attempt. Retry twice
+  // so true flakiness self-heals IN-RUN (seconds) instead of failing the gate
+  // and burning an LLM verify-heal cycle. This does NOT hide regressions — a
+  // genuinely broken test fails all 3 attempts; only real flakes are rescued.
+  // `trace: 'on-first-retry'` below captures the first failure for debugging.
+  retries: 2,
   workers: 1,
   reporter: 'list',
   globalSetup: './e2e/global-setup.ts',

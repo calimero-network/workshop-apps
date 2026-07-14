@@ -1,7 +1,7 @@
 {
   "appName": "async-standup",
-  "appVersion": "0.1.5",
-  "package": "com.calimero-studio.ronit-calimero-network-cfee7c9a.async-standup",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.async-standup",
   "metadata": {
     "name": "async-standup",
     "description": "A shared async standup board where team members post daily updates, flag blockers, and comment on each other's progress — no meeting required",
