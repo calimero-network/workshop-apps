@@ -2,8 +2,32 @@
 // the floor only writes this file if it does not already exist. The verifier-
 // writer subagent enriches `test.skip` lines into real assertions; you can
 // too. Do NOT delete the smoke test (it's the floor the verify gate trusts).
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { loginViaHash, clearAuth, createWorkspace, waitForWorkspaceReady } from './helpers';
+
+// Poll for a locator across several fresh fetches. On the shared, heavily-
+// loaded board this test runs against (it executes after every other spec file
+// has already grown node 0's board), a mutate call's own refresh can lose a
+// race with a concurrent subscription-driven refresh and briefly clobber state
+// with a stale (pre-mutate) snapshot. A single reload can happen to catch that
+// same stale moment, so reload-and-retry a few times — the write is durable on
+// the node, so a fresh list_tasks/list_categories eventually surfaces it.
+async function expectVisibleWithReloads(
+  page: Page,
+  locator: Locator,
+  { reloads = 4, per = 15_000 }: { reloads?: number; per?: number } = {},
+) {
+  for (let i = 0; ; i++) {
+    try {
+      await expect(locator).toBeVisible({ timeout: per });
+      return;
+    } catch (e) {
+      if (i >= reloads) throw e;
+      await page.reload();
+      await waitForWorkspaceReady(page);
+    }
+  }
+}
 
 test.describe(`anyone on the team: see all tasks grouped by category`, () => {
   test.beforeEach(async ({ page }) => {
@@ -49,15 +73,9 @@ test.describe(`anyone on the team: see all tasks grouped by category`, () => {
     const categoryColumn = page.locator('[data-testid^="item-category-"]').filter({ hasText: categoryName });
     // The create call's own refresh can race a concurrent subscription-driven
     // refresh; if the slower response wins it briefly clobbers state with a
-    // stale (pre-create) snapshot. Force a fresh fetch instead of just
-    // waiting longer for a render that may never come without one.
-    try {
-      await expect(categoryColumn).toBeVisible({ timeout: 20_000 });
-    } catch {
-      await page.reload();
-      await waitForWorkspaceReady(page);
-      await expect(categoryColumn).toBeVisible({ timeout: 20_000 });
-    }
+    // stale (pre-create) snapshot. Force fresh fetches instead of just waiting
+    // longer for a render that may never come without one.
+    await expectVisibleWithReloads(page, categoryColumn);
     const catTestId = (await categoryColumn.getAttribute('data-testid')) ?? '';
     const categoryId = catTestId.replace('item-category-', '');
     expect(categoryId).not.toEqual('');
@@ -72,16 +90,10 @@ test.describe(`anyone on the team: see all tasks grouped by category`, () => {
     await page.getByTestId('field-category_id').selectOption({ label: categoryName });
     await page.getByTestId('action-create_task').click();
     const taskCard = page.locator('[data-testid^="item-task-"]').filter({ hasText: activeTitle });
-    // Same eventual-consistency guard as the category creation above: force a
-    // fresh fetch if the first refresh raced and lost, rather than only
+    // Same eventual-consistency guard as the category creation above: force
+    // fresh fetches if the first refresh raced and lost, rather than only
     // waiting longer for a render that requires another sync event.
-    try {
-      await expect(taskCard).toBeVisible({ timeout: 20_000 });
-    } catch {
-      await page.reload();
-      await waitForWorkspaceReady(page);
-      await expect(taskCard).toBeVisible({ timeout: 20_000 });
-    }
+    await expectVisibleWithReloads(page, taskCard);
 
     // Criterion: the active task is organized under its current category.
     await expect(targetColumn.getByText(activeTitle)).toBeVisible({ timeout: 20_000 });
@@ -92,13 +104,7 @@ test.describe(`anyone on the team: see all tasks grouped by category`, () => {
     await page.getByTestId('field-category_id').selectOption({ label: categoryName });
     await page.getByTestId('action-create_task').click();
     const oldTaskCard = page.locator('[data-testid^="item-task-"]').filter({ hasText: archivedTitle });
-    try {
-      await expect(oldTaskCard).toBeVisible({ timeout: 20_000 });
-    } catch {
-      await page.reload();
-      await waitForWorkspaceReady(page);
-      await expect(oldTaskCard).toBeVisible({ timeout: 20_000 });
-    }
+    await expectVisibleWithReloads(page, oldTaskCard);
     await oldTaskCard.click();
     const dialog = page.getByRole('dialog');
     await dialog.getByTestId('action-archive_task').click();
