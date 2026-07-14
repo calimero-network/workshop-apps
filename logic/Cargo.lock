@@ -99,7 +99,7 @@ checksum = "8ae3f5d315924270530207e2a68396c3cc547f6dca3fbdca317cfb1a51edb593"
 [[package]]
 name = "calimero-prelude"
 version = "0.0.0"
-source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.11#9378fbaf6061024a24390eca6a26130ef516b721"
+source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.13#64c17161102cc68c226c5c051315802b95583143"
 dependencies = [
  "borsh",
  "calimero-primitives",
@@ -110,7 +110,7 @@ dependencies = [
 [[package]]
 name = "calimero-primitives"
 version = "0.0.0"
-source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.11#9378fbaf6061024a24390eca6a26130ef516b721"
+source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.13#64c17161102cc68c226c5c051315802b95583143"
 dependencies = [
  "borsh",
  "bs58 0.5.1",
@@ -128,7 +128,7 @@ dependencies = [
 [[package]]
 name = "calimero-sdk"
 version = "0.0.0"
-source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.11#9378fbaf6061024a24390eca6a26130ef516b721"
+source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.13#64c17161102cc68c226c5c051315802b95583143"
 dependencies = [
  "borsh",
  "calimero-prelude",
@@ -144,7 +144,7 @@ dependencies = [
 [[package]]
 name = "calimero-sdk-macros"
 version = "0.0.0"
-source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.11#9378fbaf6061024a24390eca6a26130ef516b721"
+source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.13#64c17161102cc68c226c5c051315802b95583143"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -157,7 +157,7 @@ dependencies = [
 [[package]]
 name = "calimero-storage"
 version = "0.0.0"
-source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.11#9378fbaf6061024a24390eca6a26130ef516b721"
+source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.13#64c17161102cc68c226c5c051315802b95583143"
 dependencies = [
  "borsh",
  "calimero-prelude",
@@ -179,7 +179,7 @@ dependencies = [
 [[package]]
 name = "calimero-storage-macros"
 version = "0.0.0"
-source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.11#9378fbaf6061024a24390eca6a26130ef516b721"
+source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.13#64c17161102cc68c226c5c051315802b95583143"
 dependencies = [
  "quote",
  "syn",
@@ -188,7 +188,7 @@ dependencies = [
 [[package]]
 name = "calimero-sys"
 version = "0.0.0"
-source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.11#9378fbaf6061024a24390eca6a26130ef516b721"
+source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.13#64c17161102cc68c226c5c051315802b95583143"
 dependencies = [
  "cfg-if",
 ]
@@ -196,7 +196,7 @@ dependencies = [
 [[package]]
 name = "calimero-wasm-abi"
 version = "0.0.0"
-source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.11#9378fbaf6061024a24390eca6a26130ef516b721"
+source = "git+https://github.com/calimero-network/core?tag=0.11.0-rc.13#64c17161102cc68c226c5c051315802b95583143"
 dependencies = [
  "proc-macro2",
  "serde",
@@ -396,30 +396,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
-]
-
-[[package]]
-name = "team-issue-tracker-issue-tracker"
-version = "0.1.0"
-dependencies = [
- "bs58 0.4.0",
- "calimero-sdk",
- "calimero-storage",
- "calimero-storage-macros",
- "calimero-wasm-abi",
- "team-issue-tracker-types",
- "serde_json",
- "serial_test",
-]
-
-[[package]]
-name = "team-issue-tracker-types"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "bs58 0.4.0",
- "serde",
- "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -1045,6 +1021,30 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "team-issue-tracker-issue-tracker"
+version = "0.1.0"
+dependencies = [
+ "bs58 0.4.0",
+ "calimero-sdk",
+ "calimero-storage",
+ "calimero-storage-macros",
+ "calimero-wasm-abi",
+ "serde_json",
+ "serial_test",
+ "team-issue-tracker-types",
+]
+
+[[package]]
+name = "team-issue-tracker-types"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "bs58 0.4.0",
+ "serde",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
