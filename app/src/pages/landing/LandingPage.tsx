@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '📋', title: 'No meeting required', body: 'Post what you finished, what’s blocking you, and what’s next — the whole team stays in sync async, on their own time.' },
+  { icon: '🚩', title: 'Blockers surface instantly', body: 'Anyone stuck is highlighted the moment they post, so teammates can jump in and help without waiting for a sync call.' },
+  { icon: '🔒', title: 'Your team’s data, your node', body: 'The board lives in a context you and your teammates control — no central server holding your standups.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['How do I post a standup?', 'Fill in what you finished, any blockers, and what you plan to tackle next, then post. It appears on every teammate’s dashboard within seconds.'],
+  ['Can I edit or delete my own entry?', 'Yes — you can edit or delete any standup you authored as your day evolves. Only you can change your own entries.'],
+  ['What happens when I flag a blocker?', 'Blocked entries are visually highlighted on the dashboard so the team lead and teammates spot them at a glance, and anyone can comment with help.'],
+  ['Can I look back at past standups?', 'Yes — browse by date to see everything the team posted on any given day, grouped by author.'],
+  ['Where does the data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database holding your team’s standups.'],
+  ['How do others join the board?', 'Connect your node, then share an invitation link. Anyone you invite joins the shared board instantly — no accounts, no sign-up.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -101,22 +101,22 @@ function R({
 
 const STEPS = [
   { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '02', t: 'Create the board', d: 'Spin up the team’s shared standup board. State is CRDT data that merges across peers automatically.' },
+  { k: '03', t: 'Invite your team', d: 'Share a link. Anyone you invite joins instantly and starts posting standups — no accounts.' },
+  { k: '04', t: 'Stay in sync, async', d: 'Post updates, flag blockers, comment — the whole team sees it live, no meeting on the calendar.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: teammates post standups onto a shared board ───── */
+type Post = { id: number; who: string; text: string; blocker?: boolean; me?: boolean };
+const SCRIPT: Post[] = [
+  { id: 1, who: 'A', text: 'Done: shipped the login flow' },
+  { id: 2, who: 'M', text: 'Blocked: waiting on API keys from infra', blocker: true },
+  { id: 3, who: 'you', text: 'Posted your standup — visible to the team', me: true },
+  { id: 4, who: 'J', text: 'Next: start the dashboard layout' },
 ];
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [shown, setShown] = useState<Post[]>([]);
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
@@ -143,7 +143,7 @@ function LivePreview() {
         <s style={{ background: '#ff5f56' }} />
         <s style={{ background: '#ffbd2e' }} />
         <s style={{ background: C.green }} />
-        <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · your node</span>
+        <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · today’s board</span>
         <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
       </div>
       <div className="body">
@@ -152,9 +152,9 @@ function LivePreview() {
         </div>
         <div className="stream">
           {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
+            <div key={it.id} className={`row ${it.me ? 'me' : ''} ${it.blocker ? 'blocker' : ''}`}>
               <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+              <p>{it.blocker && '🚩 '}{it.text}</p>
             </div>
           ))}
         </div>
@@ -549,6 +549,7 @@ const Preview = styled.div`
   .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
   .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
   .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+  .row.blocker p { color: #ffb4ac; background: rgba(210, 59, 47, 0.14); border-color: rgba(210, 59, 47, 0.5); }
 `;
 
 /* sections */
