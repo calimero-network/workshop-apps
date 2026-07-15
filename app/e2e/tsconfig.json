@@ -5,8 +5,9 @@
     "moduleResolution": "bundler",
     "types": ["node"],
     "strict": true,
+    "allowJs": true,
     "esModuleInterop": true,
     "noEmit": true
   },
-  "include": ["./**/*.ts"]
+  "include": ["./**/*.ts", "./**/*.js"]
 }

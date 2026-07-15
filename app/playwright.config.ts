@@ -1,5 +1,12 @@
 import { defineConfig } from '@playwright/test';
 
+// Per-spec-file workspace isolation (helpers.ts) gives each file its own
+// namespace + context, so specs no longer share one board, which is what
+// makes parallel workers safe. Default 2 workers when isolation is on, 1 when
+// opted out (PW_ISOLATION=0). PW_WORKERS overrides either way.
+const ISOLATION = process.env.PW_ISOLATION !== '0';
+const WORKERS = Number(process.env.PW_WORKERS) || (ISOLATION ? 2 : 1);
+
 export default defineConfig({
   testDir: './e2e',
   // Per-test budget. Kept generous for multi-node CRDT-sync stories (spawn
@@ -15,7 +22,7 @@ export default defineConfig({
   // genuinely broken test fails all 3 attempts; only real flakes are rescued.
   // `trace: 'on-first-retry'` below captures the first failure for debugging.
   retries: 2,
-  workers: 1,
+  workers: WORKERS,
   reporter: 'list',
   globalSetup: './e2e/global-setup.ts',
   globalTeardown: './e2e/global-teardown.ts',

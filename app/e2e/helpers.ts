@@ -1,7 +1,8 @@
-import { Page } from '@playwright/test';
+import { Page, test } from '@playwright/test';
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { buildAuthHash, extractInvitation } from './isolation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = path.resolve(__dirname, '..', '.playwright-data', 'pw-state.json');
@@ -17,6 +18,16 @@ function appRoute(): string {
   } catch {
     return '/';
   }
+}
+
+// Wire name of the app's primary service (matches PRIMARY_SERVICE in the app);
+// needed to mint a context via the admin-api the way useWorkspace.bootstrap does.
+function primaryServiceName(): string {
+  const cfgPath = path.resolve(__dirname, '..', '..', 'studio.config.json');
+  const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'));
+  const name = cfg?.services?.[0]?.name;
+  if (!name) throw new Error('studio.config.json has no services[0].name');
+  return name;
 }
 
 interface NodeState {
@@ -48,39 +59,243 @@ export function getNode(index: number): NodeState {
   return state.nodes[index];
 }
 
-// Persistent per-page tally of admin-api 4xx/5xx responses. A failure on an
-// admin-api route (classically `POST /admin-api/namespaces` → 403) is a
-// node-permission / token-scope mismatch, NOT an app-code bug — but the browser
-// swallows it (the invite-code box just stays empty, or no workspace appears),
-// so downstream the test only sees a selector/timeout. We record every such
-// response for the whole test (not just the login handshake) and (a) emit a
-// greppable `[admin-api-error]` marker into the test's captured output and
-// (b) fold it into the workspace/invite helper failure messages, so the verify
-// classifier can short-circuit it as infrastructural instead of flailing the
-// verifier-writer on correct code.
-const ADMIN_API_ERRORS = new WeakMap<Page, string[]>();
+// ── Per-spec workspace isolation ───────────────────────────────────────
+//
+// The app is single-context: without isolation every test/retry/spec-file
+// shares ONE persistent board (the app binds namespaces[0] + its first
+// context), so state bleeds across tests and the run is pinned to workers:1.
+//
+// With isolation ON (default; PW_ISOLATION=0 to opt out) each spec FILE gets
+// its own namespace + context, provisioned straight through the node admin-api
+// (mirrors useWorkspace.bootstrap) and injected into the auth hash so the app
+// binds to it (parseAuthCallback reads context_id/context_identity; useWorkspace
+// prefers the callback context over discovery). Peers on other nodes are joined
+// into the SAME context via the admin-api and get the same context_id with their
+// own owned identity, so an isolated board is deterministic across nodes,
+// which is what makes workers > 1 safe.
 
-/** Start recording admin-api 4xx/5xx on a page for the whole test. Idempotent. */
-export function logAdminApiErrors(page: Page) {
-  if (ADMIN_API_ERRORS.has(page)) return;
-  const errs: string[] = [];
-  ADMIN_API_ERRORS.set(page, errs);
-  page.on('response', (r) => {
+interface Injection { contextId: string; contextIdentity: string; }
+interface IsoWorkspace {
+  nsId: string;
+  contextId: string;
+  /** nodeIndex → that node's injection (identity differs per node). */
+  joined: Map<number, Promise<Injection>>;
+}
+
+const ISOLATION = process.env.PW_ISOLATION !== '0';
+// Memoized per spec file (keyed with the worker slot; each worker is its own
+// process so the map is already per-worker, the key just separates files a
+// worker runs in sequence). A fresh workspace per file, reused across a file's
+// tests + retries.
+const WORKSPACES = new Map<string, Promise<IsoWorkspace>>();
+
+function specKey(): string {
+  try {
+    const info = test.info();
+    return `${info.parallelIndex}:${info.file}`;
+  } catch {
+    return 'default';
+  }
+}
+
+async function adminApi(
+  node: NodeState,
+  method: string,
+  apiPath: string,
+  body?: unknown,
+): Promise<any> {
+  const res = await fetch(`${node.adminUrl}${apiPath}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${node.accessToken}`,
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`admin-api ${method} ${apiPath} → ${res.status}: ${text.slice(0, 300)}`);
+  }
+  let json: any = null;
+  try { json = JSON.parse(text); } catch { /* non-JSON body */ }
+  return json?.data ?? json;
+}
+
+// Provision the base workspace (namespace + context) on node 0.
+async function provisionBase(): Promise<IsoWorkspace> {
+  const node0 = getNode(0);
+  const ns = await adminApi(node0, 'POST', '/admin-api/namespaces', {
+    applicationId: node0.appId,
+    upgradePolicy: 'Automatic',
+  });
+  await adminApi(
+    node0,
+    'PUT',
+    `/admin-api/groups/${ns.namespaceId}/settings/default-capabilities`,
+    { defaultCapabilities: 3 }, // CAN_CREATE_CONTEXT | CAN_INVITE_MEMBERS
+  );
+  const ctx = await adminApi(node0, 'POST', '/admin-api/contexts', {
+    applicationId: node0.appId,
+    groupId: ns.namespaceId,
+    serviceName: primaryServiceName(),
+    initializationParams: [],
+  });
+  const ws: IsoWorkspace = {
+    nsId: ns.namespaceId,
+    contextId: ctx.contextId,
+    joined: new Map(),
+  };
+  ws.joined.set(0, Promise.resolve({ contextId: ctx.contextId, contextIdentity: ctx.memberPublicKey }));
+  return ws;
+}
+
+// Join a non-0 node into the workspace and return its injection. The context id
+// is global, so the joiner lands on the SAME context with its own identity.
+async function joinNodeIntoWorkspace(ws: IsoWorkspace, nodeIndex: number): Promise<Injection> {
+  const node0 = getNode(0);
+  const node = getNode(nodeIndex);
+  const inv = await adminApi(node0, 'POST', `/admin-api/namespaces/${ws.nsId}/invite`, {
+    recursive: true,
+  });
+  const invitation = extractInvitation(inv);
+  const joinRes = await adminApi(node, 'POST', `/admin-api/namespaces/${ws.nsId}/join`, {
+    invitation,
+  });
+  // Wait until the joined context + owned identity are live on this node, so
+  // the injected identity is usable the moment the page boots. A silent
+  // timeout here would inject an identity that isn't actually live yet,
+  // turning into a bare "element not found" downstream instead of a clear
+  // cause — so an exhausted poll must throw, not fall through.
+  let identityLive = false;
+  for (let i = 0; i < 30; i++) {
+    const owned = await adminApi(node, 'GET', `/admin-api/contexts/${ws.contextId}/identities-owned`)
+      .catch(() => null);
+    if (owned?.identities?.length > 0) { identityLive = true; break; }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  if (!identityLive) {
+    throw new Error(`identity for context ${ws.contextId} never became owned on node ${nodeIndex} after 15s`);
+  }
+  return { contextId: ws.contextId, contextIdentity: joinRes.memberIdentity };
+}
+
+// Resolve (provisioning/joining as needed) the injection for a node in this
+// spec file's isolated workspace. Memoized per spec file and per node.
+async function isolatedInjection(nodeIndex: number): Promise<Injection> {
+  const key = specKey();
+  let wsP = WORKSPACES.get(key);
+  if (!wsP) {
+    wsP = provisionBase();
+    WORKSPACES.set(key, wsP);
+  }
+  const ws = await wsP;
+  let injP = ws.joined.get(nodeIndex);
+  if (!injP) {
+    injP = joinNodeIntoWorkspace(ws, nodeIndex);
+    ws.joined.set(nodeIndex, injP);
+  }
+  return injP;
+}
+
+// Persistent per-page tally of data-plane + console errors the browser
+// otherwise swallows. Two layers matter and neither surfaces as a Playwright
+// error on its own:
+//   - admin-api (management: `POST /admin-api/namespaces` → 403) — a
+//     node-permission / token-scope mismatch, NOT an app-code bug.
+//   - /jsonrpc (app method calls via mero-js `rpc.execute`) — a mutation or
+//     view that fails server-side (HTTP >= 400, or a JSON-RPC error body on a
+//     2xx). The app just renders nothing, so downstream the test sees a bare
+//     "element not found" with no hint the backend method actually failed.
+//   - console.error — runtime errors logged by the app.
+// We record these for the whole test and (a) emit greppable `[admin-api-error]`
+// / `[rpc-error]` markers into the captured output and (b) fold them into the
+// workspace/invite helper failure messages, so the verify classifier can route
+// each cause correctly (admin-api → infrastructural, rpc → backend) instead of
+// flailing the verifier-writer on correct test code.
+interface PageErrors {
+  adminApi: string[];
+  rpc: string[];
+  console: string[];
+}
+const PAGE_ERRORS = new WeakMap<Page, PageErrors>();
+const CONSOLE_ERROR_CAP = 10;
+
+async function recordResponse(r: any, rec: PageErrors) {
+  try {
+    const url = r.url();
+    const path = url.replace(/^https?:\/\/[^/]+/, '');
+    const status = r.status();
+    // admin-api marker — wire string kept EXACTLY (worker lift + classifier
+    // tests depend on it).
+    if (status >= 400 && /\/admin-api\//.test(url)) {
+      const line = `${status} ${r.request().method()} ${path}`;
+      rec.adminApi.push(line);
+      console.error(`[admin-api-error] ${line}`);
+      return;
+    }
+    if (!/\/jsonrpc/.test(url)) return;
+    // jsonrpc transport error.
+    if (status >= 400) {
+      const line = `HTTP ${status} ${r.request().method()} ${path}`;
+      rec.rpc.push(line);
+      console.error(`[rpc-error] ${line}`);
+      return;
+    }
+    // jsonrpc 2xx carrying a JSON-RPC-level error. mero-js posts
+    // `{ method:'execute', params:{ method:'<appMethod>', ... } }` and the node
+    // replies `{ result }` on success or `{ error }` (some builds nest it under
+    // `result.error`). Read defensively — the body may be unavailable.
+    let body: any;
+    try { body = await r.json(); } catch { return; }
+    const rpcErr = body?.error ?? body?.result?.error;
+    if (!rpcErr) return;
+    let method = '';
     try {
-      const url = r.url();
-      if (r.status() >= 400 && /\/admin-api\//.test(url)) {
-        const line = `${r.status()} ${r.request().method()} ${url.replace(/^https?:\/\/[^/]+/, '')}`;
-        errs.push(line);
-        console.error(`[admin-api-error] ${line}`);
-      }
-    } catch { /* response discarded */ }
+      const parsed = JSON.parse(r.request().postData() || '');
+      method = parsed?.params?.method || parsed?.method || '';
+    } catch { /* method unknown */ }
+    const emsg = String(rpcErr?.message ?? rpcErr?.data ?? rpcErr).slice(0, 200);
+    const line = `${method || 'rpc'} ${emsg}`.trim();
+    rec.rpc.push(line);
+    console.error(`[rpc-error] ${line}`);
+  } catch { /* response discarded */ }
+}
+
+/** Start recording admin-api / jsonrpc / console errors on a page. Idempotent. */
+export function logAdminApiErrors(page: Page) {
+  if (PAGE_ERRORS.has(page)) return;
+  const rec: PageErrors = { adminApi: [], rpc: [], console: [] };
+  PAGE_ERRORS.set(page, rec);
+  page.on('response', (r) => { void recordResponse(r, rec); });
+  page.on('console', (m) => {
+    try {
+      if (m.type() !== 'error') return;
+      rec.console.push(String(m.text()).slice(0, 200));
+      if (rec.console.length > CONSOLE_ERROR_CAP) rec.console.shift();
+    } catch { /* discard */ }
   });
 }
 
-/** ` [admin-api-error] ...` one-line suffix for a failure message, or '' if none. */
-function adminApiTail(page: Page): string {
-  const errs = ADMIN_API_ERRORS.get(page) || [];
-  return errs.length ? ` [admin-api-error] ${errs.slice(-3).join('; ')}` : '';
+/** One-line suffix of recorded errors for a failure message, or '' if none. */
+function recordedErrorsTail(page: Page): string {
+  const rec = PAGE_ERRORS.get(page);
+  if (!rec) return '';
+  const parts: string[] = [];
+  if (rec.adminApi.length) parts.push(`[admin-api-error] ${rec.adminApi.slice(-3).join('; ')}`);
+  if (rec.rpc.length) parts.push(`[rpc-error] ${rec.rpc.slice(-3).join('; ')}`);
+  if (rec.console.length) parts.push(`[console-error] ${rec.console.slice(-3).join('; ')}`);
+  return parts.length ? ` ${parts.join(' ')}` : '';
+}
+
+/**
+ * Collision-safe display name for an entity a test creates. The board persists
+ * across ALL tests and retries in a run (single shared context), so every
+ * entity a spec creates MUST be named with uniqueName and asserted against that
+ * exact string (or a resolved data-testid) — never a bare hardcoded label, or a
+ * strict-mode locator resolves to the duplicates earlier tests/retries left.
+ */
+export function uniqueName(prefix: string): string {
+  return `${prefix} ${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
 /**
@@ -95,12 +310,16 @@ function adminApiTail(page: Page): string {
 export async function loginViaHash(page: Page, nodeIndex = 0) {
   logAdminApiErrors(page);
   const node = getNode(nodeIndex);
-  const hash = new URLSearchParams({
-    access_token: node.accessToken,
-    refresh_token: node.refreshToken,
-    node_url: node.adminUrl,
-    application_id: node.appId,
-  }).toString();
+  const injection = ISOLATION ? await isolatedInjection(nodeIndex) : null;
+  const hash = buildAuthHash(
+    {
+      accessToken: node.accessToken,
+      refreshToken: node.refreshToken,
+      nodeUrl: node.adminUrl,
+      appId: node.appId,
+    },
+    injection,
+  );
 
   const diag: string[] = [];
   const onConsole = (m: any) => {
@@ -168,7 +387,7 @@ export async function waitForWorkspaceReady(page: Page, timeout = 45_000) {
   } catch (e) {
     // createWorkspace → POST /admin-api/namespaces failing (node/token scope)
     // is the classic cause of "workspace never appears" — name it on line 1.
-    throw new Error(`workspace never became ready.${adminApiTail(page)}\n${(e as Error).message}`);
+    throw new Error(`workspace never became ready.${recordedErrorsTail(page)}\n${(e as Error).message}`);
   }
 }
 
@@ -217,10 +436,10 @@ export async function inviteAndJoin(inviterPage: Page, joinerPage: Page): Promis
     );
   } catch (e) {
     // The invite call hits admin-api; a 403 there leaves the box empty.
-    throw new Error(`invite code never populated.${adminApiTail(inviterPage)}\n${(e as Error).message}`);
+    throw new Error(`invite code never populated.${recordedErrorsTail(inviterPage)}\n${(e as Error).message}`);
   }
   code = (await codeField.inputValue()).trim();
-  if (!code) throw new Error(`invite code never populated.${adminApiTail(inviterPage)}`);
+  if (!code) throw new Error(`invite code never populated.${recordedErrorsTail(inviterPage)}`);
   // Close the invite modal (Escape) so it doesn't overlay the joiner flow.
   await inviterPage.keyboard.press('Escape').catch(() => {});
 
