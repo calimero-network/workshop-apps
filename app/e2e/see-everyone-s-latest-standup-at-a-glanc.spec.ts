@@ -27,15 +27,17 @@ test.describe(`team lead: see everyone's latest standup at a glance`, () => {
     await createWorkspace(page);
 
     // Post a standup that includes a blocker; the composer is already on the
-    // Dashboard tab (the default tab) — no nav click needed.
-    await page.getByTestId('field-done_items').fill('Reviewed PRs');
+    // Dashboard tab (the default tab) — no nav click needed. Unique suffix
+    // because the board persists across the whole run.
+    const doneItems = `Reviewed PRs ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await page.getByTestId('field-done_items').fill(doneItems);
     await page.getByTestId('field-blockers').fill('Deploy pipeline is broken');
     await page.getByTestId('field-planned_items').fill('Fix CI configuration');
     await page.getByTestId('field-date').fill('2025-01-15');
     await page.getByTestId('action-post_standup').click();
 
     // Submitting returns to the dashboard, which must show the standup card.
-    const standupItem = page.getByTestId(/^item-standup-/).filter({ hasText: 'Reviewed PRs' });
+    const standupItem = page.getByTestId(/^item-standup-/).filter({ hasText: doneItems });
     await expect(standupItem).toBeVisible({ timeout: 5_000 });
 
     // The blocker content must be present and rendered inside the standup card;

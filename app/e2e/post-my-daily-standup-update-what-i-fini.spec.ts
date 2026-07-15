@@ -38,7 +38,11 @@ test.describe(`team member: post my daily standup update — what I finished, wh
 
       // Node A: the standup composer is already on the Dashboard tab (the
       // default tab) — no nav click needed, just fill and submit.
-      await pageA.getByTestId('field-done_items').fill('Shipped login flow');
+      // The board persists across the whole run, so give the content a unique
+      // suffix — a bare literal like "Shipped login flow" could false-match a
+      // leftover item from another test/story that shares a common prefix.
+      const doneItems = `Shipped login flow ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await pageA.getByTestId('field-done_items').fill(doneItems);
       await pageA.getByTestId('field-blockers').fill('Waiting on API keys from infra');
       await pageA.getByTestId('field-planned_items').fill('Start dashboard layout');
       await pageA.getByTestId('field-date').fill('2025-01-15');
@@ -46,7 +50,7 @@ test.describe(`team member: post my daily standup update — what I finished, wh
 
       // Node B: the submitted standup should appear on the dashboard within 5s
       await expect(
-        pageB.getByTestId(/^item-standup-/).filter({ hasText: 'Shipped login flow' })
+        pageB.getByTestId(/^item-standup-/).filter({ hasText: doneItems })
       ).toBeVisible({ timeout: 5_000 });
     } finally {
       await ctxA.close();

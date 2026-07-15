@@ -42,9 +42,13 @@ test.describe(`teammate: comment on someone's blocker`, () => {
       await inviteAndJoin(pageA, pageB);
 
       // Node A: the standup composer is already on the Dashboard tab (the
-      // default tab) — no nav click needed, just fill and submit.
+      // default tab) — no nav click needed, just fill and submit. Unique
+      // suffixes because the board persists across the whole run.
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const blockers = `Need DB credentials from ops ${suffix}`;
+      const commentBody = `I can help with the API keys — ping me ${suffix}`;
       await pageA.getByTestId('field-done_items').fill('Finished API integration');
-      await pageA.getByTestId('field-blockers').fill('Need DB credentials from ops');
+      await pageA.getByTestId('field-blockers').fill(blockers);
       await pageA.getByTestId('field-planned_items').fill('Write integration tests');
       await pageA.getByTestId('field-date').fill('2025-01-15');
       await pageA.getByTestId('action-post_standup').click();
@@ -53,19 +57,19 @@ test.describe(`teammate: comment on someone's blocker`, () => {
       // comment thread + form render unconditionally on each card (no
       // expand/collapse toggle exists), so no extra click is needed to reach
       // the comment input.
-      const standupOnB = pageB.getByTestId(/^item-standup-/).filter({ hasText: 'Need DB credentials from ops' });
+      const standupOnB = pageB.getByTestId(/^item-standup-/).filter({ hasText: blockers });
       await expect(standupOnB).toBeVisible({ timeout: 15_000 });
 
-      await standupOnB.getByTestId(/^field-body-/).fill('I can help with the API keys — ping me');
+      await standupOnB.getByTestId(/^field-body-/).fill(commentBody);
       await standupOnB.getByTestId(/^action-add_comment-/).click();
 
       // Node A (every other member): the comment posted by B must appear
       // attached to that same standup. The card subscribes to context sync
       // events and re-fetches its comment thread on every one, so it should
       // show up live without any manual re-fetch trigger.
-      const standupOnA = pageA.getByTestId(/^item-standup-/).filter({ hasText: 'Need DB credentials from ops' });
+      const standupOnA = pageA.getByTestId(/^item-standup-/).filter({ hasText: blockers });
       await expect(standupOnA).toBeVisible({ timeout: 15_000 });
-      const commentOnA = standupOnA.getByTestId(/^item-comment-/).filter({ hasText: 'I can help with the API keys — ping me' });
+      const commentOnA = standupOnA.getByTestId(/^item-comment-/).filter({ hasText: commentBody });
       await expect(commentOnA).toBeVisible({ timeout: 15_000 });
     } finally {
       await ctxA.close();

@@ -30,8 +30,10 @@ test.describe(`anyone on the team: browse standups by date`, () => {
     await createWorkspace(page);
 
     // First post a standup on a specific date. The composer is already on
-    // the Dashboard tab (the default tab) — no nav click needed.
-    await page.getByTestId('field-done_items').fill('Reviewed quarterly goals');
+    // the Dashboard tab (the default tab) — no nav click needed. Unique
+    // suffix because the board persists across the whole run.
+    const doneItems = `Reviewed quarterly goals ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await page.getByTestId('field-done_items').fill(doneItems);
     await page.getByTestId('field-blockers').fill('None');
     await page.getByTestId('field-planned_items').fill('Team sync prep');
     await page.getByTestId('field-date').fill('2025-01-15');
@@ -42,7 +44,7 @@ test.describe(`anyone on the team: browse standups by date`, () => {
     // one-shot fetch on date change (no live subscription), so navigating away
     // too early races the write and the date query comes back empty.
     await expect(
-      page.getByTestId(/^item-standup-/).filter({ hasText: 'Reviewed quarterly goals' })
+      page.getByTestId(/^item-standup-/).filter({ hasText: doneItems })
     ).toBeVisible({ timeout: 10_000 });
 
     // Navigate to the History tab (browse by date)
@@ -61,7 +63,7 @@ test.describe(`anyone on the team: browse standups by date`, () => {
     // fetch, until it appears.
     const historyItem = page
       .getByTestId(/^item-standup-/)
-      .filter({ hasText: 'Reviewed quarterly goals' });
+      .filter({ hasText: doneItems });
     const deadline = Date.now() + 20_000;
     while (Date.now() < deadline) {
       await page.getByTestId('field-date').fill('2025-01-15');

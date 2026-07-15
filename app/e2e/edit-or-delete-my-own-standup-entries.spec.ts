@@ -40,7 +40,10 @@ test.describe(`team member: edit or delete my own standup entries`, () => {
 
       // Node A: the standup composer is already on the Dashboard tab (the
       // default tab) — no nav click needed, just fill and submit.
-      await pageA.getByTestId('field-done_items').fill('Node A done items');
+      // Unique suffix: the board persists across the whole run, so a bare
+      // literal like "Node A done items" risks matching a leftover item.
+      const doneItemsA = `Node A done items ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await pageA.getByTestId('field-done_items').fill(doneItemsA);
       await pageA.getByTestId('field-blockers').fill('Node A blocker');
       await pageA.getByTestId('field-planned_items').fill('Node A plans');
       await pageA.getByTestId('field-date').fill('2025-01-15');
@@ -48,7 +51,7 @@ test.describe(`team member: edit or delete my own standup entries`, () => {
 
       // Node B: wait for the standup to appear on the dashboard (cross-node
       // sync from a cold join can take a beat longer than the 5s criterion floor)
-      const standupOnB = pageB.getByTestId(/^item-standup-/).filter({ hasText: 'Node A done items' });
+      const standupOnB = pageB.getByTestId(/^item-standup-/).filter({ hasText: doneItemsA });
       await expect(standupOnB).toBeVisible({ timeout: 15_000 });
 
       // Node B: edit/delete controls for another author's standup should not
@@ -60,7 +63,7 @@ test.describe(`team member: edit or delete my own standup entries`, () => {
       expect(deleteVisible).toBe(false);
 
       // Node A: its own standup should have accessible edit/delete controls
-      const ownItem = pageA.getByTestId(/^item-standup-/).filter({ hasText: 'Node A done items' });
+      const ownItem = pageA.getByTestId(/^item-standup-/).filter({ hasText: doneItemsA });
       await expect(ownItem).toBeVisible({ timeout: 5_000 });
       await expect(ownItem.getByRole('button', { name: 'Edit standup' })).toBeVisible();
       await expect(ownItem.getByTestId(/^action-delete_standup-/)).toBeVisible();
@@ -86,28 +89,33 @@ test.describe(`team member: edit or delete my own standup entries`, () => {
 
       // Node A: the standup composer is already on the Dashboard tab (the
       // default tab) — no nav click needed, just fill and submit.
-      await pageA.getByTestId('field-done_items').fill('Original done items');
+      // Unique suffix so this test's own item is unambiguous against the
+      // persistent shared board.
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const originalDoneItems = `Original done items ${suffix}`;
+      const editedDoneItems = `Shipped login flow + tests ${suffix}`;
+      await pageA.getByTestId('field-done_items').fill(originalDoneItems);
       await pageA.getByTestId('field-blockers').fill('Original blocker');
       await pageA.getByTestId('field-planned_items').fill('Original plans');
       await pageA.getByTestId('field-date').fill('2025-01-15');
       await pageA.getByTestId('action-post_standup').click();
 
       // Wait for the standup to appear on node A's own dashboard view
-      const ownItem = pageA.getByTestId(/^item-standup-/).filter({ hasText: 'Original done items' });
+      const ownItem = pageA.getByTestId(/^item-standup-/).filter({ hasText: originalDoneItems });
       await expect(ownItem).toBeVisible({ timeout: 15_000 });
 
       // Node A: open the edit form for its own standup (card header "Edit standup" button)
       await ownItem.getByRole('button', { name: 'Edit standup' }).click();
 
       // Fill in updated values and save (edit mode has no date field)
-      await pageA.getByTestId('field-done_items').fill('Shipped login flow + tests');
+      await pageA.getByTestId('field-done_items').fill(editedDoneItems);
       await pageA.getByTestId('field-blockers').fill('Waiting on API keys from infra');
       await pageA.getByTestId('field-planned_items').fill('Start dashboard layout');
       await pageA.getByTestId('action-edit_standup').click();
 
       // Node B: updated content should be visible within 5s
       await expect(
-        pageB.getByTestId(/^item-standup-/).filter({ hasText: 'Shipped login flow + tests' })
+        pageB.getByTestId(/^item-standup-/).filter({ hasText: editedDoneItems })
       ).toBeVisible({ timeout: 5_000 });
     } finally {
       await ctxA.close();
