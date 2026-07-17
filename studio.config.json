@@ -1,7 +1,7 @@
 {
   "appName": "snake-arcade",
-  "appVersion": "1.0.0",
-  "package": "com.calimero.snake-arcade",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.ronit-calimero-network-cfee7c9a.snake-arcade",
   "metadata": {
     "name": "snake-arcade",
     "description": "A shared room for friends playing classic snake locally, with live status, timed duels, and an all-time leaderboard",
