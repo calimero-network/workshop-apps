@@ -2,6 +2,7 @@ import React from 'react';
 import { Button } from '@calimero-network/mero-ui';
 import { ConnectButton } from '@calimero-network/mero-react';
 import { APP_DISPLAY_NAME, APP_DESCRIPTION } from '../../config';
+import { C } from '../../theme';
 
 export default function LoginPage() {
   // Redirect-when-authed is handled by <RedirectIfAuthed> in App.tsx, which
@@ -9,7 +10,19 @@ export default function LoginPage() {
   return (
     <div className="app-bg">
       <div className="page-shell" style={{ justifyContent: 'center', alignItems: 'center', gap: '2rem' }}>
-        <h1 style={{ fontSize: '2.5rem', fontWeight: 700 }}>{APP_DISPLAY_NAME}</h1>
+        <span
+          style={{
+            fontFamily: C.mono,
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.2em',
+            textTransform: 'uppercase',
+            color: C.greenDeep,
+          }}
+        >
+          Insert node to continue
+        </span>
+        <h1 style={{ fontSize: '2.5rem', fontWeight: 800, letterSpacing: '-0.03em' }}>{APP_DISPLAY_NAME}</h1>
         <p style={{ color: '#888', maxWidth: 400, textAlign: 'center' }}>
           {APP_DESCRIPTION}
         </p>

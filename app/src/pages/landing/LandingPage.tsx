@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { ConnectButton, CalimeroLogo } from '@calimero-network/mero-react';
 import { APP_DISPLAY_NAME, APP_DESCRIPTION } from '../../config';
@@ -6,52 +6,46 @@ import { APP_DISPLAY_NAME, APP_DESCRIPTION } from '../../config';
 /**
  * One-page marketing landing — the app's front door.
  *
- * White, professional Calimero aesthetic (neon green on paper + near-black),
- * mirroring Calimero Studio's landing. Scroll-reveal animations, an animated
- * live preview, a features grid and a FAQ about nodes / contexts / data.
- *
- * BUILD AGENT: customize the copy for the specific app — the headline, the
- * sub-headline, the three FEATURES, and the FAQ answers. Keep the structure,
- * the animations, the brand palette (C) and the auth wiring:
- *   - already authenticated (incl. desktop SSO skip) → go straight to the app
- *   - otherwise → animated landing + a ConnectButton CTA
- * Pull real product features from the spec; don't ship the placeholder copy.
+ * Retro-arcade aesthetic (cabinet green on paper + near-black, coin-yellow
+ * accents), mirroring Calimero Studio's landing structure. Scroll-reveal
+ * animations, an animated live preview of the actual snake+duel loop, a
+ * features grid and a FAQ about nodes / contexts / data.
  */
 
-/* ── Calimero brand palette — neon green on white + near-black ─────────────── */
+/* ── Retro-arcade brand palette — cabinet green + coin yellow on white/near-black ── */
 const C = {
-  green: '#A4FF11',
-  greenHover: '#93e60c',
-  greenDeep: '#4e7a06',
-  greenInk: '#37610a',
+  green: '#22C55E',
+  greenHover: '#16A34A',
+  greenDeep: '#15803D',
+  greenInk: '#166534',
+  accent: '#FACC15',
+  accentInk: '#854D0E',
   ink: '#0e140f',
   ink2: '#151c16',
   paper: '#ffffff',
   paper2: '#f5f8f1',
   line: '#e7ece2',
-  lineDark: 'rgba(164,255,17,0.14)',
+  lineDark: 'rgba(34,197,94,0.14)',
   muted: '#5d6b60',
   mutedSoft: '#93a394',
 } as const;
 
-/* ConnectButton + its login popup use the default mero-react theme — the
-   default button (green #a5ff11 on dark text) already reads well on this white
-   page, and the default popup keeps proper contrast (a dark modal). Overriding
-   the theme broke the modal's internal contrast (white-on-green), so leave it. */
+/* ConnectButton + its login popup use the default mero-react theme — leave it
+   alone; it already reads well against this palette. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '🐍', title: 'Play in the same room', body: 'Everyone runs their own local snake game, but the room sees your live score, length, and status update in real time.' },
+  { icon: '⏱️', title: 'Timed duels', body: 'Challenge the whole room to a synced countdown. Highest score when the clock hits zero takes the win.' },
+  { icon: '🏆', title: 'All-time leaderboard', body: 'Every best score ever posted, ranked. Beat your record in any game or duel and it climbs the board instantly.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['What is a node?', 'A node (merod) is the runtime that stores the room state and runs the app logic. You run your own — locally or on your own infrastructure — so scores and identities never touch a central server.'],
+  ['Where does the room state live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central leaderboard database — every player’s node holds the same synced truth.'],
+  ['What is a context?', 'A context is the shared arcade room peers join by invitation. Everyone in it sees the same live statuses, duels, and leaderboard in real time.'],
+  ['How do my friends join the room?', 'Connect your node, then share an invitation link. Anyone you invite drops straight into the room and starts playing — no accounts, no sign-up.'],
+  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the friends you invite to the room.'],
+  ['Is my score really synced peer-to-peer?', 'Yes. Status, duel results, and the leaderboard are CRDT data synced directly between the nodes in the room. Take your node offline and it re-syncs when you’re back.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -101,41 +95,55 @@ function R({
 
 const STEPS = [
   { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '02', t: 'Open the room', d: 'Create or join the shared, encrypted arcade room. Status and results sync automatically across peers.' },
+  { k: '03', t: 'Play or duel', d: 'Run the local snake game any time, or start a timed duel and race the room against the clock.' },
+  { k: '04', t: 'Climb the board', d: 'Every best score ever posted lives on the all-time leaderboard — no central server ever holds it.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
-];
+/* ── animated live preview: a looping mini snake game + duel countdown ─────── */
+const GRID = 6;
+const PATH = [0, 1, 2, 3, 4, 5, 11, 17, 23, 29, 35, 34, 33, 32, 31, 30, 24, 18, 12, 6];
+const LAP_TICKS = PATH.length;
+const FOOD_STEPS = [4, 9, 14, 19];
+const RESET_LAPS = 3;
+const TICK_MS = 260;
+const DUEL_TOTAL_S = 12;
+const DUEL_WIN_TICKS = 4;
+const DUEL_CYCLE = DUEL_TOTAL_S + DUEL_WIN_TICKS;
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
-  const [pulse, setPulse] = useState(false);
+  const [tick, setTick] = useState(0);
+  const reduced = useMemo(prefersReducedMotion, []);
 
   useEffect(() => {
-    const timers: number[] = [];
-    const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
-    const run = () => {
-      setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
-          setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
-        });
-      });
-    };
-    run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
-    return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
-  }, []);
+    if (reduced) return;
+    const id = window.setInterval(() => setTick((t) => t + 1), TICK_MS);
+    return () => window.clearInterval(id);
+  }, [reduced]);
+
+  const lapIndex = tick % LAP_TICKS;
+  const lapNumber = Math.floor(tick / LAP_TICKS);
+  const gameLap = lapNumber % RESET_LAPS;
+  const foodsEaten = gameLap * FOOD_STEPS.length + FOOD_STEPS.filter((s) => s <= lapIndex).length;
+  const score = foodsEaten * 10;
+  const length = Math.min(3 + foodsEaten, 10);
+  const bodyCells = new Set<number>();
+  for (let k = 0; k < length; k += 1) {
+    bodyCells.add(PATH[(lapIndex - k + LAP_TICKS * 100) % LAP_TICKS]);
+  }
+  const headCell = PATH[lapIndex];
+  const nextFoodStep = FOOD_STEPS.find((s) => s > lapIndex) ?? FOOD_STEPS[0];
+  const foodCell = PATH[nextFoodStep];
+
+  const duelPhase = tick % DUEL_CYCLE;
+  const duelLive = duelPhase < DUEL_TOTAL_S;
+  const secondsLeft = duelLive ? DUEL_TOTAL_S - duelPhase : 0;
+
+  const cells = Array.from({ length: GRID * GRID }, (_, i) => i);
 
   return (
     <Preview aria-hidden="true">
@@ -143,20 +151,28 @@ function LivePreview() {
         <s style={{ background: '#ff5f56' }} />
         <s style={{ background: '#ffbd2e' }} />
         <s style={{ background: C.green }} />
-        <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · your node</span>
-        <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
+        <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · room</span>
+        <em className={duelLive ? 'on' : 'win'}>
+          {duelLive ? `⏱ 00:${String(secondsLeft).padStart(2, '0')}` : '🏆 winner!'}
+        </em>
       </div>
       <div className="body">
-        <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
+        <div className="stage">
+          <Board>
+            {cells.map((c) => (
+              <i
+                key={c}
+                className={c === headCell ? 'head' : bodyCells.has(c) ? 'body' : c === foodCell ? 'food' : ''}
+              />
+            ))}
+          </Board>
+          <div className="stats">
+            <div><label>score</label><b>{score}</b></div>
+            <div><label>length</label><b>{length}</b></div>
+          </div>
         </div>
-        <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
-            </div>
-          ))}
+        <div className="peers">
+          <i>A</i><i>M</i><i>J</i><b>+ you playing</b>
         </div>
       </div>
     </Preview>
@@ -222,9 +238,9 @@ export default function LandingPage() {
             </GhostBtn>
           </Cta>
           <TrustRow>
-            <span>Private by design</span><i />
-            <span>Real-time sync</span><i />
-            <span>Peer-to-peer</span>
+            <span>Live room status</span><i />
+            <span>Timed duels</span><i />
+            <span>All-time leaderboard</span>
           </TrustRow>
         </HeroInner>
         <PreviewWrap><LivePreview /></PreviewWrap>
@@ -235,8 +251,8 @@ export default function LandingPage() {
         <Inner>
           <R v="up">
             <Kicker>How it works</Kicker>
-            <H2>From your node to a shared app — in four moves</H2>
-            <Sub>No accounts, no servers, no setup friction. Connect a node and you’re collaborating.</Sub>
+            <H2>From your node to a shared arcade room — in four moves</H2>
+            <Sub>No accounts, no servers, no setup friction. Connect a node and you’re in the room.</Sub>
           </R>
           <Pipeline>
             <span className="track" />
@@ -293,8 +309,8 @@ export default function LandingPage() {
       {/* ── final CTA ──────────────────────────────────────────── */}
       <CtaBand>
         <R v="zoom">
-          <h2>Connect your node to get started.</h2>
-          <p>It takes seconds — your data never leaves your control.</p>
+          <h2>Connect your node and challenge the room.</h2>
+          <p>It takes seconds — your scores never leave your control.</p>
           <div className="btn"><ConnectButton /></div>
         </R>
       </CtaBand>
@@ -340,8 +356,6 @@ export default function LandingPage() {
 const float = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(14px,-18px) scale(1.05);}`;
 const drift = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-22px,14px) scale(1.07);}`;
 const travel = keyframes`0%{left:0;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{left:100%;opacity:0;}`;
-const rowIn = keyframes`from{opacity:0;transform:translateY(8px) scale(0.97);}to{opacity:1;transform:none;}`;
-const rowInMe = keyframes`from{opacity:0;transform:translateY(8px) translateX(8px) scale(0.97);}to{opacity:1;transform:none;}`;
 
 /* ════════════════════════ layout ════════════════════════ */
 const Root = styled.div`
@@ -403,7 +417,7 @@ const Hero = styled.section`
   gap: clamp(24px, 5vw, 64px);
   align-items: center;
   padding: clamp(56px, 8vw, 104px) clamp(18px, 5vw, 56px) clamp(64px, 9vw, 110px);
-  background: radial-gradient(1200px 480px at 75% -10%, #f3ffd9 0%, rgba(255, 255, 255, 0) 60%), ${C.paper};
+  background: radial-gradient(1200px 480px at 75% -10%, #ecffef 0%, rgba(255, 255, 255, 0) 60%), ${C.paper};
   @media (max-width: 940px) { grid-template-columns: 1fr; }
   @media (max-width: 560px) { padding: 40px 18px 56px; gap: 30px; }
 `;
@@ -414,7 +428,7 @@ const Glow = styled.div`
   border-radius: 50%;
   top: -140px;
   right: -80px;
-  background: radial-gradient(circle, rgba(164, 255, 17, 0.5), rgba(164, 255, 17, 0) 68%);
+  background: radial-gradient(circle, rgba(34, 197, 94, 0.45), rgba(34, 197, 94, 0) 68%);
   filter: blur(26px);
   animation: ${float} 11s ease-in-out infinite;
   pointer-events: none;
@@ -443,8 +457,8 @@ const Eyebrow = styled.div`
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: ${C.greenDeep};
-  background: rgba(164, 255, 17, 0.13);
-  border: 1px solid rgba(164, 255, 17, 0.4);
+  background: rgba(34, 197, 94, 0.13);
+  border: 1px solid rgba(34, 197, 94, 0.4);
   padding: 5px 11px;
   border-radius: 999px;
 `;
@@ -498,6 +512,22 @@ const PreviewWrap = styled.div`
   @media (max-width: 940px) { animation: none; }
   @media (prefers-reduced-motion: reduce) { animation: none; }
 `;
+const Board = styled.div`
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  width: 100%;
+  aspect-ratio: 1;
+  i {
+    display: block;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.05);
+    transition: background 0.15s;
+    &.body { background: ${C.green}; }
+    &.head { background: ${C.accent}; box-shadow: 0 0 6px rgba(250, 204, 21, 0.7); }
+    &.food { background: rgba(250, 204, 21, 0.35); border-radius: 50%; }
+  }
+`;
 const Preview = styled.div`
   border: 1px solid ${C.line};
   border-radius: 14px;
@@ -524,15 +554,21 @@ const Preview = styled.div`
     em {
       margin-left: auto;
       font-style: normal;
-      font-size: 10.5px;
+      font-size: 11px;
       font-family: ui-monospace, 'SF Mono', Menlo, monospace;
       color: ${C.mutedSoft};
       transition: color 0.3s;
     }
-    em.on { color: ${C.green}; }
+    em.on { color: ${C.accent}; }
+    em.win { color: ${C.green}; }
   }
   .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
-  .peers { display: flex; align-items: center; gap: 0; }
+  .stage { display: flex; gap: 14px; align-items: flex-start; }
+  .stage > div.stats { flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; width: 74px; }
+  .stats div { background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; border-radius: 9px; padding: 7px 9px; }
+  .stats label { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: ${C.mutedSoft}; margin-bottom: 3px; }
+  .stats b { font-size: 15px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; color: ${C.green}; }
+  .peers { display: flex; align-items: center; gap: 0; margin-top: auto; }
   .peers i {
     width: 22px; height: 22px; border-radius: 50%;
     display: grid; place-items: center;
@@ -543,12 +579,6 @@ const Preview = styled.div`
   }
   .peers i:first-child { margin-left: 0; }
   .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
-  .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
 `;
 
 /* sections */
@@ -605,8 +635,8 @@ const Pipeline = styled.div`
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 22px;
-  .track { position: absolute; top: 19px; left: 6%; right: 6%; height: 2px; background: linear-gradient(90deg, ${C.line}, #cfe6a6, ${C.line}); }
-  .pulse { position: absolute; top: 14px; width: 12px; height: 12px; border-radius: 50%; background: ${C.green}; box-shadow: 0 0 0 5px rgba(164, 255, 17, 0.25); animation: ${travel} 4.2s ease-in-out infinite; }
+  .track { position: absolute; top: 19px; left: 6%; right: 6%; height: 2px; background: linear-gradient(90deg, ${C.line}, #b8e6c3, ${C.line}); }
+  .pulse { position: absolute; top: 14px; width: 12px; height: 12px; border-radius: 50%; background: ${C.green}; box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.25); animation: ${travel} 4.2s ease-in-out infinite; }
   .stage { position: relative; text-align: left; }
   .dot { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; background: ${C.paper}; border: 1px solid ${C.line}; box-shadow: 0 6px 16px -8px rgba(14, 20, 15, 0.3); margin-bottom: 14px; }
   .dot b { font-size: 13px; font-weight: 700; color: ${C.greenDeep}; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
@@ -634,10 +664,10 @@ const Card = styled.div`
   background: ${C.paper};
   height: 100%;
   transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-  .ic { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 11px; background: rgba(164, 255, 17, 0.14); font-size: 20px; margin-bottom: 14px; }
+  .ic { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 11px; background: rgba(34, 197, 94, 0.14); font-size: 20px; margin-bottom: 14px; }
   h3 { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; color: ${C.ink}; margin-bottom: 7px; }
   p { font-size: 13.5px; color: ${C.muted}; }
-  &:hover { transform: translateY(-3px); border-color: rgba(164, 255, 17, 0.6); box-shadow: 0 18px 40px -24px rgba(14, 20, 15, 0.4); }
+  &:hover { transform: translateY(-3px); border-color: rgba(34, 197, 94, 0.6); box-shadow: 0 18px 40px -24px rgba(14, 20, 15, 0.4); }
 `;
 
 /* faq */
@@ -659,7 +689,7 @@ const FaqRow = styled.div<{ $open: boolean }>`
     font-weight: 600;
     letter-spacing: -0.2px;
     color: ${C.ink};
-    i { font-style: normal; flex-shrink: 0; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; font-size: 16px; color: ${C.greenInk}; background: rgba(164, 255, 17, 0.14); }
+    i { font-style: normal; flex-shrink: 0; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; font-size: 16px; color: ${C.greenInk}; background: rgba(34, 197, 94, 0.14); }
   }
   .ans { overflow: hidden; max-height: ${(p) => (p.$open ? '240px' : '0')}; transition: max-height 0.32s ease; }
   .ans p { padding: 0 2px 20px; font-size: 14px; color: ${C.muted}; max-width: 660px; }
@@ -671,12 +701,12 @@ const CtaBand = styled.section`
   overflow: hidden;
   text-align: center;
   padding: clamp(58px, 8vw, 92px) 24px;
-  background: radial-gradient(700px 280px at 50% 120%, rgba(164, 255, 17, 0.22), transparent 70%), ${C.ink};
+  background: radial-gradient(700px 280px at 50% 120%, rgba(34, 197, 94, 0.22), transparent 70%), ${C.ink};
   border-top: 1px solid ${C.lineDark};
   h2 { font-size: clamp(24px, 3.6vw, 34px); font-weight: 700; letter-spacing: -0.8px; color: ${C.paper}; }
   p { margin: 12px 0 24px; font-size: 14.5px; color: ${C.mutedSoft}; }
   .btn { display: inline-flex; }
-  &::after { content: ''; position: absolute; width: 360px; height: 360px; border-radius: 50%; left: -120px; bottom: -180px; background: radial-gradient(circle, rgba(164, 255, 17, 0.3), transparent 68%); filter: blur(24px); animation: ${drift} 12s ease-in-out infinite; }
+  &::after { content: ''; position: absolute; width: 360px; height: 360px; border-radius: 50%; left: -120px; bottom: -180px; background: radial-gradient(circle, rgba(250, 204, 21, 0.25), transparent 68%); filter: blur(24px); animation: ${drift} 12s ease-in-out infinite; }
   @media (prefers-reduced-motion: reduce) { &::after { animation: none; } }
 `;
 

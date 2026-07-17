@@ -112,7 +112,7 @@ const Close = styled.button`
 `;
 const IconBadge = styled.div`
   width: 48px; height: 48px; margin-bottom: 16px; display: grid; place-items: center; border-radius: 14px;
-  background: rgba(164,255,17,0.16); border: 1px solid rgba(164,255,17,0.4);
+  background: rgba(34,197,94,0.16); border: 1px solid rgba(34,197,94,0.4);
 `;
 const Field = styled.div`
   margin: 22px 0 12px;
@@ -122,15 +122,15 @@ const Field = styled.div`
     font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; line-height: 1.5;
     color: ${C.ink}; background: ${C.paper2}; border: 1px solid ${C.line}; border-radius: 11px; padding: 10px 12px;
     outline: none; word-break: break-all;
-    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 4px rgba(164,255,17,0.18); }
+    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 4px rgba(34,197,94,0.18); }
   }
 `;
 const PrimaryBtn = styled.button`
   display: inline-flex; align-items: center; justify-content: center;
   padding: 12px 18px; font-size: 13.5px; font-weight: 600; border-radius: 11px; cursor: pointer;
-  color: ${C.onAccent}; background: ${C.green}; border: 1px solid #93e60c;
+  color: ${C.onAccent}; background: ${C.green}; border: 1px solid #16a34a;
   transition: background 0.18s, box-shadow 0.2s, transform 0.15s;
-  &:hover:not(:disabled) { background: ${C.greenHover}; box-shadow: 0 10px 28px rgba(164,255,17,0.4); transform: translateY(-1px); }
+  &:hover:not(:disabled) { background: ${C.greenHover}; box-shadow: 0 10px 28px rgba(34,197,94,0.4); transform: translateY(-1px); }
   &:disabled { opacity: 0.6; cursor: default; }
 `;
 const ErrorLine = styled.p`margin: 12px 0 0; font-size: 12.5px; color: ${C.danger};`;

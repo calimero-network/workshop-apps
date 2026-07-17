@@ -4,46 +4,46 @@ import { useMero } from '@calimero-network/mero-react';
 import { C } from '../../theme';
 import { APP_DISPLAY_NAME } from '../../config';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { useItems } from '../../hooks/useItems';
 import { describeError } from '../../utils/errors';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
-import { DisplayNamesProvider, MemberLabel } from '../../components/MemberLabel';
+import { DisplayNamesProvider } from '../../components/MemberLabel';
 import { DisplayNameGate } from '../../components/DisplayNameGate';
+import GameScreen from './GameScreen';
+import DuelsScreen from './DuelsScreen';
+import LeaderboardScreen from './LeaderboardScreen';
 
 /**
- * Neutral single-context CRUD view — the foundation's "app" screen.
+ * The room shell — the foundation's "app" screen, reshaped for snake-arcade.
  *
- * BUILD AGENT: this is the canonical data-binding shell. Reshape it to the
- * spec's entity:
- *  - `useItems` → your domain hook over the generated `ServiceClient`,
- *  - the form fields + list rows → your entity's fields,
- *  - the page copy → your product.
- * Keep the structure: workspace resolution (bootstrap / join), the item form,
- * the live list, and the Invite/Join wiring — these make it multi-user out of
- * the box. Do NOT reintroduce chat concepts (rooms, messages, presence).
+ * Keeps the proven structure: workspace resolution (bootstrap / join), the
+ * Invite/Join wiring, and the display-name gate. The neutral Item CRUD is
+ * replaced with tab navigation across the spec's three views:
+ *   - GameScreen        (play + live room sidebar)
+ *   - DuelsScreen        (challenge the room + duel history)
+ *   - LeaderboardScreen  (all-time best scores)
+ *
+ * SHELL PASS: each screen renders placeholder data — no generated-client
+ * calls yet. The wiring pass adds a `useRoom` data hook over the generated
+ * client (list_members / start_duel / submit_duel_result / finish_duel /
+ * get_duels / get_duel_results / get_leaderboard) and threads it through.
  */
+
+type Tab = 'game' | 'duels' | 'leaderboard';
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'game', label: 'Play' },
+  { id: 'duels', label: 'Duels' },
+  { id: 'leaderboard', label: 'Leaderboard' },
+];
+
 export default function AppPage() {
   const { logout } = useMero();
   const ws = useWorkspace();
-  const items = useItems({
-    contextId: ws.contextId,
-    executorPublicKey: ws.executorPublicKey,
-  });
 
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [wsName, setWsName] = useState('My workspace');
+  const [tab, setTab] = useState<Tab>('game');
+  const [wsName, setWsName] = useState('My arcade room');
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    await items.add(title.trim(), body.trim());
-    setTitle('');
-    setBody('');
-  };
 
   // No workspace yet (fresh web session): offer create-or-join.
   if (!ws.ready && !ws.loading) {
@@ -51,17 +51,17 @@ export default function AppPage() {
       <Empty>
         <Card>
           <h2>Welcome to {APP_DISPLAY_NAME}</h2>
-          <p>Create a workspace to start, or join one you were invited to.</p>
+          <p>Create a room to start playing, or join one you were invited to.</p>
           <NameField
             data-testid="field-workspace-name"
             value={wsName}
             onChange={(e) => setWsName(e.target.value)}
-            placeholder="Workspace name"
+            placeholder="Room name"
             maxLength={64}
-            aria-label="Workspace name"
+            aria-label="Room name"
           />
           <Row>
-            <Primary data-testid="create-workspace-btn" onClick={() => ws.bootstrap(wsName)}>Create workspace</Primary>
+            <Primary data-testid="create-workspace-btn" onClick={() => ws.bootstrap(wsName)}>Create room</Primary>
             <Secondary data-testid="open-join-btn" onClick={() => setShowJoin(true)}>Join with invitation</Secondary>
           </Row>
           {ws.error && <ErrLine>{describeError(ws.error)}</ErrLine>}
@@ -92,40 +92,23 @@ export default function AppPage() {
           </div>
         </Bar>
 
+        <Tabs>
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              className={tab === t.id ? 'active' : ''}
+              onClick={() => setTab(t.id)}
+              data-testid={`tab-${t.id}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </Tabs>
+
         <Content>
-          <Form onSubmit={submit}>
-            <input
-              placeholder="Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-            <input
-              placeholder="Details (optional)"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-            />
-            <Primary type="submit" disabled={!title.trim() || !items.ready}>Add</Primary>
-          </Form>
-
-          {items.error && <ErrLine>{describeError(items.error)}</ErrLine>}
-
-          <List>
-            {items.items.length === 0 && !items.loading && (
-              <Hint>No items yet — add the first one above.</Hint>
-            )}
-            {items.items.map((item) => (
-              <ItemRow key={item.id}>
-                <div className="text">
-                  <strong>{item.title}</strong>
-                  {item.body && <span>{item.body}</span>}
-                  <Byline>
-                    <MemberLabel memberId={item.author} />
-                  </Byline>
-                </div>
-                <button onClick={() => items.remove(item.id)} aria-label="Delete">×</button>
-              </ItemRow>
-            ))}
-          </List>
+          {tab === 'game' && <GameScreen />}
+          {tab === 'duels' && <DuelsScreen />}
+          {tab === 'leaderboard' && <LeaderboardScreen />}
 
           {/* Blocks the content (not the top bar) until a name is set. Never
               shown on the injected/SSO path (desktop + e2e). */}
@@ -147,7 +130,7 @@ export default function AppPage() {
 }
 
 const Page = styled.div`
-  max-width: 720px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 28px 20px 64px;
   width: 100%;
@@ -157,45 +140,25 @@ const Bar = styled.header`
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 18px;
   h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: ${C.ink}; }
   .actions { display: flex; gap: 8px; }
+`;
+const Tabs = styled.nav`
+  display: flex; gap: 4px; margin-bottom: 22px;
+  border-bottom: 1px solid ${C.line};
+  button {
+    padding: 10px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+    color: ${C.muted}; background: none; border: none; border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+    &:hover { color: ${C.ink}; }
+    &.active { color: ${C.greenDeep}; border-bottom-color: ${C.green}; }
+  }
 `;
 // Positioning context for the display-name gate overlay: it covers the content
 // but leaves the top bar (Sign out) reachable.
 const Content = styled.div`position: relative;`;
-const Byline = styled.span`
-  font-size: 11.5px;
-  color: ${C.mutedSoft};
-`;
-const Form = styled.form`
-  display: flex;
-  gap: 8px;
-  margin-bottom: 22px;
-  flex-wrap: wrap;
-  input {
-    flex: 1; min-width: 160px;
-    padding: 10px 12px; font-size: 14px;
-    color: ${C.ink}; background: ${C.paper2};
-    border: 1px solid ${C.line}; border-radius: 10px; outline: none;
-    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px rgba(164,255,17,0.18); }
-  }
-`;
-const List = styled.div`display: flex; flex-direction: column; gap: 10px;`;
-const ItemRow = styled.div`
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 14px 16px; background: ${C.paper2};
-  border: 1px solid ${C.line}; border-radius: 12px;
-  .text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .text strong { font-size: 15px; color: ${C.ink}; }
-  .text span { font-size: 13px; color: ${C.muted}; }
-  button {
-    flex-shrink: 0; width: 30px; height: 30px; font-size: 20px; line-height: 1;
-    color: ${C.mutedSoft}; background: transparent; border: none; border-radius: 8px; cursor: pointer;
-    &:hover { background: ${C.paper}; color: ${C.danger}; }
-  }
-`;
-const Hint = styled.p`font-size: 14px; color: ${C.muted}; padding: 8px 2px;`;
 const ErrLine = styled.p`margin: 8px 0; font-size: 13px; color: ${C.danger};`;
 
 const Empty = styled.div`
@@ -215,13 +178,13 @@ const NameField = styled.input`
   padding: 10px 12px; font-size: 14px; text-align: center;
   color: ${C.ink}; background: ${C.paper};
   border: 1px solid ${C.line}; border-radius: 10px; outline: none;
-  &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px rgba(164,255,17,0.18); }
+  &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px rgba(34,197,94,0.18); }
 `;
 
 const Primary = styled.button`
   display: inline-flex; align-items: center; justify-content: center;
   padding: 10px 18px; font-size: 13.5px; font-weight: 600; border-radius: 10px; cursor: pointer;
-  color: ${C.onAccent}; background: ${C.green}; border: 1px solid #93e60c;
+  color: ${C.onAccent}; background: ${C.green}; border: 1px solid ${C.greenHover};
   transition: background 0.18s, transform 0.15s;
   &:hover:not(:disabled) { background: ${C.greenHover}; transform: translateY(-1px); }
   &:disabled { opacity: 0.55; cursor: default; }

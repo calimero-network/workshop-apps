@@ -237,7 +237,7 @@ const Card = styled.div`
     outline: none;
     &:focus {
       border-color: ${C.green};
-      box-shadow: 0 0 0 3px rgba(164, 255, 17, 0.18);
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
     }
     &:disabled {
       opacity: 0.55;
@@ -260,7 +260,7 @@ const Save = styled.button`
   cursor: pointer;
   color: ${C.onAccent};
   background: ${C.green};
-  border: 1px solid #93e60c;
+  border: 1px solid #16a34a;
   transition: background 0.18s, transform 0.15s;
   &:hover:not(:disabled) {
     background: ${C.greenHover};

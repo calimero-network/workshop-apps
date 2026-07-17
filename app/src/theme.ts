@@ -20,16 +20,22 @@ export const C = {
   greenDeep: 'var(--c-green-deep)',
   greenInk: 'var(--c-green-ink)',
   onAccent: 'var(--c-on-accent)',
+  /** Coin-yellow secondary accent — duel countdowns, winner badges, highlights. */
+  accent: 'var(--c-accent)',
+  accentHover: 'var(--c-accent-hover)',
+  accentInk: 'var(--c-accent-ink)',
+  onAccent2: 'var(--c-on-accent-2)',
   ink: 'var(--c-ink)',
   paper: 'var(--c-paper)',
   paper2: 'var(--c-paper2)',
   line: 'var(--c-line)',
-  lineDark: 'rgba(164,255,17,0.14)',
+  lineDark: 'rgba(34,197,94,0.16)',
   muted: 'var(--c-muted)',
   mutedSoft: 'var(--c-muted-soft)',
   off: 'var(--c-off)',
   disabled: 'var(--c-disabled)',
   danger: 'var(--c-danger)',
+  mono: 'var(--font-mono)',
 } as const;
 
 export type ThemeMode = 'light' | 'dark';

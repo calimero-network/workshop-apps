@@ -1,36 +1,28 @@
-//! Item-registry service — the neutral foundation template.
+//! Snake-arcade room service — shared member status, timed duels, and an
+//! all-time leaderboard.
 //!
-//! A generic shared registry of items (`add` / `list` / `get` / `update` /
-//! owner-gated `delete`). It is deliberately domain-agnostic: the build agent
-//! copies this crate per spec service and renames the entity. It demonstrates,
-//! in one cohesive context, the core Calimero patterns every generated app
-//! needs:
-//!
-//! - `#[app::state]` / `#[app::logic]` / `#[app::init]`
-//! - `UnorderedMap` (the registry) and `AuthoredMap` (the authorship index that
-//!   structurally owner-gates `update`/`delete`)
-//! - `LwwRegister` (the item's mutable value, last-writer-wins on conflict)
-//! - one hand-written `Mergeable` + matching `RekeyTarget` on `Item` (it nests a
-//!   CRDT, so it must re-key its child or the nested register is LWW'd as an
-//!   opaque blob — see `RekeyTarget` impl)
-//! - deriving `Mergeable` via `#[derive(Mergeable)]` (`use calimero_sdk::app::Mergeable;`)
-//!   is the normal path for a struct whose fields are all CRDTs already — this
-//!   template hand-writes the impl instead only because `Item` nests a register
-//!   that requires custom rekeying (see above)
-//! - `app::emit!`, `#[app::private]` (per-node draft, never replicated),
-//!   named-struct returns (`Item` / `ItemView`), and base58 owner keys.
+//! - `members: AuthoredMap<String, PlayerStatusData>` — each player owns and
+//!   updates only their own status/live-score/live-length/best-score entry,
+//!   keyed by their base58 executor id. Structurally prevents spoofing
+//!   another player's status.
+//! - `duels: UnorderedMap<String, DuelRecord>` — a duel is shared: any room
+//!   member may finish it once the timer elapses, not just the initiator.
+//!   `DuelRecord` derives `Mergeable` (all fields are already CRDTs, so the
+//!   derive generates both `Mergeable` and the required `RekeyTarget` for its
+//!   nested `LwwRegister`s — no hand-written impl needed).
+//! - `duel_results: AuthoredMap<String, DuelResultData>` — one entry per
+//!   participant per duel; only the submitting player may edit/remove their
+//!   own result.
 
 use calimero_sdk::app;
+use calimero_sdk::app::Mergeable;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::env;
 use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
-use calimero_storage::address::Id;
-use calimero_storage::collections::crdt_meta::MergeError;
-use calimero_storage::collections::rekey::{field_child_id, RekeyTarget};
-use calimero_storage::collections::{AuthoredMap, LwwRegister, Mergeable, UnorderedMap};
+use calimero_storage::collections::{AuthoredMap, LwwRegister, UnorderedMap};
 use calimero_storage::env as storage_env;
-use snake_arcade_types::{generate_id, validate_label, Error};
+use snake_arcade_types::{generate_id, Error};
 
 pub mod events;
 use events::Event;
@@ -39,257 +31,393 @@ use events::Event;
 // Data models
 // ---------------------------------------------------------------------------
 
-/// A registry item. `value` is a `LwwRegister` so concurrent edits converge by
-/// hybrid-logical-clock last-writer-wins; `label` and `created_ms` are set once
-/// at add time and never change. Because this struct **nests a CRDT** and is
-/// stored as a map value, it implements `Mergeable` by hand AND `RekeyTarget`
-/// (see below).
-// Nests a `LwwRegister`, which is Borsh-only (no serde impl in calimero_storage).
-// Item is the internal map value, stored/replicated via Borsh; callers get the
-// serde-able `ItemView` instead. So no serde derives here.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+/// Internal `members` map value. Every field is a CRDT so `#[derive(Mergeable)]`
+/// can generate both `Mergeable` and `RekeyTarget`. Only the owning player ever
+/// writes their own entry (via `AuthoredMap`), so merges only happen when the
+/// same player's writes race across replicas.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Mergeable)]
 #[borsh(crate = "calimero_sdk::borsh")]
-pub struct Item {
-    pub label: String,
-    /// The item's mutable body. LWW on concurrent updates.
-    pub value: LwwRegister<String>,
-    pub created_ms: u64,
+pub struct PlayerStatusData {
+    pub status: LwwRegister<String>,
+    pub live_score: LwwRegister<u32>,
+    pub live_length: LwwRegister<u32>,
+    pub best_score: LwwRegister<u32>,
+    pub updated_at: LwwRegister<u64>,
 }
 
-/// Hand-written merge. The immutable fields (`label`, `created_ms`) tie-break
-/// deterministically; `value` delegates to the nested `LwwRegister` so the
-/// freshest write wins. A `#[derive(Mergeable)]` would generate this, but we
-/// write it by hand to demonstrate the pattern (and to pair it with the
-/// required `RekeyTarget`).
-impl Mergeable for Item {
-    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        // Deterministic tie-break for the set-once fields so merge is
-        // commutative even if two replicas raced the initial insert.
-        if (other.created_ms, &other.label) < (self.created_ms, &self.label) {
-            self.label = other.label.clone();
-            self.created_ms = other.created_ms;
-        }
-        // `LwwRegister::merge` returns `()` (infallible HLC last-writer-wins),
-        // so wrap it back into the fallible `Mergeable::merge` signature.
-        self.value.merge(&other.value);
-        Ok(())
-    }
-}
-
-/// Deterministic re-keying for a hand-written CRDT-value struct (#2577).
-///
-/// `Item` nests a `LwwRegister`. Stored as an `UnorderedMap` value it would be
-/// LWW'd as an opaque blob unless we re-key the nested register under a
-/// field-namespaced child of the entry id, so every replica derives identical
-/// ids and the register converges as a child entity. `#[derive(Mergeable)]`
-/// generates this for you; a hand-written `Mergeable` MUST provide it too.
-impl RekeyTarget for Item {
-    fn rekey_relative_to(&mut self, parent_id: Id) {
-        calimero_storage::rekey_field_if_supported!(
-            &mut self.value,
-            field_child_id(parent_id, "value")
-        );
-    }
-}
-
-/// Read-shaped view returned to callers: the registry id, the item, and the
-/// base58 owner key. A named struct (not a tuple) so the generated ABI client
-/// gets typed fields.
+/// Read-shaped view of a room member, returned to callers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct ItemView {
-    pub id: String,
-    pub label: String,
-    pub value: String,
-    pub created_ms: u64,
-    pub owner: String,
+pub struct PlayerStatus {
+    pub player: String,
+    pub status: String,
+    pub live_score: u32,
+    pub live_length: u32,
+    pub best_score: u32,
+    pub updated_at: u64,
 }
 
-/// Per-node draft, never replicated. `#[app::private]` keeps it local to the
-/// node — handy for "save before submit" UX that should not leak to peers.
-#[derive(BorshSerialize, BorshDeserialize, Debug)]
+/// Internal `duels` map value. Shared/CRDT: any member may transition
+/// `status` from `"active"` to `"finished"`.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Mergeable)]
 #[borsh(crate = "calimero_sdk::borsh")]
-#[calimero_sdk::app::private]
-pub struct Draft {
-    pub text: String,
+pub struct DuelRecord {
+    pub initiator: LwwRegister<String>,
+    pub status: LwwRegister<String>,
+    pub duration_seconds: LwwRegister<u32>,
+    pub started_at: LwwRegister<u64>,
+    pub ended_at: LwwRegister<Option<u64>>,
 }
 
-impl Default for Draft {
-    fn default() -> Draft {
-        Draft { text: String::new() }
-    }
+/// Read-shaped view of a duel, returned to callers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(crate = "calimero_sdk::serde")]
+pub struct Duel {
+    pub id: String,
+    pub initiator: String,
+    pub status: String,
+    pub duration_seconds: u32,
+    pub started_at: u64,
+    pub ended_at: Option<u64>,
+}
+
+/// Internal `duel_results` map value. Authored: only the submitting player
+/// may edit/remove their own result (not exposed via any method today, but
+/// structurally enforced regardless).
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Mergeable)]
+#[borsh(crate = "calimero_sdk::borsh")]
+pub struct DuelResultData {
+    pub duel_id: LwwRegister<String>,
+    pub score: LwwRegister<u32>,
+    pub length: LwwRegister<u32>,
+    pub created_at: LwwRegister<u64>,
+}
+
+/// Read-shaped view of a duel result, returned to callers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(crate = "calimero_sdk::serde")]
+pub struct DuelResult {
+    pub id: String,
+    pub duel_id: String,
+    pub author: String,
+    pub score: u32,
+    pub length: u32,
+    pub created_at: u64,
 }
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-// `#[app::state]` injects the borsh derives itself (SDK 0.11+); a manual derive
-// here would collide.
+// `#[app::state]` injects the borsh derives itself (SDK 0.11+); a manual
+// derive here would collide.
 #[app::state(emits = for<'a> Event<'a>)]
-pub struct Registry {
-    /// The items, keyed by generated id. Plain `UnorderedMap`: any peer may add
-    /// or update an item's value (LWW), so no per-author gate on the data.
-    items: UnorderedMap<String, Item>,
-    /// Authorship index: `item_id → owner-claim`. `AuthoredMap` stamps the
-    /// adding executor as owner and rejects `update`/`remove` by anyone else,
-    /// so it structurally owner-gates deletion without a manual key check.
-    owners: AuthoredMap<String, LwwRegister<u64>>,
+pub struct RoomState {
+    /// One entry per player, keyed by their base58 executor id. `AuthoredMap`
+    /// structurally prevents a player from writing anyone else's status.
+    members: AuthoredMap<String, PlayerStatusData>,
+    /// All duels ever started, keyed by generated id. `UnorderedMap`: any
+    /// room member may finish an in-progress duel once its timer elapses.
+    duels: UnorderedMap<String, DuelRecord>,
+    /// All duel results ever submitted, keyed by generated id. `AuthoredMap`:
+    /// only the submitting player owns their own result entry.
+    duel_results: AuthoredMap<String, DuelResultData>,
 }
 
 #[app::logic]
-impl Registry {
+impl RoomState {
     #[app::init]
-    pub fn init() -> Registry {
-        Registry {
-            items: UnorderedMap::new_with_field_name("registry:items"),
-            owners: AuthoredMap::new_with_field_name("registry:owners"),
+    pub fn init() -> RoomState {
+        RoomState {
+            members: AuthoredMap::new_with_field_name("room:members"),
+            duels: UnorderedMap::new_with_field_name("room:duels"),
+            duel_results: AuthoredMap::new_with_field_name("room:duel_results"),
         }
     }
 
-    /// Add an item. Returns its generated id. The caller becomes the owner; only
-    /// the owner may later delete it.
-    pub fn add(&mut self, label: String, value: String) -> app::Result<String> {
-        validate_label(&label).map_err(AppError::from)?;
+    // ---- Member status ----
+
+    /// Update the caller's own live status/score/length. Bumps `best_score`
+    /// if this score beats the player's previous best. Inserts a new entry
+    /// on the player's first call, otherwise updates in place (author-gated
+    /// by `AuthoredMap`, so no one else can spoof this player's status).
+    pub fn update_status(&mut self, status: String, score: u32, length: u32) -> app::Result<()> {
+        let player = self.caller_b58();
+        let now = storage_env::time_now() / 1_000_000;
+
+        if let Some(mut data) = self
+            .members
+            .get(&player)
+            .map_err(|e| AppError::msg(format!("members.get: {e}")))?
+        {
+            data.status.set(status);
+            data.live_score.set(score);
+            data.live_length.set(length);
+            if score > *data.best_score.get() {
+                data.best_score.set(score);
+            }
+            data.updated_at.set(now);
+            self.members
+                .update(&player, data)
+                .map_err(map_member_error())?;
+        } else {
+            let data = PlayerStatusData {
+                status: LwwRegister::new(status),
+                live_score: LwwRegister::new(score),
+                live_length: LwwRegister::new(length),
+                best_score: LwwRegister::new(score),
+                updated_at: LwwRegister::new(now),
+            };
+            self.members
+                .insert(player.clone(), data)
+                .map_err(|e| AppError::msg(format!("members.insert: {e}")))?;
+        }
+
+        app::emit!(Event::MemberStatusUpdated { player: &player });
+        Ok(())
+    }
+
+    /// List every room member's live status/score/length/best score.
+    pub fn list_members(&self) -> app::Result<Vec<PlayerStatus>> {
+        let mut out: Vec<PlayerStatus> = self
+            .members
+            .entries()
+            .map_err(|e| AppError::msg(format!("members.entries: {e}")))?
+            .map(|(player, data)| self.to_player_view(player, &data))
+            .collect();
+        out.sort_by(|a, b| a.player.cmp(&b.player));
+        Ok(out)
+    }
+
+    /// All-time leaderboard: every player's best-ever score, highest first.
+    pub fn get_leaderboard(&self) -> app::Result<Vec<PlayerStatus>> {
+        let mut out: Vec<PlayerStatus> = self
+            .members
+            .entries()
+            .map_err(|e| AppError::msg(format!("members.entries: {e}")))?
+            .map(|(player, data)| self.to_player_view(player, &data))
+            .collect();
+        out.sort_by(|a, b| b.best_score.cmp(&a.best_score).then_with(|| a.player.cmp(&b.player)));
+        Ok(out)
+    }
+
+    // ---- Duels ----
+
+    /// Start a new timed duel. Rejected while another duel is still active.
+    pub fn start_duel(&mut self, duration_seconds: u32) -> app::Result<String> {
+        let already_active = self
+            .duels
+            .entries()
+            .map_err(|e| AppError::msg(format!("duels.entries: {e}")))?
+            .any(|(_, record)| record.status.get() == "active");
+        if already_active {
+            app::bail!(Error::Invalid(
+                "a duel is already in progress".into()
+            ));
+        }
 
         let now = storage_env::time_now();
         let mut nonce = [0u8; 4];
         env::random_bytes(&mut nonce);
-        let id = generate_id("item", now, &nonce);
+        let id = generate_id("duel", now, &nonce);
+        let now_ms = now / 1_000_000;
+        let initiator = self.caller_b58();
 
-        let item = Item {
-            label,
-            value: LwwRegister::new(value),
-            created_ms: now,
+        let record = DuelRecord {
+            initiator: LwwRegister::new(initiator.clone()),
+            status: LwwRegister::new("active".to_string()),
+            duration_seconds: LwwRegister::new(duration_seconds),
+            started_at: LwwRegister::new(now_ms),
+            ended_at: LwwRegister::new(None),
         };
-        self.items
-            .insert(id.clone(), item)
-            .map_err(|e| AppError::msg(format!("items.insert: {e}")))?;
-        // Stamp the adding executor as the owner. The value is unused; the
-        // authorship stamp on the AuthoredMap entry is what gates delete.
-        self.owners
-            .insert(id.clone(), LwwRegister::new(now))
-            .map_err(|e| AppError::msg(format!("owners.insert: {e}")))?;
+        self.duels
+            .insert(id.clone(), record)
+            .map_err(|e| AppError::msg(format!("duels.insert: {e}")))?;
 
-        let owner = self.owner_b58();
-        app::emit!(Event::ItemAdded {
+        app::emit!(Event::DuelStarted {
             id: &id,
-            owner: &owner,
+            initiator: &initiator,
         });
         Ok(id)
     }
 
-    /// Update an item's value (LWW). Anyone may update — concurrent edits
-    /// converge to the last writer. Errors if the id is unknown.
-    pub fn update(&mut self, id: String, value: String) -> app::Result<()> {
+    /// Record the caller's result for a duel, and bump their all-time best
+    /// score if this duel score beats it (leaderboard update).
+    pub fn submit_duel_result(&mut self, duel_id: String, score: u32, length: u32) -> app::Result<String> {
+        if self
+            .duels
+            .get(&duel_id)
+            .map_err(|e| AppError::msg(format!("duels.get: {e}")))?
+            .is_none()
+        {
+            app::bail!(Error::NotFound(duel_id));
+        }
+
+        let now = storage_env::time_now();
+        let mut nonce = [0u8; 4];
+        env::random_bytes(&mut nonce);
+        let id = generate_id("result", now, &nonce);
+        let now_ms = now / 1_000_000;
+        let author = self.caller_b58();
+
+        let data = DuelResultData {
+            duel_id: LwwRegister::new(duel_id.clone()),
+            score: LwwRegister::new(score),
+            length: LwwRegister::new(length),
+            created_at: LwwRegister::new(now_ms),
+        };
+        self.duel_results
+            .insert(id.clone(), data)
+            .map_err(|e| AppError::msg(format!("duel_results.insert: {e}")))?;
+
+        self.bump_best_score(score, length, now_ms)?;
+
+        app::emit!(Event::DuelResultSubmitted {
+            id: &id,
+            duel_id: &duel_id,
+            author: &author,
+        });
+        Ok(id)
+    }
+
+    /// Mark a duel finished once its timer elapses. Any room member may call
+    /// this (shared, not owner-gated) — idempotent if already finished.
+    pub fn finish_duel(&mut self, duel_id: String) -> app::Result<()> {
         let mut guard = self
-            .items
-            .get_mut(&id)
-            .map_err(|e| AppError::msg(format!("items.get_mut: {e}")))?
-            .ok_or_else(|| AppError::from(Error::NotFound(id.clone())))?;
-        guard.value.set(value);
+            .duels
+            .get_mut(&duel_id)
+            .map_err(|e| AppError::msg(format!("duels.get_mut: {e}")))?
+            .ok_or_else(|| AppError::from(Error::NotFound(duel_id.clone())))?;
+
+        if guard.status.get() == "finished" {
+            return Ok(());
+        }
+
+        let now_ms = storage_env::time_now() / 1_000_000;
+        guard.status.set("finished".to_string());
+        guard.ended_at.set(Some(now_ms));
         drop(guard);
 
-        app::emit!(Event::ItemUpdated { id: &id });
+        app::emit!(Event::DuelFinished { id: &duel_id });
         Ok(())
     }
 
-    /// Delete an item. Owner-gated: `AuthoredMap::remove` returns
-    /// `ActionNotAllowed` for non-owners, surfaced here as `Forbidden`.
-    pub fn delete(&mut self, id: String) -> app::Result<()> {
-        let removed = self
-            .owners
-            .remove(&id)
-            .map_err(map_owner_error())?;
-        if removed.is_none() {
-            app::bail!(Error::NotFound(id));
-        }
-        self.items
-            .remove(&id)
-            .map_err(|e| AppError::msg(format!("items.remove: {e}")))?;
-
-        app::emit!(Event::ItemDeleted { id: &id });
-        Ok(())
-    }
-
-    /// Get one item by id.
-    pub fn get(&self, id: String) -> app::Result<Option<ItemView>> {
-        let Some(item) = self
-            .items
-            .get(&id)
-            .map_err(|e| AppError::msg(format!("items.get: {e}")))?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(self.to_view(id, &item)?))
-    }
-
-    /// List all items, sorted by creation time then id for a stable order
-    /// (`UnorderedMap` iteration order is unspecified).
-    pub fn list(&self) -> app::Result<Vec<ItemView>> {
-        let mut out: Vec<ItemView> = self
-            .items
+    /// All duels ever started, most recently started first.
+    pub fn get_duels(&self) -> app::Result<Vec<Duel>> {
+        let mut out: Vec<Duel> = self
+            .duels
             .entries()
-            .map_err(|e| AppError::msg(format!("items.entries: {e}")))?
-            .map(|(id, item)| self.to_view(id, &item))
-            .collect::<app::Result<_>>()?;
-        out.sort_by(|a, b| (a.created_ms, &a.id).cmp(&(b.created_ms, &b.id)));
+            .map_err(|e| AppError::msg(format!("duels.entries: {e}")))?
+            .map(|(id, record)| self.to_duel_view(id, &record))
+            .collect();
+        out.sort_by(|a, b| b.started_at.cmp(&a.started_at).then_with(|| a.id.cmp(&b.id)));
         Ok(out)
     }
 
-    /// Number of items in the registry.
-    pub fn count(&self) -> app::Result<usize> {
-        self.items
-            .len()
-            .map_err(|e| AppError::msg(format!("items.len: {e}")))
-    }
-
-    // ---- Per-node draft (never replicated) ----
-
-    pub fn save_draft(&self, text: String) -> app::Result<()> {
-        let mut draft = Draft::private_load_or_default()?;
-        draft.as_mut().text = text;
-        Ok(())
-    }
-
-    pub fn get_draft(&self) -> app::Result<String> {
-        Ok(Draft::private_load_or_default()?.text.clone())
+    /// Every participant's result for one duel.
+    pub fn get_duel_results(&self, duel_id: String) -> app::Result<Vec<DuelResult>> {
+        let mut out: Vec<DuelResult> = self
+            .duel_results
+            .entries()
+            .map_err(|e| AppError::msg(format!("duel_results.entries: {e}")))?
+            .filter(|(_, data)| data.duel_id.get() == &duel_id)
+            .map(|(id, data)| self.to_result_view(id, &data))
+            .collect::<app::Result<_>>()?;
+        out.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.id.cmp(&b.id)));
+        Ok(out)
     }
 }
 
-impl Registry {
-    /// Base58 of the current executor — the public, shareable owner identity.
-    fn owner_b58(&self) -> String {
+impl RoomState {
+    /// Base58 of the current executor — the public, shareable player identity.
+    fn caller_b58(&self) -> String {
         bs58::encode(env::executor_id()).into_string()
     }
 
-    fn to_view(&self, id: String, item: &Item) -> app::Result<ItemView> {
-        // `owner_of` yields a `PublicKey`; `String::from(PublicKey)` is its
-        // canonical base58 encoding (see calimero_primitives::identity).
-        let owner = self
-            .owners
+    /// Bump the caller's all-time best score (leaderboard) after a duel
+    /// result, creating their member entry (idle, since they aren't in an
+    /// active local game right now) if this is their first appearance.
+    fn bump_best_score(&mut self, score: u32, length: u32, now_ms: u64) -> app::Result<()> {
+        let player = self.caller_b58();
+        if let Some(mut data) = self
+            .members
+            .get(&player)
+            .map_err(|e| AppError::msg(format!("members.get: {e}")))?
+        {
+            if score > *data.best_score.get() {
+                data.best_score.set(score);
+                data.updated_at.set(now_ms);
+                self.members
+                    .update(&player, data)
+                    .map_err(map_member_error())?;
+            }
+        } else {
+            let data = PlayerStatusData {
+                status: LwwRegister::new("idle".to_string()),
+                live_score: LwwRegister::new(score),
+                live_length: LwwRegister::new(length),
+                best_score: LwwRegister::new(score),
+                updated_at: LwwRegister::new(now_ms),
+            };
+            self.members
+                .insert(player, data)
+                .map_err(|e| AppError::msg(format!("members.insert: {e}")))?;
+        }
+        Ok(())
+    }
+
+    fn to_player_view(&self, player: String, data: &PlayerStatusData) -> PlayerStatus {
+        PlayerStatus {
+            player,
+            status: data.status.get().clone(),
+            live_score: *data.live_score.get(),
+            live_length: *data.live_length.get(),
+            best_score: *data.best_score.get(),
+            updated_at: *data.updated_at.get(),
+        }
+    }
+
+    fn to_duel_view(&self, id: String, record: &DuelRecord) -> Duel {
+        Duel {
+            id,
+            initiator: record.initiator.get().clone(),
+            status: record.status.get().clone(),
+            duration_seconds: *record.duration_seconds.get(),
+            started_at: *record.started_at.get(),
+            ended_at: *record.ended_at.get(),
+        }
+    }
+
+    fn to_result_view(&self, id: String, data: &DuelResultData) -> app::Result<DuelResult> {
+        let author = self
+            .duel_results
             .owner_of(&id)
-            .map_err(|e| AppError::msg(format!("owners.owner_of: {e}")))?
+            .map_err(|e| AppError::msg(format!("duel_results.owner_of: {e}")))?
             .map(String::from)
             .unwrap_or_default();
-        Ok(ItemView {
+        Ok(DuelResult {
             id,
-            label: item.label.clone(),
-            value: item.value.get().clone(),
-            created_ms: item.created_ms,
-            owner,
+            duel_id: data.duel_id.get().clone(),
+            author,
+            score: *data.score.get(),
+            length: *data.length.get(),
+            created_at: *data.created_at.get(),
         })
     }
 }
 
-/// Translate an `AuthoredMap` access-control error into a friendly `Forbidden`.
-fn map_owner_error() -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
+/// Translate an `AuthoredMap` access-control error on `members` into a
+/// friendly `Forbidden`. Should not be reachable through the public API today
+/// (every write targets the caller's own key), but kept for defense in depth.
+fn map_member_error() -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
     move |e| {
         let s = e.to_string();
         if s.contains("ActionNotAllowed") {
-            AppError::from(Error::Forbidden("only the owner may delete this item".into()))
+            AppError::from(Error::Forbidden(
+                "only a player may update their own status".into(),
+            ))
         } else {
-            AppError::msg(format!("owners.remove: {s}"))
+            AppError::msg(format!("members.update: {s}"))
         }
     }
 }
@@ -304,65 +432,135 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn add_get_and_list() {
-        let mut app = TestHost::new(Registry::init);
+    const ALICE: [u8; 32] = [1u8; 32];
+    const BOB: [u8; 32] = [2u8; 32];
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        let view = app.view(|s| s.get(id.clone())).unwrap().unwrap();
-        assert_eq!(view.label, "widget");
-        assert_eq!(view.value, "v1");
-        assert_eq!(app.view(|s| s.count()).unwrap(), 1);
-        assert_eq!(app.view(|s| s.list()).unwrap().len(), 1);
-        // `add` emits exactly one event.
+    #[test]
+    fn update_status_then_list_members() {
+        let mut app = TestHost::new(RoomState::init);
+
+        app.call(|s| s.update_status("playing".into(), 40, 6)).unwrap();
+        let members = app.view(|s| s.list_members()).unwrap();
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].status, "playing");
+        assert_eq!(members[0].live_score, 40);
+        assert_eq!(members[0].live_length, 6);
+        assert_eq!(members[0].best_score, 40);
+        // update_status emits exactly one event per call.
         assert_eq!(app.events().len(), 1);
     }
 
     #[test]
-    fn update_changes_value() {
-        let mut app = TestHost::new(Registry::init);
+    fn best_score_never_regresses() {
+        let mut app = TestHost::new(RoomState::init);
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        app.call(|s| s.update(id.clone(), "v2".into())).unwrap();
-        assert_eq!(app.view(|s| s.get(id)).unwrap().unwrap().value, "v2");
+        app.call(|s| s.update_status("playing".into(), 40, 6)).unwrap();
+        app.call(|s| s.update_status("playing".into(), 20, 4)).unwrap();
+        let members = app.view(|s| s.list_members()).unwrap();
+        assert_eq!(members[0].live_score, 20);
+        assert_eq!(members[0].best_score, 40);
+
+        app.call(|s| s.update_status("idle".into(), 55, 9)).unwrap();
+        let members = app.view(|s| s.list_members()).unwrap();
+        assert_eq!(members[0].status, "idle");
+        assert_eq!(members[0].best_score, 55);
     }
 
     #[test]
-    fn update_unknown_id_errors() {
-        let mut app = TestHost::new(Registry::init);
-        assert!(app.call(|s| s.update("nope".into(), "x".into())).is_err());
+    fn distinct_players_get_distinct_entries() {
+        let mut app = TestHost::new(RoomState::init);
+
+        app.call_as(ALICE, |s| s.update_status("playing".into(), 10, 3))
+            .unwrap();
+        app.call_as(BOB, |s| s.update_status("playing".into(), 15, 4))
+            .unwrap();
+
+        let members = app.view(|s| s.list_members()).unwrap();
+        assert_eq!(members.len(), 2);
     }
 
     #[test]
-    fn owner_can_delete() {
-        let mut app = TestHost::new(Registry::init);
+    fn start_duel_then_get_duels() {
+        let mut app = TestHost::new(RoomState::init);
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        app.call(|s| s.delete(id.clone())).unwrap();
-        assert_eq!(app.view(|s| s.count()).unwrap(), 0);
-        assert!(app.view(|s| s.get(id)).unwrap().is_none());
+        let id = app.call(|s| s.start_duel(60)).unwrap();
+        let duels = app.view(|s| s.get_duels()).unwrap();
+        assert_eq!(duels.len(), 1);
+        assert_eq!(duels[0].id, id);
+        assert_eq!(duels[0].status, "active");
+        assert_eq!(duels[0].duration_seconds, 60);
+        assert!(duels[0].ended_at.is_none());
+        assert_eq!(app.events().len(), 1);
     }
 
     #[test]
-    fn non_owner_cannot_delete() {
-        let mut app = TestHost::new(Registry::init);
+    fn cannot_start_duel_while_one_active() {
+        let mut app = TestHost::new(RoomState::init);
 
-        // Default identity adds the item, so it owns it.
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-
-        // A different executor is not the owner — AuthoredMap rejects the
-        // delete, surfaced as Forbidden.
-        let other = [9u8; 32];
-        assert!(app.call_as(other, |s| s.delete(id.clone())).is_err());
-        // The item survives the rejected delete.
-        assert_eq!(app.view(|s| s.count()).unwrap(), 1);
+        app.call(|s| s.start_duel(60)).unwrap();
+        assert!(app.call(|s| s.start_duel(30)).is_err());
     }
 
     #[test]
-    fn private_draft_roundtrips() {
-        let mut app = TestHost::new(Registry::init);
+    fn finish_duel_sets_status_and_ended_at() {
+        let mut app = TestHost::new(RoomState::init);
 
-        app.call(|s| s.save_draft("hello".into())).unwrap();
-        assert_eq!(app.view(|s| s.get_draft()).unwrap(), "hello");
+        let id = app.call(|s| s.start_duel(60)).unwrap();
+        app.call(|s| s.finish_duel(id.clone())).unwrap();
+
+        let duels = app.view(|s| s.get_duels()).unwrap();
+        assert_eq!(duels[0].status, "finished");
+        assert!(duels[0].ended_at.is_some());
+
+        // Finishing an already-finished duel is a no-op, not an error.
+        app.call(|s| s.finish_duel(id)).unwrap();
+    }
+
+    #[test]
+    fn finish_unknown_duel_errors() {
+        let mut app = TestHost::new(RoomState::init);
+        assert!(app.call(|s| s.finish_duel("nope".into())).is_err());
+    }
+
+    #[test]
+    fn submit_duel_result_and_get_results() {
+        let mut app = TestHost::new(RoomState::init);
+
+        let duel_id = app.call(|s| s.start_duel(60)).unwrap();
+        app.call_as(ALICE, |s| s.submit_duel_result(duel_id.clone(), 55, 8))
+            .unwrap();
+        app.call_as(BOB, |s| s.submit_duel_result(duel_id.clone(), 48, 7))
+            .unwrap();
+        app.call(|s| s.finish_duel(duel_id.clone())).unwrap();
+
+        let results = app.view(|s| s.get_duel_results(duel_id)).unwrap();
+        assert_eq!(results.len(), 2);
+        // Highest score first — the winner.
+        assert_eq!(results[0].score, 55);
+        assert_eq!(results[1].score, 48);
+    }
+
+    #[test]
+    fn submit_result_for_unknown_duel_errors() {
+        let mut app = TestHost::new(RoomState::init);
+        assert!(app
+            .call(|s| s.submit_duel_result("nope".into(), 10, 2))
+            .is_err());
+    }
+
+    #[test]
+    fn duel_result_bumps_leaderboard_best_score() {
+        let mut app = TestHost::new(RoomState::init);
+
+        let duel_id = app.call(|s| s.start_duel(60)).unwrap();
+        app.call_as(ALICE, |s| s.submit_duel_result(duel_id.clone(), 90, 12))
+            .unwrap();
+        app.call_as(BOB, |s| s.submit_duel_result(duel_id, 30, 5))
+            .unwrap();
+
+        let board = app.view(|s| s.get_leaderboard()).unwrap();
+        assert_eq!(board.len(), 2);
+        assert_eq!(board[0].best_score, 90);
+        assert_eq!(board[1].best_score, 30);
     }
 }
