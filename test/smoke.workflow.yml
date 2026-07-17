@@ -167,3 +167,162 @@ steps:
     name: Registry is empty on node 2 after the owner delete
     statements:
       - 'equal({{count_n2}}, 0)'
+
+  # --- household-vault spec service: mutate methods ---
+  # Exercises the real household-vault-1.0.0.mpk bundle's `vault` service
+  # (add_entry / edit_entry / delete_entry) on the same two nodes, including
+  # the author-only delete gate the spec's "edit or remove logins I added"
+  # story requires.
+
+  - type: install_application
+    name: Install vault bundle on node 1
+    node: foundation-node-1
+    dev: true
+    path: ./logic/res/household-vault-1.0.0.mpk
+    outputs:
+      vault_app_id: applicationId
+
+  - type: install_application
+    name: Install vault bundle on node 2
+    node: foundation-node-2
+    dev: true
+    path: ./logic/res/household-vault-1.0.0.mpk
+
+  - type: create_namespace
+    name: Create vault namespace on node 1
+    node: foundation-node-1
+    application_id: '{{vault_app_id}}'
+    outputs:
+      vault_namespace_id: namespaceId
+
+  - type: create_context
+    name: Create vault service context on node 1
+    node: foundation-node-1
+    application_id: '{{vault_app_id}}'
+    group_id: '{{vault_namespace_id}}'
+    service_name: vault
+    outputs:
+      vault_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue vault namespace invitation
+    node: foundation-node-1
+    namespace_id: '{{vault_namespace_id}}'
+    outputs:
+      vault_invitation: invitation
+
+  - type: join_namespace
+    name: Node 2 joins vault namespace
+    node: foundation-node-2
+    namespace_id: '{{vault_namespace_id}}'
+    invitation: '{{vault_invitation}}'
+
+  # add_entry: a household member adds a shared login.
+  - type: call
+    name: Exercise add_entry on node 1
+    node: foundation-node-1
+    context_id: '{{vault_ctx}}'
+    method: add_entry
+    args:
+      service_name: Netflix
+      username: family@home.com
+      secret: s3cr3t!
+      notes: shared account
+    outputs:
+      entry_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after add_entry
+    context_id: '{{vault_ctx}}'
+    nodes: [foundation-node-1, foundation-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: Confirm the new entry is visible on node 2
+    node: foundation-node-2
+    context_id: '{{vault_ctx}}'
+    method: list_entries
+    args: {}
+    outputs:
+      entry_0: result.output.0
+
+  - type: json_assert
+    name: add_entry produced a visible VaultEntry on node 2
+    statements:
+      - 'json_subset({{entry_0}}, {"service_name": "Netflix", "username": "family@home.com", "notes": "shared account"})'
+
+  # edit_entry: the author (node 1) edits their own entry.
+  - type: call
+    name: Exercise edit_entry on node 1
+    node: foundation-node-1
+    context_id: '{{vault_ctx}}'
+    method: edit_entry
+    args:
+      id: '{{entry_id}}'
+      service_name: Netflix
+      username: family@home.com
+      secret: newPass1!
+      notes: updated Oct
+
+  - type: wait_for_sync
+    name: Wait for sync after edit_entry
+    context_id: '{{vault_ctx}}'
+    nodes: [foundation-node-1, foundation-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: Confirm the edit is visible on node 2
+    node: foundation-node-2
+    context_id: '{{vault_ctx}}'
+    method: list_entries
+    args: {}
+    outputs:
+      entry_0_edited: result.output.0
+
+  - type: json_assert
+    name: edit_entry updated the VaultEntry as seen from node 2
+    statements:
+      - 'json_subset({{entry_0_edited}}, {"notes": "updated Oct"})'
+
+  # delete_entry: a non-author delete must be rejected; the author's own
+  # delete then succeeds. This is the ownership gate the "edit or remove
+  # logins I added" story requires.
+  - type: call
+    name: Non-author delete_entry from node 2 must be rejected
+    node: foundation-node-2
+    context_id: '{{vault_ctx}}'
+    method: delete_entry
+    args:
+      id: '{{entry_id}}'
+    expect_error: true
+
+  - type: call
+    name: Author delete_entry from node 1 succeeds
+    node: foundation-node-1
+    context_id: '{{vault_ctx}}'
+    method: delete_entry
+    args:
+      id: '{{entry_id}}'
+
+  - type: wait_for_sync
+    name: Wait for sync after delete_entry
+    context_id: '{{vault_ctx}}'
+    nodes: [foundation-node-1, foundation-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: Confirm the vault is empty on node 2 after delete
+    node: foundation-node-2
+    context_id: '{{vault_ctx}}'
+    method: list_entries
+    args: {}
+    outputs:
+      entries_after_delete: result.output
+
+  - type: json_assert
+    name: Vault is empty on node 2 after the author's delete
+    statements:
+      - 'json_equal({{entries_after_delete}}, [])'
