@@ -1,0 +1,22 @@
+{
+  "appName": "snake-arcade",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.snake-arcade",
+  "metadata": {
+    "name": "snake-arcade",
+    "description": "A shared room for friends playing classic snake locally, with live status, timed duels, and an all-time leaderboard",
+    "author": "Calimero",
+    "route": "/snake-arcade"
+  },
+  "theme": {
+    "primaryColor": "#22C55E",
+    "accentColor": "#FACC15",
+    "style": "retro-arcade"
+  },
+  "services": [
+    {
+      "name": "room",
+      "crate": "snake-arcade-room"
+    }
+  ]
+}
