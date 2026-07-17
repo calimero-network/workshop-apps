@@ -1,0 +1,22 @@
+{
+  "appName": "galactic-dominion",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.galactic-dominion",
+  "metadata": {
+    "name": "galactic-dominion",
+    "description": "A live shared companion for a space-themed Catan-style game — tracks resources, builds, trades, and Dominion Points for the whole group in real time",
+    "author": "Calimero",
+    "route": "/galactic-dominion"
+  },
+  "theme": {
+    "primaryColor": "#7C3AED",
+    "accentColor": "#22D3EE",
+    "style": "sci-fi-neon"
+  },
+  "services": [
+    {
+      "name": "dominion",
+      "crate": "galactic-dominion-dominion"
+    }
+  ]
+}
