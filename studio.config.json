@@ -1,7 +1,7 @@
 {
   "appName": "incidentflow",
-  "appVersion": "1.0.0",
-  "package": "com.calimero.incidentflow",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.sandi-calimero-network-b543750b.incidentflow",
   "metadata": {
     "name": "incidentflow",
     "description": "A shared incident tracker for reporting, coordinating, and learning from incidents together",
