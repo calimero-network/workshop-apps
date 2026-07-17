@@ -4,6 +4,7 @@ import { useMero } from '@calimero-network/mero-react';
 import { C } from '../../theme';
 import { APP_DISPLAY_NAME } from '../../config';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { useRoom } from '../../hooks/useRoom';
 import { describeError } from '../../utils/errors';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
@@ -18,15 +19,11 @@ import LeaderboardScreen from './LeaderboardScreen';
  *
  * Keeps the proven structure: workspace resolution (bootstrap / join), the
  * Invite/Join wiring, and the display-name gate. The neutral Item CRUD is
- * replaced with tab navigation across the spec's three views:
+ * replaced with tab navigation across the spec's three views, all backed by
+ * one `useRoom` data hook over the generated `RoomClient`:
  *   - GameScreen        (play + live room sidebar)
  *   - DuelsScreen        (challenge the room + duel history)
  *   - LeaderboardScreen  (all-time best scores)
- *
- * SHELL PASS: each screen renders placeholder data — no generated-client
- * calls yet. The wiring pass adds a `useRoom` data hook over the generated
- * client (list_members / start_duel / submit_duel_result / finish_duel /
- * get_duels / get_duel_results / get_leaderboard) and threads it through.
  */
 
 type Tab = 'game' | 'duels' | 'leaderboard';
@@ -39,6 +36,7 @@ const TABS: { id: Tab; label: string }[] = [
 export default function AppPage() {
   const { logout } = useMero();
   const ws = useWorkspace();
+  const room = useRoom({ contextId: ws.contextId, executorPublicKey: ws.executorPublicKey });
 
   const [tab, setTab] = useState<Tab>('game');
   const [wsName, setWsName] = useState('My arcade room');
@@ -106,9 +104,15 @@ export default function AppPage() {
         </Tabs>
 
         <Content>
-          {tab === 'game' && <GameScreen />}
-          {tab === 'duels' && <DuelsScreen />}
-          {tab === 'leaderboard' && <LeaderboardScreen />}
+          {tab === 'game' && (
+            <GameScreen
+              members={room.members.filter((m) => m.player !== ws.executorPublicKey)}
+              bestScore={room.self?.best_score ?? 0}
+              onUpdateStatus={room.updateStatus}
+            />
+          )}
+          {tab === 'duels' && <DuelsScreen room={room} />}
+          {tab === 'leaderboard' && <LeaderboardScreen entries={room.leaderboard} />}
 
           {/* Blocks the content (not the top bar) until a name is set. Never
               shown on the injected/SSO path (desktop + e2e). */}

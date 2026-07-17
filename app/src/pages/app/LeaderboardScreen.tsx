@@ -2,24 +2,23 @@ import React from 'react';
 import styled from 'styled-components';
 import { C } from '../../theme';
 import { MemberLabel } from '../../components/MemberLabel';
-import { PLACEHOLDER_LEADERBOARD } from '../../data/placeholders';
-import type { PlayerStatus } from '../../types/domain';
+import type { PlayerStatus } from '../../api/room/RoomClient';
 
 /**
  * LeaderboardScreen — all-time best score per player, ranked best first.
  *
- * SHELL PASS: renders placeholder standings. The wiring pass replaces the
- * `entries` default with `get_leaderboard()` behind a `useSubscription`
- * refresh so a beaten best score climbs the board live for every member.
+ * `entries` is the live `get_leaderboard()` feed threaded down from
+ * `useRoom` via AppPage, refreshed on every sync event so a beaten best
+ * score climbs the board live for every member.
  */
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
 interface LeaderboardScreenProps {
-  entries?: PlayerStatus[];
+  entries: PlayerStatus[];
 }
 
-export default function LeaderboardScreen({ entries = PLACEHOLDER_LEADERBOARD }: LeaderboardScreenProps) {
+export default function LeaderboardScreen({ entries }: LeaderboardScreenProps) {
   const ranked = [...entries].sort((a, b) => b.best_score - a.best_score);
 
   return (

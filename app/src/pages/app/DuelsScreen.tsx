@@ -1,24 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { C } from '../../theme';
 import { MemberLabel } from '../../components/MemberLabel';
-import { PLACEHOLDER_DUELS, PLACEHOLDER_DUEL_RESULTS, PLACEHOLDER_MEMBERS } from '../../data/placeholders';
-import type { Duel, DuelResult } from '../../types/domain';
+import type { UseRoomReturn } from '../../hooks/useRoom';
 
 /**
  * DuelsScreen — challenge-the-room button with a shared countdown, plus a
  * history of past duels with winner badges.
  *
- * SHELL PASS: the countdown + result generation run entirely client-side so
- * the flow can be reviewed before the backend exists. The wiring pass swaps:
- *  - "Challenge the room"  → `start_duel(duration_seconds)`,
- *  - the ticking countdown → `get_duels()` + `useSubscription` (shared, not
- *    just local — every room member should see the same clock),
- *  - `finishDuel`          → `finish_duel(duel_id)` once the timer elapses,
- *  - results               → `get_duel_results(duel_id)`.
+ * The countdown is driven by the shared `Duel.started_at` from the backend,
+ * so every room member's clock agrees. When time's up, this client submits
+ * its own player's current score/length (`submit_duel_result`) and asks the
+ * backend to close the duel out (`finish_duel`, idempotent — safe if more
+ * than one member's client calls it).
  */
 
-const SELF_ID = 'you';
 const DURATIONS = [30, 60, 90] as const;
 
 function formatClock(totalSeconds: number): string {
@@ -34,9 +30,12 @@ function formatTimestamp(ms: number): string {
   });
 }
 
-export default function DuelsScreen() {
-  const [duels, setDuels] = useState<Duel[]>(PLACEHOLDER_DUELS);
-  const [results, setResults] = useState<Record<string, DuelResult[]>>(PLACEHOLDER_DUEL_RESULTS);
+interface DuelsScreenProps {
+  room: UseRoomReturn;
+}
+
+export default function DuelsScreen({ room }: DuelsScreenProps) {
+  const { duels, duelResults, self, startDuel, submitDuelResult, finishDuel } = room;
   const [duration, setDuration] = useState<number>(DURATIONS[1]);
   const [tick, setTick] = useState(0);
 
@@ -49,42 +48,24 @@ export default function DuelsScreen() {
     return () => window.clearInterval(id);
   }, [active?.id]);
 
+  // Once the fixed timer elapses, submit this player's own result and ask
+  // the backend to close the duel. Guarded per-duel so a client doesn't
+  // resubmit every tick while waiting for the shared state to catch up.
+  const settledRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!active) return;
     const elapsed = Math.floor((Date.now() - active.started_at) / 1000);
-    if (elapsed >= active.duration_seconds) finishDuel(active.id);
+    if (elapsed < active.duration_seconds) return;
+    if (settledRef.current.has(active.id)) return;
+    settledRef.current.add(active.id);
+    void submitDuelResult(active.id, self?.live_score ?? 0, self?.live_length ?? 0);
+    void finishDuel(active.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick, active]);
 
-  function startDuel() {
+  function handleStart() {
     if (active) return; // a duel cannot start while another is in progress
-    const id = `duel-${Math.random().toString(36).slice(2, 8)}`;
-    const duel: Duel = {
-      id,
-      initiator: SELF_ID,
-      status: 'active',
-      duration_seconds: duration,
-      started_at: Date.now(),
-      ended_at: null,
-    };
-    setDuels((prev) => [duel, ...prev]);
-  }
-
-  function finishDuel(duelId: string) {
-    setDuels((prev) => prev.map((d) => (d.id === duelId ? { ...d, status: 'finished', ended_at: Date.now() } : d)));
-    setResults((prev) => {
-      if (prev[duelId]) return prev;
-      const participants = [SELF_ID, ...PLACEHOLDER_MEMBERS.map((m) => m.player)];
-      const rows: DuelResult[] = participants.map((author, i) => ({
-        id: `result-${duelId}-${i}`,
-        duel_id: duelId,
-        author,
-        score: 20 + Math.floor(Math.random() * 60),
-        length: 4 + Math.floor(Math.random() * 8),
-        created_at: Date.now(),
-      }));
-      return { ...prev, [duelId]: rows };
-    });
+    void startDuel(duration);
   }
 
   const remaining = active ? active.duration_seconds - Math.floor((Date.now() - active.started_at) / 1000) : 0;
@@ -116,12 +97,11 @@ export default function DuelsScreen() {
           <Countdown data-testid="duel-countdown">
             <span className="clock">{formatClock(remaining)}</span>
             <span className="label">
-              duel in progress — started by{' '}
-              {active.initiator === SELF_ID ? 'you' : <MemberLabel memberId={active.initiator} className="inline" />}
+              duel in progress — started by <MemberLabel memberId={active.initiator} className="inline" />
             </span>
           </Countdown>
         ) : (
-          <StartBtn data-testid="action-start_duel" onClick={startDuel}>Start a duel</StartBtn>
+          <StartBtn data-testid="action-start_duel" onClick={handleStart}>Start a duel</StartBtn>
         )}
       </Challenge>
 
@@ -129,13 +109,13 @@ export default function DuelsScreen() {
         <h3>Past duels</h3>
         {duels.length === 0 && <Hint>No duels yet — start the first one above.</Hint>}
         {duels.map((duel) => {
-          const rows = [...(results[duel.id] ?? [])].sort((a, b) => b.score - a.score);
+          const rows = [...(duelResults[duel.id] ?? [])].sort((a, b) => b.score - a.score);
           const topScore = rows[0]?.score;
           return (
             <DuelCard key={duel.id} data-testid="item-duel">
               <div className="head">
                 <span className="who">
-                  {duel.initiator === SELF_ID ? 'you' : <MemberLabel memberId={duel.initiator} />} challenged the room
+                  <MemberLabel memberId={duel.initiator} /> challenged the room
                 </span>
                 <span className={`status ${duel.status}`}>{duel.status}</span>
               </div>
@@ -148,7 +128,7 @@ export default function DuelsScreen() {
                   {rows.map((r) => (
                     <ResultRow key={r.id} data-testid="item-duel_result">
                       <div className="who">
-                        {r.author === SELF_ID ? 'you' : <MemberLabel memberId={r.author} />}
+                        <MemberLabel memberId={r.author} />
                         {r.score === topScore && <Winner>🏆 winner</Winner>}
                       </div>
                       <div className="stats">

@@ -2,18 +2,16 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { C } from '../../theme';
 import { MemberLabel } from '../../components/MemberLabel';
-import { PLACEHOLDER_MEMBERS } from '../../data/placeholders';
-import type { PlayerStatus } from '../../types/domain';
+import type { PlayerStatus } from '../../api/room/RoomClient';
 
 /**
  * GameScreen — local DOM-grid snake game plus a live sidebar of everyone
  * else's status/score/length.
  *
- * SHELL PASS: the game itself is fully local (no backend calls needed to
- * play). The sidebar renders `members` — placeholder room data for now.
- * The wiring pass will report `status`/`score`/`length` through
- * `update_status(status, score, length)` on every change and replace
- * `members` with the live `list_members()` feed via `useSubscription`.
+ * The game itself is fully local (no backend calls needed to play). Every
+ * status/score/length change is reported through `update_status` so the room
+ * sees it within a subscription tick; `members` is the live `list_members()`
+ * feed (self excluded) threaded down from `useRoom` via AppPage.
  */
 
 const SIZE = 15;
@@ -51,18 +49,21 @@ const KEY_TO_DIR: Record<string, Dir> = {
 };
 
 interface GameScreenProps {
-  /** Other room members' live status. Placeholder until the wiring pass. */
-  members?: PlayerStatus[];
+  /** Every other room member's live status (self excluded by the caller). */
+  members: PlayerStatus[];
+  /** This player's own best-ever score, as recorded by the backend. */
+  bestScore: number;
+  /** Reports status/score/length to the room via `update_status`. */
+  onUpdateStatus: (status: 'playing' | 'idle', score: number, length: number) => void;
 }
 
-export default function GameScreen({ members = PLACEHOLDER_MEMBERS }: GameScreenProps) {
+export default function GameScreen({ members, bestScore, onUpdateStatus }: GameScreenProps) {
   const [snake, setSnake] = useState<Cell[]>(initialSnake);
   const [food, setFood] = useState<number>(() =>
     randomFood(new Set(initialSnake().map((c) => cellIndex(c.x, c.y)))),
   );
   const [status, setStatus] = useState<'idle' | 'playing'>('idle');
   const [score, setScore] = useState(0);
-  const [best, setBest] = useState(0);
 
   const dirRef = useRef<Dir>(RIGHT);
   const nextDirRef = useRef<Dir>(RIGHT);
@@ -108,11 +109,7 @@ export default function GameScreen({ members = PLACEHOLDER_MEMBERS }: GameScreen
           : [{ x: nx, y: ny }, ...prev.slice(0, -1)];
 
         if (grew) {
-          setScore((s) => {
-            const next = s + 10;
-            setBest((b) => Math.max(b, next));
-            return next;
-          });
+          setScore((s) => s + 10);
           setFood(randomFood(new Set(newSnake.map((c) => cellIndex(c.x, c.y)))));
         }
         void tail;
@@ -140,6 +137,26 @@ export default function GameScreen({ members = PLACEHOLDER_MEMBERS }: GameScreen
   const cells = Array.from({ length: SIZE * SIZE }, (_, i) => i);
   const bodySet = new Set(snake.slice(1).map((c) => cellIndex(c.x, c.y)));
   const headIdx = cellIndex(snake[0].x, snake[0].y);
+  const best = Math.max(bestScore, score);
+
+  // Report every status/score/length change to the room so peers see it in
+  // their sidebar within a subscription tick. Fires once on mount too, so a
+  // player shows up as idle before they've even played a round.
+  const onUpdateStatusRef = useRef(onUpdateStatus);
+  onUpdateStatusRef.current = onUpdateStatus;
+  useEffect(() => {
+    onUpdateStatusRef.current(status, score, length);
+  }, [status, score, length]);
+
+  // Leaving the game screen (tab switch / unmount) always flips status to
+  // idle, per "idle once the snake game ends or they leave the game screen".
+  const latestRef = useRef({ score, length });
+  latestRef.current = { score, length };
+  useEffect(() => {
+    return () => {
+      onUpdateStatusRef.current('idle', latestRef.current.score, latestRef.current.length);
+    };
+  }, []);
 
   return (
     <Wrap>
