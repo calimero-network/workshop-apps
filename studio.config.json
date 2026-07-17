@@ -1,0 +1,22 @@
+{
+  "appName": "household-vault",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.household-vault",
+  "metadata": {
+    "name": "household-vault",
+    "description": "A shared vault where household members add logins everyone can read, but only the adder can edit or remove",
+    "author": "Calimero",
+    "route": "/household-vault"
+  },
+  "theme": {
+    "primaryColor": "#1E293B",
+    "accentColor": "#38BDF8",
+    "style": "clean-secure"
+  },
+  "services": [
+    {
+      "name": "vault",
+      "crate": "household-vault-vault"
+    }
+  ]
+}
