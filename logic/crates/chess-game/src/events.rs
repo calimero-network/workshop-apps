@@ -1,12 +1,16 @@
-//! Events emitted by the item-registry service. Borrowed `&'a str` fields keep
+//! Events emitted by the chess-game service. Borrowed `&'a str` fields keep
 //! emission allocation-free (the SDK serialises them before the borrow ends).
 
 #[calimero_sdk::app::event]
 pub enum Event<'a> {
-    /// A new item was added to the registry.
-    ItemAdded { id: &'a str, owner: &'a str },
-    /// An item's value was updated.
-    ItemUpdated { id: &'a str },
-    /// An item was deleted by its owner.
-    ItemDeleted { id: &'a str },
+    /// A new game was created; the creator is white, the invited opponent is black.
+    GameCreated {
+        id: &'a str,
+        white_player: &'a str,
+        black_player: &'a str,
+    },
+    /// A move was submitted and is now permanent.
+    MoveSubmitted { id: &'a str, player: &'a str, san: &'a str },
+    /// The game ended (checkmate, stalemate, resignation, or draw).
+    GameEnded { status: &'a str, result: &'a str },
 }
