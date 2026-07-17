@@ -73,13 +73,21 @@ test.describe(`player: see the results of a finished duel — winner, everyone's
     await expect(page.getByTestId('duel-countdown')).toBeHidden({ timeout: MAX_LINGERING_DUEL_WAIT_MS });
     const before = await page.getByTestId('item-duel').count();
 
-    // Play a duel to completion.
+    // Play a duel to completion. The "no active duel" control (select +
+    // start button) shares the same `active` flag as the countdown, but it
+    // only remounts once this client's own refresh() (self-authored
+    // finish_duel -> refetch) has round-tripped -- give it explicit
+    // headroom beyond the default 15s action timeout instead of relying on
+    // selectOption's implicit auto-wait, since back-to-back duels leave very
+    // little slack for that refresh to land.
+    await expect(page.getByTestId('field-duration_seconds')).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('field-duration_seconds').selectOption('30');
     await page.getByTestId('action-start_duel').click();
     await expect(page.getByTestId('duel-countdown')).toBeHidden({ timeout: 45_000 });
     await expect(page.getByTestId('item-duel')).toHaveCount(before + 1, { timeout: 10_000 });
 
     // Play a second duel -- the first one's card must still be present.
+    await expect(page.getByTestId('field-duration_seconds')).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('field-duration_seconds').selectOption('30');
     await page.getByTestId('action-start_duel').click();
     await expect(page.getByTestId('duel-countdown')).toBeHidden({ timeout: 45_000 });

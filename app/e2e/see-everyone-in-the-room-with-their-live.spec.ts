@@ -79,7 +79,11 @@ test.describe(`player: see everyone in the room with their live status, score, a
       .getByTestId('item-player_status')
       .filter({ hasText: 'score 10' })
       .filter({ hasText: 'len 4' });
-    await expect(aRow).toBeVisible({ timeout: 5_000 });
+    // Cross-node propagation of a status update (self-authored update_status
+    // -> subscription-triggered refresh on the peer) can take longer than 5s
+    // under CI load -- the equivalent leaderboard cross-node check allows
+    // 10s and passes reliably, so give this one the same order of headroom.
+    await expect(aRow).toBeVisible({ timeout: 15_000 });
 
     await ctxA.close();
     await ctxB.close();

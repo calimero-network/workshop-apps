@@ -48,7 +48,13 @@ async function playOneFood(page: Page) {
  *  scoring +20 total, without ending the game (so the score jump reports
  *  while the run is still "playing" -- best-ever score only rises with it). */
 async function playTwoFoods(page: Page) {
-  await pinNextFoodSpawns(page, [0, 0.999, 0, 0.07]);
+  // Exactly two food spawns happen before the second bite: reset()'s initial
+  // placement (pin -> index 0) and the respawn triggered by eating that first
+  // food (pin -> index 15, i.e. (0,1)). The previous 4-value pin array left
+  // the respawn landing on index 224 instead of 15, so the ArrowDown move
+  // below never actually ate a second food and the test's expected +20
+  // score never materialized.
+  await pinNextFoodSpawns(page, [0, 0.07]);
   await page.getByTestId('start-game-btn').click();
   await page.keyboard.press('ArrowUp');
   await waitForHeadAt(page, 7); // row 0, column 7
