@@ -21,9 +21,9 @@ calimero-wasm-abi = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-# Enables `register_crdt_merge` + the native mock host so `TestHost` and
-# `converge_app` can drive CRDT state under `cargo test`.
+# Enables `register_crdt_merge` + the native mock host so `TestHost` can drive
+# CRDT state under `cargo test`. No `tests/converge.rs` here: the vault's only
+# collection is `AuthoredMap`, whose signed-delta merge path the bare
+# `converge_app` harness cannot reconcile (see the AuthoredMap docs) — author
+# gating is covered by the `call_as` unit tests in `src/lib.rs` instead.
 calimero-storage = { workspace = true, features = ["testing"] }
-# Convergence tests are serial: `converge_app` clears/repopulates the
-# process-global merge registry per run.
-serial_test = { workspace = true }
