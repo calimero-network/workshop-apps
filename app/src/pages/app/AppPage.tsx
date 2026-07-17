@@ -1,49 +1,65 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import styled from 'styled-components';
 import { useMero } from '@calimero-network/mero-react';
 import { C } from '../../theme';
 import { APP_DISPLAY_NAME } from '../../config';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { useItems } from '../../hooks/useItems';
+import { useChessGame } from '../../hooks/useChessGame';
 import { describeError } from '../../utils/errors';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
-import { DisplayNamesProvider, MemberLabel } from '../../components/MemberLabel';
+import { DisplayNamesProvider } from '../../components/MemberLabel';
 import { DisplayNameGate } from '../../components/DisplayNameGate';
+import GameLobbyView from './GameLobbyView';
+import ChessBoardView from './ChessBoardView';
+import MoveHistoryView from './MoveHistoryView';
 
 /**
- * Neutral single-context CRUD view — the foundation's "app" screen.
+ * AppPage — the live-chess match screen.
  *
- * BUILD AGENT: this is the canonical data-binding shell. Reshape it to the
- * spec's entity:
- *  - `useItems` → your domain hook over the generated `ServiceClient`,
- *  - the form fields + list rows → your entity's fields,
- *  - the page copy → your product.
- * Keep the structure: workspace resolution (bootstrap / join), the item form,
- * the live list, and the Invite/Join wiring — these make it multi-user out of
- * the box. Do NOT reintroduce chat concepts (rooms, messages, presence).
+ * Composes the three spec views over the single shared `chess-game` context:
+ *  - Welcome gate (no workspace yet): create a match (host, plays White) or
+ *    join one via invitation (plays Black).
+ *  - `GameLobbyView`: workspace exists but `create_game` hasn't run yet — the
+ *    host waits for their friend to show up in the namespace's member list,
+ *    then starts the match with that friend's real identity.
+ *  - `ChessBoardView` + `MoveHistoryView`: the live match once it's active
+ *    (or finished).
+ * Keeps the workspace resolution (bootstrap/join), the Invite/Join wiring,
+ * and the display-name gate exactly as the foundation provides them.
  */
 export default function AppPage() {
   const { logout } = useMero();
   const ws = useWorkspace();
-  const items = useItems({
+  const chess = useChessGame({
     contextId: ws.contextId,
     executorPublicKey: ws.executorPublicKey,
   });
 
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [wsName, setWsName] = useState('My workspace');
+  const [matchName, setMatchName] = useState('My chess match');
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
+  const [isHost, setIsHost] = useState(false);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    await items.add(title.trim(), body.trim());
-    setTitle('');
-    setBody('');
+  const handleCreate = () => {
+    setIsHost(true);
+    void ws.bootstrap(matchName);
   };
+
+  const handleJoin = async (code: string) => {
+    await ws.join(code);
+    setIsHost(false);
+    setShowJoin(false);
+  };
+
+  const myColor: 'white' | 'black' | null = useMemo(() => {
+    if (!chess.game || !ws.executorPublicKey) return null;
+    if (chess.game.white_player === ws.executorPublicKey) return 'white';
+    if (chess.game.black_player === ws.executorPublicKey) return 'black';
+    return null;
+  }, [chess.game, ws.executorPublicKey]);
+
+  const gameStarted = chess.game !== null && chess.game.status !== 'pending';
 
   // No workspace yet (fresh web session): offer create-or-join.
   if (!ws.ready && !ws.loading) {
@@ -51,26 +67,23 @@ export default function AppPage() {
       <Empty>
         <Card>
           <h2>Welcome to {APP_DISPLAY_NAME}</h2>
-          <p>Create a workspace to start, or join one you were invited to.</p>
+          <p>Create a new match and invite a friend, or join a match you were invited to.</p>
           <NameField
             data-testid="field-workspace-name"
-            value={wsName}
-            onChange={(e) => setWsName(e.target.value)}
-            placeholder="Workspace name"
+            value={matchName}
+            onChange={(e) => setMatchName(e.target.value)}
+            placeholder="Match name"
             maxLength={64}
-            aria-label="Workspace name"
+            aria-label="Match name"
           />
           <Row>
-            <Primary data-testid="create-workspace-btn" onClick={() => ws.bootstrap(wsName)}>Create workspace</Primary>
+            <Primary data-testid="create-workspace-btn" onClick={handleCreate}>Create match</Primary>
             <Secondary data-testid="open-join-btn" onClick={() => setShowJoin(true)}>Join with invitation</Secondary>
           </Row>
           {ws.error && <ErrLine>{describeError(ws.error)}</ErrLine>}
         </Card>
         {showJoin && (
-          <JoinModal
-            onJoin={async (code) => { await ws.join(code); setShowJoin(false); }}
-            onClose={() => setShowJoin(false)}
-          />
+          <JoinModal onJoin={handleJoin} onClose={() => setShowJoin(false)} />
         )}
       </Empty>
     );
@@ -93,39 +106,27 @@ export default function AppPage() {
         </Bar>
 
         <Content>
-          <Form onSubmit={submit}>
-            <input
-              placeholder="Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+          {!chess.game ? (
+            <Hint>Loading game…</Hint>
+          ) : gameStarted ? (
+            <>
+              <ChessBoardView
+                game={chess.game}
+                myColor={myColor}
+                onSubmitMove={chess.submitMove}
+                onResign={chess.resign}
+              />
+              <MoveHistoryView moves={chess.moves} />
+            </>
+          ) : (
+            <GameLobbyView
+              namespaceId={ws.namespaceId}
+              isHost={isHost}
+              creating={chess.creating}
+              error={chess.error}
+              onStart={(opponentIdentity) => { void chess.createGame(opponentIdentity); }}
             />
-            <input
-              placeholder="Details (optional)"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-            />
-            <Primary type="submit" disabled={!title.trim() || !items.ready}>Add</Primary>
-          </Form>
-
-          {items.error && <ErrLine>{describeError(items.error)}</ErrLine>}
-
-          <List>
-            {items.items.length === 0 && !items.loading && (
-              <Hint>No items yet — add the first one above.</Hint>
-            )}
-            {items.items.map((item) => (
-              <ItemRow key={item.id}>
-                <div className="text">
-                  <strong>{item.title}</strong>
-                  {item.body && <span>{item.body}</span>}
-                  <Byline>
-                    <MemberLabel memberId={item.author} />
-                  </Byline>
-                </div>
-                <button onClick={() => items.remove(item.id)} aria-label="Delete">×</button>
-              </ItemRow>
-            ))}
-          </List>
+          )}
 
           {/* Blocks the content (not the top bar) until a name is set. Never
               shown on the injected/SSO path (desktop + e2e). */}
@@ -136,10 +137,7 @@ export default function AppPage() {
           <InviteModal onInvite={ws.invite} onClose={() => setShowInvite(false)} />
         )}
         {showJoin && (
-          <JoinModal
-            onJoin={async (code) => { await ws.join(code); setShowJoin(false); }}
-            onClose={() => setShowJoin(false)}
-          />
+          <JoinModal onJoin={handleJoin} onClose={() => setShowJoin(false)} />
         )}
       </Page>
     </DisplayNamesProvider>
@@ -164,38 +162,7 @@ const Bar = styled.header`
 // Positioning context for the display-name gate overlay: it covers the content
 // but leaves the top bar (Sign out) reachable.
 const Content = styled.div`position: relative;`;
-const Byline = styled.span`
-  font-size: 11.5px;
-  color: ${C.mutedSoft};
-`;
-const Form = styled.form`
-  display: flex;
-  gap: 8px;
-  margin-bottom: 22px;
-  flex-wrap: wrap;
-  input {
-    flex: 1; min-width: 160px;
-    padding: 10px 12px; font-size: 14px;
-    color: ${C.ink}; background: ${C.paper2};
-    border: 1px solid ${C.line}; border-radius: 10px; outline: none;
-    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px rgba(164,255,17,0.18); }
-  }
-`;
-const List = styled.div`display: flex; flex-direction: column; gap: 10px;`;
-const ItemRow = styled.div`
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 14px 16px; background: ${C.paper2};
-  border: 1px solid ${C.line}; border-radius: 12px;
-  .text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .text strong { font-size: 15px; color: ${C.ink}; }
-  .text span { font-size: 13px; color: ${C.muted}; }
-  button {
-    flex-shrink: 0; width: 30px; height: 30px; font-size: 20px; line-height: 1;
-    color: ${C.mutedSoft}; background: transparent; border: none; border-radius: 8px; cursor: pointer;
-    &:hover { background: ${C.paper}; color: ${C.danger}; }
-  }
-`;
-const Hint = styled.p`font-size: 14px; color: ${C.muted}; padding: 8px 2px;`;
+const Hint = styled.p`font-size: 14px; color: ${C.muted}; padding: 8px 2px; text-align: center;`;
 const ErrLine = styled.p`margin: 8px 0; font-size: 13px; color: ${C.danger};`;
 
 const Empty = styled.div`

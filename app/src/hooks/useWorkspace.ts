@@ -12,7 +12,7 @@
  *    once and remember it. Peers join via a namespace invitation (Invite/Join
  *    modals) — no rooms, no per-instance contexts.
  *
- * The build agent rarely touches this: it reshapes the DATA hook (`useItems`)
+ * The build agent rarely touches this: it reshapes the DATA hook (`useChessGame`)
  * and the page, not the workspace wiring. Multi-context specs replace this with
  * the per-context topology documented in the calimero-client-js skill.
  */
@@ -34,7 +34,7 @@ const ENV_APPLICATION_ID = import.meta.env.VITE_APPLICATION_ID?.trim() || null;
 const DEFAULT_CAPABILITIES = 1 | 2; // = 3
 
 export interface UseWorkspaceReturn {
-  /** The shared context's id — null until resolved/created. Feeds useItems. */
+  /** The shared context's id — null until resolved/created. Feeds useChessGame. */
   contextId: string | null;
   /** The namespace (group) the context lives in — keys member display names. */
   namespaceId: string | null;
@@ -111,7 +111,7 @@ export function useWorkspace(): UseWorkspaceReturn {
         const { identities } = await mero.admin.getContextIdentitiesOwned(contextId);
         if (!cancelled && identities.length > 0) setExecutorPublicKey(identities[0]);
       } catch {
-        /* leave null — useItems stays not-ready until an identity resolves */
+        /* leave null — useChessGame stays not-ready until an identity resolves */
       }
     })();
     return () => { cancelled = true; };

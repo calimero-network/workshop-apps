@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '♟️', title: 'Preview before you commit', body: 'Try a move, see how the position looks, and undo as many times as you like — nothing is shared until you hit submit.' },
+  { icon: '⚡', title: 'Instant, permanent moves', body: 'Once you submit, your move lands on your opponent’s board in real time and can never be undone.' },
+  { icon: '🔒', title: 'Just the two of you', body: 'Your match lives in a private, encrypted context shared only with your opponent — no server watches the game.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['What is a node?', 'A node (merod) is the runtime that stores your match and runs the game logic. You run your own — locally or on your own infrastructure — so your keys and moves never leave your control.'],
+  ['Where does my match live?', 'On your own node, as CRDT state that merges conflict-free with your opponent’s. There is no central game server — nothing about your match sits on a third-party database.'],
+  ['What is a context?', 'A context is the shared, encrypted board you and your opponent play on. Every submitted move is synced directly between your two nodes in real time.'],
+  ['How does my opponent join?', 'Create a match, then share an invitation link. Once they join the context, you pick them as your opponent and start the game — no accounts, no sign-up.'],
+  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the friend you invite.'],
+  ['Is it really decentralized?', 'Yes. The board and move history are peer-to-peer CRDT data on the two nodes playing. Take your node offline and the match goes with it; bring it back and it re-syncs.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -100,42 +100,61 @@ function R({
 }
 
 const STEPS = [
-  { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '01', t: 'Create a match', d: 'Start a new game from your node — you play White and control your own keys.' },
+  { k: '02', t: 'Invite your opponent', d: 'Share an invite code. Once they join your context, you start the match and they play Black.' },
+  { k: '03', t: 'Preview, then submit', d: 'Try a move, undo it as many times as you like, and submit only when you’re ready.' },
+  { k: '04', t: 'Play it out live', d: 'Moves sync instantly. Checkmate, stalemate, or resignation ends the match for both of you.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: a tiny board plays through a scripted opening ─── */
+const ACCENT = '#C9A227';
+const BOARD_DARK = '#2C2C2C';
+const BOARD_LIGHT = '#f1e9d8';
+
+type MiniPiece = { id: string; glyph: string; file: number; rank: number };
+const FRAMES: MiniPiece[][] = [
+  [
+    { id: 'wp', glyph: '♙', file: 4, rank: 1 },
+    { id: 'bp', glyph: '♟', file: 4, rank: 6 },
+    { id: 'wn', glyph: '♘', file: 6, rank: 0 },
+    { id: 'bn', glyph: '♞', file: 1, rank: 7 },
+  ],
+  [
+    { id: 'wp', glyph: '♙', file: 4, rank: 3 },
+    { id: 'bp', glyph: '♟', file: 4, rank: 6 },
+    { id: 'wn', glyph: '♘', file: 6, rank: 0 },
+    { id: 'bn', glyph: '♞', file: 1, rank: 7 },
+  ],
+  [
+    { id: 'wp', glyph: '♙', file: 4, rank: 3 },
+    { id: 'bp', glyph: '♟', file: 4, rank: 4 },
+    { id: 'wn', glyph: '♘', file: 6, rank: 0 },
+    { id: 'bn', glyph: '♞', file: 1, rank: 7 },
+  ],
+  [
+    { id: 'wp', glyph: '♙', file: 4, rank: 3 },
+    { id: 'bp', glyph: '♟', file: 4, rank: 4 },
+    { id: 'wn', glyph: '♘', file: 5, rank: 2 },
+    { id: 'bn', glyph: '♞', file: 1, rank: 7 },
+  ],
 ];
+const MOVE_LABELS = ['Starting position', '1. e4', '1… e5', '2. Nf3'];
+const FRAME_MS = 1600;
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [frame, setFrame] = useState(0);
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
-    const timers: number[] = [];
-    const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
-    const run = () => {
-      setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
-          setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
-        });
-      });
-    };
-    run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
-    return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
+    const loop = window.setInterval(() => {
+      setFrame((f) => (f + 1) % FRAMES.length);
+      setPulse(true);
+      window.setTimeout(() => setPulse(false), 320);
+    }, FRAME_MS);
+    return () => window.clearInterval(loop);
   }, []);
+
+  const pieces = FRAMES[frame];
 
   return (
     <Preview aria-hidden="true">
@@ -147,17 +166,27 @@ function LivePreview() {
         <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
       </div>
       <div className="body">
-        <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
+        <div className="players">
+          <span>White (you)</span>
+          <b>{MOVE_LABELS[frame]}</b>
+          <span>Black</span>
         </div>
-        <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
-            </div>
+        <MiniBoard>
+          {Array.from({ length: 64 }).map((_, i) => {
+            const r = Math.floor(i / 8);
+            const c = i % 8;
+            const dark = (r + c) % 2 === 1;
+            return <i key={i} className={dark ? 'dark' : ''} />;
+          })}
+          {pieces.map((p) => (
+            <MiniPieceEl
+              key={p.id}
+              style={{ left: `${p.file * 12.5}%`, top: `${(7 - p.rank) * 12.5}%` }}
+            >
+              {p.glyph}
+            </MiniPieceEl>
           ))}
-        </div>
+        </MiniBoard>
       </div>
     </Preview>
   );
@@ -222,8 +251,8 @@ export default function LandingPage() {
             </GhostBtn>
           </Cta>
           <TrustRow>
-            <span>Private by design</span><i />
-            <span>Real-time sync</span><i />
+            <span>Preview &amp; undo locally</span><i />
+            <span>Instant, permanent moves</span><i />
             <span>Peer-to-peer</span>
           </TrustRow>
         </HeroInner>
@@ -293,8 +322,8 @@ export default function LandingPage() {
       {/* ── final CTA ──────────────────────────────────────────── */}
       <CtaBand>
         <R v="zoom">
-          <h2>Connect your node to get started.</h2>
-          <p>It takes seconds — your data never leaves your control.</p>
+          <h2>Connect your node and start your first match.</h2>
+          <p>It takes seconds — your board never leaves your control.</p>
           <div className="btn"><ConnectButton /></div>
         </R>
       </CtaBand>
@@ -304,7 +333,7 @@ export default function LandingPage() {
         <div className="top">
           <div className="brand">
             <span className="wm"><span className="mk"><CalimeroLogo size={20} color={C.green} /></span> {APP_DISPLAY_NAME}</span>
-            <p>Private. Real-time. Yours.</p>
+            <p>Preview it. Submit it. Live chess, peer-to-peer.</p>
           </div>
           <div className="cols">
             <div>
@@ -340,8 +369,6 @@ export default function LandingPage() {
 const float = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(14px,-18px) scale(1.05);}`;
 const drift = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-22px,14px) scale(1.07);}`;
 const travel = keyframes`0%{left:0;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{left:100%;opacity:0;}`;
-const rowIn = keyframes`from{opacity:0;transform:translateY(8px) scale(0.97);}to{opacity:1;transform:none;}`;
-const rowInMe = keyframes`from{opacity:0;transform:translateY(8px) translateX(8px) scale(0.97);}to{opacity:1;transform:none;}`;
 
 /* ════════════════════════ layout ════════════════════════ */
 const Root = styled.div`
@@ -531,24 +558,42 @@ const Preview = styled.div`
     }
     em.on { color: ${C.green}; }
   }
-  .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
-  .peers { display: flex; align-items: center; gap: 0; }
-  .peers i {
-    width: 22px; height: 22px; border-radius: 50%;
-    display: grid; place-items: center;
-    font-size: 10px; font-weight: 700; color: ${C.ink};
-    background: linear-gradient(135deg, ${C.green}, #cde88a);
-    border: 1.5px solid ${C.ink};
-    margin-left: -6px;
+  .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .players {
+    width: 100%; display: flex; align-items: center; justify-content: space-between;
+    font-size: 11px; color: ${C.mutedSoft};
+    b { font-size: 12px; font-weight: 700; color: ${ACCENT}; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
   }
-  .peers i:first-child { margin-left: 0; }
-  .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
-  .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+`;
+
+const MiniBoard = styled.div`
+  position: relative;
+  width: 100%;
+  max-width: 190px;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 2px solid ${ACCENT};
+  i {
+    aspect-ratio: 1 / 1;
+    background: ${BOARD_LIGHT};
+    &.dark { background: ${BOARD_DARK}; }
+  }
+`;
+const MiniPieceEl = styled.span`
+  position: absolute;
+  width: 12.5%;
+  height: 12.5%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+  transition: left 0.6s cubic-bezier(0.22, 1, 0.36, 1), top 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  @media (prefers-reduced-motion: reduce) { transition: none; }
 `;
 
 /* sections */
