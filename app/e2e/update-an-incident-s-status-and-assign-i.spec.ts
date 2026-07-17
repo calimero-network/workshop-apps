@@ -41,15 +41,18 @@ test.describe(`incident commander: update an incident's status and assign it to 
       await pageA.getByTestId('field-affected_area').fill('Payments');
       await pageA.getByTestId('action-create_incident').click();
 
-      // Commander (A) opens the incident detail view.
-      await pageA.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).click();
+      // Commander (A) opens the incident detail view. A freshly created
+      // incident renders once in "Open incidents" and again in "Recent
+      // activity" (same entity, two rows) — .first() picks either; both
+      // link to the same incident id.
+      await pageA.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).first().click();
       await expect(pageA.getByTestId('field-status')).toBeVisible();
 
       // Viewer (B) opens the same incident once it has synced.
       await expect(
-        pageB.locator('[data-testid^="item-incident-"]').filter({ hasText: title }),
+        pageB.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).first(),
       ).toBeVisible({ timeout: 5_000 });
-      await pageB.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).click();
+      await pageB.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).first().click();
       await expect(pageB.getByTestId('field-status')).toBeVisible();
 
       // Commander changes status.
@@ -79,7 +82,9 @@ test.describe(`incident commander: update an incident's status and assign it to 
     await page.getByTestId('field-affected_area').fill('Payments');
     await page.getByTestId('action-create_incident').click();
 
-    await page.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).click();
+    // Freshly created: appears once in "Open incidents" and once in "Recent
+    // activity" — .first() picks either row; both link to the same incident.
+    await page.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).first().click();
 
     // Freshly reported: exactly one timeline entry ("Reported"), no status
     // change recorded yet.

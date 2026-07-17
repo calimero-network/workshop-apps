@@ -31,7 +31,9 @@ test.describe(`incident commander: write up a postmortem once an incident is res
     await page.getByTestId('field-severity').selectOption('Critical');
     await page.getByTestId('field-affected_area').fill('Payments');
     await page.getByTestId('action-create_incident').click();
-    await page.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).click();
+    // Freshly created: appears once in "Open incidents" and once in "Recent
+    // activity" — .first() picks either row; both link to the same incident.
+    await page.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).first().click();
 
     const incidentId = page.url().split('/incidents/')[1];
     expect(incidentId).toBeTruthy();
@@ -73,7 +75,7 @@ test.describe(`incident commander: write up a postmortem once an incident is res
       await pageA.getByTestId('field-severity').selectOption('Critical');
       await pageA.getByTestId('field-affected_area').fill('Payments');
       await pageA.getByTestId('action-create_incident').click();
-      await pageA.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).click();
+      await pageA.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).first().click();
       const incidentId = pageA.url().split('/incidents/')[1];
 
       await pageA.getByRole('link', { name: 'Postmortems' }).click();

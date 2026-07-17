@@ -40,13 +40,16 @@ test.describe(`team member: add comments on an incident and mention teammates`, 
       await pageA.getByTestId('field-severity').selectOption('Critical');
       await pageA.getByTestId('field-affected_area').fill('Payments');
       await pageA.getByTestId('action-create_incident').click();
-      await pageA.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).click();
+      // Freshly created: appears once in "Open incidents" and once in
+      // "Recent activity" — .first() picks either row; both link to the
+      // same incident id.
+      await pageA.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).first().click();
 
       // Other member (B) also opens the incident, once it has synced.
       await expect(
-        pageB.locator('[data-testid^="item-incident-"]').filter({ hasText: title }),
+        pageB.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).first(),
       ).toBeVisible({ timeout: 5_000 });
-      await pageB.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).click();
+      await pageB.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).first().click();
 
       const body = uniqueName('comment');
       await pageA.getByTestId('field-body').fill(body);

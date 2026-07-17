@@ -42,14 +42,16 @@ test.describe(`responder: quickly report a new incident with a title, severity, 
       await pageA.getByTestId('field-affected_area').fill('Payments');
       await pageA.getByTestId('action-create_incident').click();
 
-      // A sees its own report immediately.
+      // A sees its own report immediately. It renders once in "Open
+      // incidents" and once in "Recent activity" (same entity, two rows);
+      // .first() just needs one to be visible.
       await expect(
-        pageA.locator('[data-testid^="item-incident-"]').filter({ hasText: title }),
+        pageA.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).first(),
       ).toBeVisible({ timeout: 5_000 });
 
       // B, a different team member, sees it appear within 5s without acting.
       await expect(
-        pageB.locator('[data-testid^="item-incident-"]').filter({ hasText: title }),
+        pageB.locator('[data-testid^="item-incident-"]').filter({ hasText: title }).first(),
       ).toBeVisible({ timeout: 5_000 });
     } finally {
       await ctxA.close();
