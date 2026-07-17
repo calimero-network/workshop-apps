@@ -1,21 +1,21 @@
-# Two-node smoke test for the neutral item-registry foundation service.
+# Two-node smoke test for the incidentflow / incident-tracker service.
 #
-# Exercises the parts the v2 generator most often breaks, end-to-end on real
-# nodes (what the in-process TestHost / converge harness can't cover):
-#   - the `service` crate installed + a context created for it from a bundle
-#   - registry state (UnorderedMap<String, Item> with a nested LwwRegister)
-#     replicating across two peers
-#   - the AuthoredMap owner-gate: a non-owner `delete` is rejected on a real
-#     signed-delta path (the gate the bare converge harness can't verify)
+# Exercises the parts the in-process TestHost / converge harness can't cover,
+# end-to-end on real nodes:
+#   - the `incident-tracker` crate installed + a context created for it from
+#     the incidentflow bundle
+#   - Incident / Comment / Postmortem state replicating across two peers
+#   - the full incident lifecycle: report -> status update -> assignment ->
+#     comment -> postmortem draft -> postmortem publish
 #
 # Usage (run from the chat project root, after a dev bundle has been built):
 #   merobox bootstrap run test/smoke.workflow.yml
 #
 # Pre-flight: `bash logic/build-bundle.sh` must have produced
-# `logic/res/foundation-1.0.0.mpk` (appName/appVersion from studio.config.json).
+# `logic/res/incidentflow-1.0.0.mpk` (appName/appVersion from studio.config.json).
 
-name: Foundation item-registry smoke
-description: Verify the item-registry service replicates state and owner-gates delete across two nodes.
+name: Incidentflow incident-tracker smoke
+description: Verify the incident-tracker service replicates incidents, comments, and postmortems across two nodes.
 log_level: info
 nodes:
   count: 2
@@ -38,18 +38,18 @@ steps:
   # --- Bootstrap application + namespace ---
 
   - type: install_application
-    name: Install foundation bundle on node 1
+    name: Install incidentflow bundle on node 1
     node: foundation-node-1
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/incidentflow-1.0.0.mpk
     outputs:
       app_id: applicationId
 
   - type: install_application
-    name: Install foundation bundle on node 2
+    name: Install incidentflow bundle on node 2
     node: foundation-node-2
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/incidentflow-1.0.0.mpk
 
   - type: create_namespace
     name: Create namespace on node 1
@@ -59,13 +59,13 @@ steps:
       namespace_id: namespaceId
 
   - type: create_context
-    name: Create service context on node 1
+    name: Create incident-tracker context on node 1
     node: foundation-node-1
     application_id: '{{app_id}}'
     group_id: '{{namespace_id}}'
-    service_name: service
+    service_name: incident-tracker
     outputs:
-      ctx: contextId
+      incident_tracker_ctx: contextId
 
   - type: create_namespace_invitation
     name: Issue namespace invitation
@@ -80,90 +80,206 @@ steps:
     namespace_id: '{{namespace_id}}'
     invitation: '{{invitation}}'
 
-  # --- Registry state replicates across peers ---
+  # --- create_incident replicates across peers ---
 
   - type: call
-    name: Node 1 adds an item
+    name: Node 1 creates an incident
     node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: add
+    context_id: '{{incident_tracker_ctx}}'
+    method: create_incident
     args:
-      label: widget
-      value: v1
+      title: "Checkout down"
+      description: "500s on checkout API"
+      severity: "Critical"
+      affected_area: "Payments"
     outputs:
-      item_id: result
+      incident_id: result.output
 
   - type: wait_for_sync
-    name: Wait for the add to sync across both nodes
-    context_id: '{{ctx}}'
-    nodes: [foundation-node-1, foundation-node-2]
-    timeout: 30
-    trigger_sync: true
-
-  # Both nodes must see the same single-item list — replication of the
-  # UnorderedMap<String, Item> (incl. the nested LwwRegister value).
-  - type: call
-    name: List items from node 1
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: list
-    args: {}
-    outputs:
-      list_n1: result
-
-  - type: call
-    name: List items from node 2
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: list
-    args: {}
-    outputs:
-      list_n2: result
-
-  - type: json_assert
-    name: Both nodes see the same item list
-    statements:
-      - 'equal({{list_n1}}, {{list_n2}})'
-
-  # --- Owner-gated delete (AuthoredMap) ---
-  # Node 2 is not the owner of the item node 1 added, so its delete must be
-  # rejected. This is the per-entry authorization the bare converge harness
-  # cannot test (it needs the signed-delta apply path).
-  - type: call
-    name: Non-owner delete from node 2 must be rejected
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: delete
-    args:
-      id: '{{item_id}}'
-    expect_error: true
-
-  # The owner (node 1) can delete it.
-  - type: call
-    name: Owner delete from node 1 succeeds
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: delete
-    args:
-      id: '{{item_id}}'
-
-  - type: wait_for_sync
-    name: Wait for the delete to sync across both nodes
-    context_id: '{{ctx}}'
+    name: Wait for the incident to sync across both nodes
+    context_id: '{{incident_tracker_ctx}}'
     nodes: [foundation-node-1, foundation-node-2]
     timeout: 30
     trigger_sync: true
 
   - type: call
-    name: Node 2 sees the empty registry
+    name: List incidents from node 2
     node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: count
+    context_id: '{{incident_tracker_ctx}}'
+    method: list_incidents
     args: {}
     outputs:
-      count_n2: result
+      incident_0_on_n2: result.output.0
 
   - type: json_assert
-    name: Registry is empty on node 2 after the owner delete
+    name: Node 2 sees the incident node 1 created
     statements:
-      - 'equal({{count_n2}}, 0)'
+      - 'json_subset({{incident_0_on_n2}}, {"title": "Checkout down", "severity": "Critical", "affected_area": "Payments"})'
+
+  # --- update_status ---
+
+  - type: call
+    name: Exercise update_status on node 1
+    node: foundation-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: update_status
+    args:
+      incident_id: '{{incident_id}}'
+      status: "Mitigating"
+
+  - type: wait_for_sync
+    name: Wait for the status update to sync
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [foundation-node-1, foundation-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: Confirm status update visible on node 2
+    node: foundation-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: list_incidents
+    args: {}
+    outputs:
+      incident_0_after_status: result.output.0
+
+  - type: json_assert
+    name: update_status produced Mitigating on node 2
+    statements:
+      - 'json_subset({{incident_0_after_status}}, {"status": "Mitigating"})'
+
+  # --- assign_incident ---
+
+  - type: call
+    name: Exercise assign_incident on node 1
+    node: foundation-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: assign_incident
+    args:
+      incident_id: '{{incident_id}}'
+      assignee: "alice"
+
+  - type: wait_for_sync
+    name: Wait for the assignment to sync
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [foundation-node-1, foundation-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: Confirm assignment visible on node 2
+    node: foundation-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: list_incidents
+    args: {}
+    outputs:
+      incident_0_after_assign: result.output.0
+
+  - type: json_assert
+    name: assign_incident produced alice as assignee on node 2
+    statements:
+      - 'json_subset({{incident_0_after_assign}}, {"assigned_to": "alice"})'
+
+  # --- add_comment ---
+
+  - type: call
+    name: Exercise add_comment on node 1
+    node: foundation-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: add_comment
+    args:
+      incident_id: '{{incident_id}}'
+      body: "Rolling back deploy"
+      mentions: ["bob"]
+    outputs:
+      comment_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for the comment to sync
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [foundation-node-1, foundation-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: Confirm comment visible on node 2
+    node: foundation-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: list_comments
+    args:
+      incident_id: '{{incident_id}}'
+    outputs:
+      comment_0: result.output.0
+
+  - type: json_assert
+    name: add_comment produced a visible Comment on node 2
+    statements:
+      - 'json_subset({{comment_0}}, {"body": "Rolling back deploy", "mentions": ["bob"]})'
+
+  # --- create_postmortem ---
+
+  - type: call
+    name: Exercise create_postmortem on node 1
+    node: foundation-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: create_postmortem
+    args:
+      incident_id: '{{incident_id}}'
+      summary: "Checkout outage 45min"
+      root_cause: "Bad deploy"
+      resolution_steps: "Rolled back"
+      lessons_learned: "Add canary tests"
+    outputs:
+      postmortem_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for the postmortem to sync
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [foundation-node-1, foundation-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: Confirm draft postmortem visible on node 2
+    node: foundation-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: list_postmortems
+    args: {}
+    outputs:
+      postmortem_0: result.output.0
+
+  - type: json_assert
+    name: create_postmortem produced a draft postmortem visible on node 2
+    statements:
+      - 'json_subset({{postmortem_0}}, {"summary": "Checkout outage 45min", "root_cause": "Bad deploy", "status": "draft"})'
+
+  # --- publish_postmortem ---
+
+  - type: call
+    name: Exercise publish_postmortem on node 1
+    node: foundation-node-1
+    context_id: '{{incident_tracker_ctx}}'
+    method: publish_postmortem
+    args:
+      postmortem_id: '{{postmortem_id}}'
+
+  - type: wait_for_sync
+    name: Wait for the publish to sync
+    context_id: '{{incident_tracker_ctx}}'
+    nodes: [foundation-node-1, foundation-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: Confirm postmortem published on node 2
+    node: foundation-node-2
+    context_id: '{{incident_tracker_ctx}}'
+    method: list_postmortems
+    args: {}
+    outputs:
+      postmortem_0_after_publish: result.output.0
+
+  - type: json_assert
+    name: publish_postmortem marks the postmortem published on node 2
+    statements:
+      - 'json_subset({{postmortem_0_after_publish}}, {"status": "published"})'
