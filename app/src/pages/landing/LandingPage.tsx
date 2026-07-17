@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '🔒', title: 'Owner-gated edits', body: 'Anyone in the household can read every login, but only the member who added an entry can change or remove it.' },
+  { icon: '⚡', title: 'Synced instantly', body: 'Add a login and every household member sees it in the vault within seconds — no refresh, no re-sharing.' },
+  { icon: '🗝️', title: 'Yours to host', body: 'The vault lives on your own node as encrypted CRDT state — no central server ever holds your credentials.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
+  ['What is a node?', 'A node (merod) is the runtime that stores your vault and runs its logic. You run your own — locally or on your own infrastructure — so your logins never leave your control.'],
+  ['Where do my logins live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your vault is held on a third-party server.'],
+  ['Who can edit an entry?', 'Only the household member who added it. Everyone can read and search every entry, but edits and deletes are gated to the original author on the backend.'],
+  ['How do other household members join?', 'Connect your node, then share an invitation link. Anyone you invite joins the vault and sees every entry instantly — no accounts, no sign-up.'],
   ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['Is it really decentralized?', 'Yes. The vault is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your vault goes with it; bring it back and it re-syncs.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -101,22 +101,22 @@ function R({
 
 const STEPS = [
   { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '02', t: 'Create the vault', d: 'Bootstrap a shared, encrypted context for your household. State is CRDT data that merges across peers automatically.' },
+  { k: '03', t: 'Invite your household', d: 'Share a link. Anyone you invite joins instantly and sees every login — no accounts.' },
+  { k: '04', t: 'Own every login', d: 'Everything lives on your node. No central server ever holds your household’s credentials.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: household members add entries to a shared vault ── */
+type VaultRow = { id: number; who: string; service: string; masked: string; mine?: boolean };
+const SCRIPT: VaultRow[] = [
+  { id: 1, who: 'A', service: 'Wi-Fi router', masked: '••••••••' },
+  { id: 2, who: 'you', service: 'Netflix', masked: '••••••••', mine: true },
+  { id: 3, who: 'M', service: 'Electric utility', masked: '••••••••' },
+  { id: 4, who: 'J', service: 'Streaming box', masked: '••••••••' },
 ];
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [shown, setShown] = useState<VaultRow[]>([]);
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
@@ -152,9 +152,11 @@ function LivePreview() {
         </div>
         <div className="stream">
           {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
+            <div key={it.id} className={`row ${it.mine ? 'me' : ''}`}>
               <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+              <p>
+                <strong>{it.service}</strong> <code>{it.masked}</code>
+              </p>
             </div>
           ))}
         </div>

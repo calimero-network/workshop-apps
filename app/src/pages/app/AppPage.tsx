@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import styled from 'styled-components';
 import { useMero } from '@calimero-network/mero-react';
 import { C } from '../../theme';
 import { APP_DISPLAY_NAME } from '../../config';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { useItems } from '../../hooks/useItems';
+import { useVaultEntries } from '../../hooks/useVaultEntries';
+import { VaultEntry } from '../../api/vault/VaultClient';
 import { describeError } from '../../utils/errors';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
@@ -12,38 +13,48 @@ import { DisplayNamesProvider, MemberLabel } from '../../components/MemberLabel'
 import { DisplayNameGate } from '../../components/DisplayNameGate';
 
 /**
- * Neutral single-context CRUD view — the foundation's "app" screen.
+ * VaultView — the household's shared login vault.
  *
- * BUILD AGENT: this is the canonical data-binding shell. Reshape it to the
- * spec's entity:
- *  - `useItems` → your domain hook over the generated `ServiceClient`,
- *  - the form fields + list rows → your entity's fields,
- *  - the page copy → your product.
- * Keep the structure: workspace resolution (bootstrap / join), the item form,
- * the live list, and the Invite/Join wiring — these make it multi-user out of
- * the box. Do NOT reintroduce chat concepts (rooms, messages, presence).
+ * Every member can add and browse every entry (filterable by service name),
+ * but only the member who added an entry may edit or remove it — the backend
+ * enforces that; the UI only shows edit/delete controls on your own rows so
+ * nobody is tempted to try (and fails cleanly via describeError if it happens
+ * anyway, e.g. a stale UI after another peer's write).
  */
 export default function AppPage() {
   const { logout } = useMero();
   const ws = useWorkspace();
-  const items = useItems({
+  const vault = useVaultEntries({
     contextId: ws.contextId,
     executorPublicKey: ws.executorPublicKey,
   });
 
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [wsName, setWsName] = useState('My workspace');
+  const [serviceName, setServiceName] = useState('');
+  const [username, setUsername] = useState('');
+  const [secret, setSecret] = useState('');
+  const [notes, setNotes] = useState('');
+  const [search, setSearch] = useState('');
+  const [wsName, setWsName] = useState('My household');
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [revealedId, setRevealedId] = useState<string | null>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
-    await items.add(title.trim(), body.trim());
-    setTitle('');
-    setBody('');
+    if (!serviceName.trim() || !username.trim() || !secret.trim()) return;
+    await vault.add(serviceName.trim(), username.trim(), secret.trim(), notes.trim());
+    setServiceName('');
+    setUsername('');
+    setSecret('');
+    setNotes('');
   };
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return vault.entries;
+    return vault.entries.filter((e) => e.service_name.toLowerCase().includes(q));
+  }, [vault.entries, search]);
 
   // No workspace yet (fresh web session): offer create-or-join.
   if (!ws.ready && !ws.loading) {
@@ -51,17 +62,17 @@ export default function AppPage() {
       <Empty>
         <Card>
           <h2>Welcome to {APP_DISPLAY_NAME}</h2>
-          <p>Create a workspace to start, or join one you were invited to.</p>
+          <p>Create a shared vault for your household, or join one you were invited to.</p>
           <NameField
             data-testid="field-workspace-name"
             value={wsName}
             onChange={(e) => setWsName(e.target.value)}
-            placeholder="Workspace name"
+            placeholder="Household name"
             maxLength={64}
-            aria-label="Workspace name"
+            aria-label="Household name"
           />
           <Row>
-            <Primary data-testid="create-workspace-btn" onClick={() => ws.bootstrap(wsName)}>Create workspace</Primary>
+            <Primary data-testid="create-workspace-btn" onClick={() => ws.bootstrap(wsName)}>Create vault</Primary>
             <Secondary data-testid="open-join-btn" onClick={() => setShowJoin(true)}>Join with invitation</Secondary>
           </Row>
           {ws.error && <ErrLine>{describeError(ws.error)}</ErrLine>}
@@ -95,35 +106,72 @@ export default function AppPage() {
         <Content>
           <Form onSubmit={submit}>
             <input
-              placeholder="Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              data-testid="field-service_name"
+              placeholder="Service (e.g. Netflix)"
+              value={serviceName}
+              onChange={(e) => setServiceName(e.target.value)}
             />
             <input
-              placeholder="Details (optional)"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
+              data-testid="field-username"
+              placeholder="Username / email"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
             />
-            <Primary type="submit" disabled={!title.trim() || !items.ready}>Add</Primary>
+            <input
+              data-testid="field-secret"
+              type="password"
+              placeholder="Password"
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+            />
+            <input
+              data-testid="field-notes"
+              placeholder="Notes (optional)"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+            <Primary
+              data-testid="action-add_entry"
+              type="submit"
+              disabled={!serviceName.trim() || !username.trim() || !secret.trim() || !vault.ready}
+            >
+              Add
+            </Primary>
           </Form>
 
-          {items.error && <ErrLine>{describeError(items.error)}</ErrLine>}
+          <SearchRow>
+            <input
+              data-testid="field-search"
+              placeholder="Search by service…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search vault entries"
+            />
+          </SearchRow>
+
+          {vault.error && <ErrLine>{describeError(vault.error)}</ErrLine>}
 
           <List>
-            {items.items.length === 0 && !items.loading && (
-              <Hint>No items yet — add the first one above.</Hint>
+            {filtered.length === 0 && !vault.loading && (
+              <Hint>{vault.entries.length === 0 ? 'No entries yet — add the first login above.' : 'No entries match that search.'}</Hint>
             )}
-            {items.items.map((item) => (
-              <ItemRow key={item.id}>
-                <div className="text">
-                  <strong>{item.title}</strong>
-                  {item.body && <span>{item.body}</span>}
-                  <Byline>
-                    <MemberLabel memberId={item.author} />
-                  </Byline>
-                </div>
-                <button onClick={() => items.remove(item.id)} aria-label="Delete">×</button>
-              </ItemRow>
+            {filtered.map((entry) => (
+              <EntryRow
+                key={entry.id}
+                data-testid={`item-vaultentry-${entry.id}`}
+                entry={entry}
+                isOwner={entry.author === ws.executorPublicKey}
+                isEditing={editingId === entry.id}
+                isRevealed={revealedId === entry.id}
+                onStartEdit={() => setEditingId(entry.id)}
+                onCancelEdit={() => setEditingId(null)}
+                onToggleReveal={() => setRevealedId((cur) => (cur === entry.id ? null : entry.id))}
+                onSave={async (svc, user, sec, note) => {
+                  await vault.edit(entry.id, svc, user, sec, note);
+                  setEditingId(null);
+                }}
+                onDelete={() => vault.remove(entry.id)}
+              />
             ))}
           </List>
 
@@ -143,6 +191,87 @@ export default function AppPage() {
         )}
       </Page>
     </DisplayNamesProvider>
+  );
+}
+
+interface EntryRowProps {
+  'data-testid': string;
+  entry: VaultEntry;
+  isOwner: boolean;
+  isEditing: boolean;
+  isRevealed: boolean;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onToggleReveal: () => void;
+  onSave: (serviceName: string, username: string, secret: string, notes: string) => Promise<void>;
+  onDelete: () => void;
+}
+
+function EntryRow({
+  entry,
+  isOwner,
+  isEditing,
+  isRevealed,
+  onStartEdit,
+  onCancelEdit,
+  onToggleReveal,
+  onSave,
+  onDelete,
+  ...rest
+}: EntryRowProps) {
+  const [serviceName, setServiceName] = useState(entry.service_name);
+  const [username, setUsername] = useState(entry.username);
+  const [secret, setSecret] = useState(entry.secret);
+  const [notes, setNotes] = useState(entry.notes);
+  const [saving, setSaving] = useState(false);
+
+  if (isEditing) {
+    return (
+      <ItemRow data-testid={rest['data-testid']}>
+        <EditForm
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!serviceName.trim() || !username.trim() || !secret.trim() || saving) return;
+            setSaving(true);
+            try {
+              await onSave(serviceName.trim(), username.trim(), secret.trim(), notes.trim());
+            } finally {
+              setSaving(false);
+            }
+          }}
+        >
+          <input data-testid="field-service_name" value={serviceName} onChange={(e) => setServiceName(e.target.value)} />
+          <input data-testid="field-username" value={username} onChange={(e) => setUsername(e.target.value)} />
+          <input data-testid="field-secret" value={secret} onChange={(e) => setSecret(e.target.value)} />
+          <input data-testid="field-notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <Primary data-testid="action-edit_entry" type="submit" disabled={saving}>Save</Primary>
+          <Secondary type="button" onClick={onCancelEdit} disabled={saving}>Cancel</Secondary>
+        </EditForm>
+      </ItemRow>
+    );
+  }
+
+  return (
+    <ItemRow data-testid={rest['data-testid']}>
+      <div className="text">
+        <strong>{entry.service_name}</strong>
+        <span>{entry.username}</span>
+        <span className="secret">
+          {isRevealed ? entry.secret : '•'.repeat(Math.max(8, entry.secret.length))}
+          <RevealBtn type="button" onClick={onToggleReveal}>{isRevealed ? 'Hide' : 'Reveal'}</RevealBtn>
+        </span>
+        {entry.notes && <span>{entry.notes}</span>}
+        <Byline>
+          Added by <MemberLabel memberId={entry.author} />
+        </Byline>
+      </div>
+      {isOwner && (
+        <div className="row-actions">
+          <button data-testid="open-edit-btn" aria-label="Edit" onClick={onStartEdit}>✎</button>
+          <button data-testid="action-delete_entry" aria-label="Delete" onClick={onDelete}>×</button>
+        </div>
+      )}
+    </ItemRow>
   );
 }
 
@@ -171,10 +300,20 @@ const Byline = styled.span`
 const Form = styled.form`
   display: flex;
   gap: 8px;
-  margin-bottom: 22px;
+  margin-bottom: 14px;
   flex-wrap: wrap;
   input {
-    flex: 1; min-width: 160px;
+    flex: 1; min-width: 140px;
+    padding: 10px 12px; font-size: 14px;
+    color: ${C.ink}; background: ${C.paper2};
+    border: 1px solid ${C.line}; border-radius: 10px; outline: none;
+    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px rgba(164,255,17,0.18); }
+  }
+`;
+const SearchRow = styled.div`
+  margin-bottom: 22px;
+  input {
+    width: 100%;
     padding: 10px 12px; font-size: 14px;
     color: ${C.ink}; background: ${C.paper2};
     border: 1px solid ${C.line}; border-radius: 10px; outline: none;
@@ -186,13 +325,33 @@ const ItemRow = styled.div`
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 14px 16px; background: ${C.paper2};
   border: 1px solid ${C.line}; border-radius: 12px;
-  .text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
   .text strong { font-size: 15px; color: ${C.ink}; }
   .text span { font-size: 13px; color: ${C.muted}; }
-  button {
-    flex-shrink: 0; width: 30px; height: 30px; font-size: 20px; line-height: 1;
+  .text span.secret { display: flex; align-items: center; gap: 8px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+  .row-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .row-actions button {
+    flex-shrink: 0; width: 30px; height: 30px; font-size: 16px; line-height: 1;
     color: ${C.mutedSoft}; background: transparent; border: none; border-radius: 8px; cursor: pointer;
-    &:hover { background: ${C.paper}; color: ${C.danger}; }
+    &:hover { background: ${C.paper}; color: ${C.ink}; }
+  }
+  .row-actions button[aria-label="Delete"] {
+    font-size: 20px;
+    &:hover { color: ${C.danger}; }
+  }
+`;
+const RevealBtn = styled.button`
+  font-size: 11px; font-weight: 600; color: ${C.greenDeep}; background: transparent;
+  border: none; cursor: pointer; padding: 0; text-decoration: underline;
+`;
+const EditForm = styled.form`
+  display: flex; gap: 8px; flex-wrap: wrap; width: 100%;
+  input {
+    flex: 1; min-width: 120px;
+    padding: 8px 10px; font-size: 13px;
+    color: ${C.ink}; background: ${C.paper};
+    border: 1px solid ${C.line}; border-radius: 8px; outline: none;
+    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px rgba(164,255,17,0.18); }
   }
 `;
 const Hint = styled.p`font-size: 14px; color: ${C.muted}; padding: 8px 2px;`;
@@ -231,4 +390,5 @@ const Secondary = styled.button`
   color: ${C.ink}; background: ${C.paper}; border: 1px solid ${C.line};
   transition: background 0.15s, border-color 0.15s;
   &:hover { background: ${C.paper2}; border-color: ${C.green}; }
+  &:disabled { opacity: 0.55; cursor: default; }
 `;

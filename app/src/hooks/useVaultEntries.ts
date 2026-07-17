@@ -1,40 +1,37 @@
 /**
- * useItems — neutral CRUD over the single-context `service` registry.
+ * useVaultEntries — CRUD over the single-context `vault` service.
  *
  * The canonical Calimero data-binding pattern (mero-react v4):
  *  - `useWorkspace()` resolves the shared context + the executor identity to
  *    sign RPC calls with (from the auth callback on desktop, or the bootstrapped
  *    context on web).
- *  - a typed generated client (`ServiceClient`) wraps `mero.rpc.execute`.
- *  - `useSubscription([contextId])` re-fetches on every sync event, so changes
- *    from other peers appear live with no polling.
- *
- * The build agent reshapes `Item` + these methods to the spec's entity; the
- * wiring (client memo, subscription refresh, optimistic refetch) stays.
+ *  - the typed generated client (`VaultClient`) wraps `mero.rpc.execute`.
+ *  - `useSubscription([contextId])` re-fetches on every sync event, so entries
+ *    added by other household members appear live with no polling.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMero, useSubscription } from '@calimero-network/mero-react';
-import { ServiceClient, Item } from '../api/service/ServiceClient';
+import { VaultClient, VaultEntry } from '../api/vault/VaultClient';
 
-export interface UseItemsArgs {
+export interface UseVaultEntriesArgs {
   contextId: string | null;
   executorPublicKey: string | null;
 }
 
-export interface UseItemsReturn {
-  items: Item[];
+export interface UseVaultEntriesReturn {
+  entries: VaultEntry[];
   loading: boolean;
   error: Error | null;
   ready: boolean;
-  add: (title: string, body: string) => Promise<void>;
-  update: (id: string, title: string, body: string) => Promise<void>;
+  add: (serviceName: string, username: string, secret: string, notes: string) => Promise<void>;
+  edit: (id: string, serviceName: string, username: string, secret: string, notes: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
-export function useItems({ contextId, executorPublicKey }: UseItemsArgs): UseItemsReturn {
+export function useVaultEntries({ contextId, executorPublicKey }: UseVaultEntriesArgs): UseVaultEntriesReturn {
   const { mero } = useMero();
-  const [items, setItems] = useState<Item[]>([]);
+  const [entries, setEntries] = useState<VaultEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
@@ -42,7 +39,7 @@ export function useItems({ contextId, executorPublicKey }: UseItemsArgs): UseIte
   const client = useMemo(
     () =>
       mero && contextId && executorPublicKey
-        ? new ServiceClient(mero, contextId, executorPublicKey)
+        ? new VaultClient(mero, contextId, executorPublicKey)
         : null,
     [mero, contextId, executorPublicKey],
   );
@@ -52,7 +49,7 @@ export function useItems({ contextId, executorPublicKey }: UseItemsArgs): UseIte
     setLoading(true);
     setError(null);
     try {
-      setItems(await client.list());
+      setEntries(await client.listEntries());
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
@@ -65,31 +62,31 @@ export function useItems({ contextId, executorPublicKey }: UseItemsArgs): UseIte
   // Live updates: re-fetch on any sync event for this context (local or remote).
   useSubscription(contextId ? [contextId] : [], () => { void refresh(); });
 
-  const add = useCallback(async (title: string, body: string) => {
+  const add = useCallback(async (serviceName: string, username: string, secret: string, notes: string) => {
     if (!client) return;
-    await client.add({ title, body });
+    await client.addEntry({ service_name: serviceName, username, secret, notes });
     await refresh();
   }, [client, refresh]);
 
-  const update = useCallback(async (id: string, title: string, body: string) => {
+  const edit = useCallback(async (id: string, serviceName: string, username: string, secret: string, notes: string) => {
     if (!client) return;
-    await client.update({ id, title, body });
+    await client.editEntry({ id, service_name: serviceName, username, secret, notes });
     await refresh();
   }, [client, refresh]);
 
   const remove = useCallback(async (id: string) => {
     if (!client) return;
-    await client.delete({ id });
+    await client.deleteEntry({ id });
     await refresh();
   }, [client, refresh]);
 
   return {
-    items,
+    entries,
     loading,
     error,
     ready: client !== null,
     add,
-    update,
+    edit,
     remove,
     refresh,
   };
