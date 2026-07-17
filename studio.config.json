@@ -1,0 +1,22 @@
+{
+  "appName": "live-chess",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.live-chess",
+  "metadata": {
+    "name": "live-chess",
+    "description": "A live two-player chess game where each player previews and can undo their move locally before submitting it; once submitted, moves are instant, permanent, and synced to the opponent",
+    "author": "Calimero",
+    "route": "/live-chess"
+  },
+  "theme": {
+    "primaryColor": "#2C2C2C",
+    "accentColor": "#C9A227",
+    "style": "classic-elegant"
+  },
+  "services": [
+    {
+      "name": "chess-game",
+      "crate": "live-chess-chess-game"
+    }
+  ]
+}
