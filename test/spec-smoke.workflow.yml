@@ -1,0 +1,196 @@
+# Two-node smoke test for the live-chess `chess-game` service.
+#
+# NOTE: the deterministic studio floor for this spec had not been generated
+# yet when the verifier ran (only a stale, unrelated `test/smoke.workflow.yml`
+# from the generic foundation scaffold was present). This file supplies the
+# floor (install + namespace + context bootstrap) plus coverage for every
+# `chess-game` mutate method, following the same shape as smoke.workflow.yml.
+#
+# Usage (run from the chat project root, after a dev bundle has been built):
+#   merobox bootstrap run test/spec-smoke.workflow.yml
+#
+# Pre-flight: `bash logic/build-bundle.sh` must have produced
+# `logic/res/live-chess-1.0.0.mpk` (appName/appVersion from studio.config.json).
+
+name: live-chess chess-game smoke
+description: Verify create_game/submit_move/resign replicate the shared Game and append-only Move log across two nodes.
+log_level: info
+nodes:
+  count: 2
+  prefix: live-chess-node
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.11
+  base_port: 13428
+  base_rpc_port: 13528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # --- Bootstrap application + namespace + chess-game context ---
+
+  - type: install_application
+    name: Install live-chess bundle on node 1
+    node: live-chess-node-1
+    dev: true
+    path: ./logic/res/live-chess-1.0.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install live-chess bundle on node 2
+    node: live-chess-node-2
+    dev: true
+    path: ./logic/res/live-chess-1.0.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on node 1
+    node: live-chess-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create chess-game context on node 1
+    node: live-chess-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: chess-game
+    outputs:
+      chess-game_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: live-chess-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: Node 2 joins namespace
+    node: live-chess-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  # --- Exercise create_game ---
+
+  - type: call
+    name: Node 1 creates the game
+    node: live-chess-node-1
+    context_id: '{{chess-game_ctx}}'
+    method: create_game
+    args:
+      opponent: "bob.near"
+    outputs:
+      created_game_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for create_game to sync across both nodes
+    context_id: '{{chess-game_ctx}}'
+    nodes: [live-chess-node-1, live-chess-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: Node 2 sees the newly-created active game
+    node: live-chess-node-2
+    context_id: '{{chess-game_ctx}}'
+    method: get_game_state
+    args: {}
+    outputs:
+      game_after_create: result.output
+
+  - type: json_assert
+    name: Game is active with turn=white and no moves yet after create_game
+    statements:
+      - 'json_subset({{game_after_create}}, {"status": "active", "turn": "white", "move_count": 0})'
+
+  # --- Exercise submit_move ---
+
+  - type: call
+    name: Node 1 submits the opening move e2-e4
+    node: live-chess-node-1
+    context_id: '{{chess-game_ctx}}'
+    method: submit_move
+    args:
+      from: "e2"
+      to: "e4"
+      promotion: null
+    outputs:
+      submitted_move_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for submit_move to sync across both nodes
+    context_id: '{{chess-game_ctx}}'
+    nodes: [live-chess-node-1, live-chess-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: Node 2 sees the updated game state
+    node: live-chess-node-2
+    context_id: '{{chess-game_ctx}}'
+    method: get_game_state
+    args: {}
+    outputs:
+      game_after_move: result.output
+
+  - type: json_assert
+    name: Turn passes to black and move_count increments after submit_move
+    statements:
+      - 'json_subset({{game_after_move}}, {"status": "active", "turn": "black", "move_count": 1})'
+
+  - type: call
+    name: Node 2 lists moves and sees the submitted move
+    node: live-chess-node-2
+    context_id: '{{chess-game_ctx}}'
+    method: list_moves
+    args: {}
+    outputs:
+      first_move: result.output.0
+
+  - type: json_assert
+    name: The append-only move log contains the submitted e2-e4 move
+    statements:
+      - 'json_subset({{first_move}}, {"from_square": "e2", "to_square": "e4", "san": "e4", "move_number": 1})'
+
+  # --- Exercise resign ---
+
+  - type: call
+    name: Node 2 (black) resigns
+    node: live-chess-node-2
+    context_id: '{{chess-game_ctx}}'
+    method: resign
+    args: {}
+
+  - type: wait_for_sync
+    name: Wait for resign to sync across both nodes
+    context_id: '{{chess-game_ctx}}'
+    nodes: [live-chess-node-1, live-chess-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: Node 1 sees the game marked finished
+    node: live-chess-node-1
+    context_id: '{{chess-game_ctx}}'
+    method: get_game_state
+    args: {}
+    outputs:
+      game_after_resign: result.output
+
+  - type: json_assert
+    name: Game is finished after resignation
+    statements:
+      - 'json_subset({{game_after_resign}}, {"status": "finished"})'
+
+  # A move can no longer be submitted once the game is finished.
+  - type: call
+    name: Submitting a move after the game finished must be rejected
+    node: live-chess-node-1
+    context_id: '{{chess-game_ctx}}'
+    method: submit_move
+    args:
+      from: "d2"
+      to: "d4"
+      promotion: null
+    expect_error: true
