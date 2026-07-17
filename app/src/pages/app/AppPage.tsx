@@ -1,49 +1,35 @@
 import React, { useState } from 'react';
 import styled from 'styled-components';
+import { NavLink, Outlet } from 'react-router-dom';
 import { useMero } from '@calimero-network/mero-react';
 import { C } from '../../theme';
-import { APP_DISPLAY_NAME } from '../../config';
+import { APP_DISPLAY_NAME, APP_ROUTE } from '../../config';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { useItems } from '../../hooks/useItems';
 import { describeError } from '../../utils/errors';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
-import { DisplayNamesProvider, MemberLabel } from '../../components/MemberLabel';
+import { DisplayNamesProvider } from '../../components/MemberLabel';
 import { DisplayNameGate } from '../../components/DisplayNameGate';
 
 /**
- * Neutral single-context CRUD view — the foundation's "app" screen.
+ * Workspace shell for IncidentFlow.
  *
- * BUILD AGENT: this is the canonical data-binding shell. Reshape it to the
- * spec's entity:
- *  - `useItems` → your domain hook over the generated `ServiceClient`,
- *  - the form fields + list rows → your entity's fields,
- *  - the page copy → your product.
- * Keep the structure: workspace resolution (bootstrap / join), the item form,
- * the live list, and the Invite/Join wiring — these make it multi-user out of
- * the box. Do NOT reintroduce chat concepts (rooms, messages, presence).
+ * SHELL PASS: this renders the workspace create/join gate, the top bar (nav +
+ * Invite/Join/Sign out), and an <Outlet/> for the three spec views
+ * (DashboardView / IncidentDetailView / PostmortemsView routed in App.tsx).
+ * The views themselves use placeholder data for now — the generated
+ * IncidentflowClient is wired into domain hooks in a later pass.
+ *
+ * Keep: workspace resolution (bootstrap/join), the Invite/Join wiring, and the
+ * `workspace-ready` testid the e2e collaboration helpers wait on.
  */
 export default function AppPage() {
   const { logout } = useMero();
   const ws = useWorkspace();
-  const items = useItems({
-    contextId: ws.contextId,
-    executorPublicKey: ws.executorPublicKey,
-  });
 
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [wsName, setWsName] = useState('My workspace');
+  const [wsName, setWsName] = useState('My response team');
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    await items.add(title.trim(), body.trim());
-    setTitle('');
-    setBody('');
-  };
 
   // No workspace yet (fresh web session): offer create-or-join.
   if (!ws.ready && !ws.loading) {
@@ -51,14 +37,14 @@ export default function AppPage() {
       <Empty>
         <Card>
           <h2>Welcome to {APP_DISPLAY_NAME}</h2>
-          <p>Create a workspace to start, or join one you were invited to.</p>
+          <p>Create your team's incident tracker, or join one you were invited to.</p>
           <NameField
             data-testid="field-workspace-name"
             value={wsName}
             onChange={(e) => setWsName(e.target.value)}
-            placeholder="Workspace name"
+            placeholder="Team name"
             maxLength={64}
-            aria-label="Workspace name"
+            aria-label="Team name"
           />
           <Row>
             <Primary data-testid="create-workspace-btn" onClick={() => ws.bootstrap(wsName)}>Create workspace</Primary>
@@ -85,6 +71,10 @@ export default function AppPage() {
       <Page data-testid="workspace-ready">
         <Bar>
           <h1>{APP_DISPLAY_NAME}</h1>
+          <Tabs>
+            <NavLink to={APP_ROUTE} end>Dashboard</NavLink>
+            <NavLink to={`${APP_ROUTE}/postmortems`}>Postmortems</NavLink>
+          </Tabs>
           <div className="actions">
             <Secondary data-testid="open-invite-btn" onClick={() => setShowInvite(true)}>Invite</Secondary>
             <Secondary data-testid="open-join-btn" onClick={() => setShowJoin(true)}>Join</Secondary>
@@ -93,39 +83,7 @@ export default function AppPage() {
         </Bar>
 
         <Content>
-          <Form onSubmit={submit}>
-            <input
-              placeholder="Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-            <input
-              placeholder="Details (optional)"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-            />
-            <Primary type="submit" disabled={!title.trim() || !items.ready}>Add</Primary>
-          </Form>
-
-          {items.error && <ErrLine>{describeError(items.error)}</ErrLine>}
-
-          <List>
-            {items.items.length === 0 && !items.loading && (
-              <Hint>No items yet — add the first one above.</Hint>
-            )}
-            {items.items.map((item) => (
-              <ItemRow key={item.id}>
-                <div className="text">
-                  <strong>{item.title}</strong>
-                  {item.body && <span>{item.body}</span>}
-                  <Byline>
-                    <MemberLabel memberId={item.author} />
-                  </Byline>
-                </div>
-                <button onClick={() => items.remove(item.id)} aria-label="Delete">×</button>
-              </ItemRow>
-            ))}
-          </List>
+          <Outlet context={ws} />
 
           {/* Blocks the content (not the top bar) until a name is set. Never
               shown on the injected/SSO path (desktop + e2e). */}
@@ -147,7 +105,7 @@ export default function AppPage() {
 }
 
 const Page = styled.div`
-  max-width: 720px;
+  max-width: 920px;
   margin: 0 auto;
   padding: 28px 20px 64px;
   width: 100%;
@@ -155,47 +113,30 @@ const Page = styled.div`
 const Bar = styled.header`
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 20px;
   margin-bottom: 24px;
+  flex-wrap: wrap;
   h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: ${C.ink}; }
-  .actions { display: flex; gap: 8px; }
+  .actions { display: flex; gap: 8px; margin-left: auto; }
+`;
+const Tabs = styled.nav`
+  display: flex;
+  gap: 4px;
+  a {
+    padding: 8px 14px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: ${C.muted};
+    text-decoration: none;
+    border-radius: 9px;
+    transition: background 0.15s, color 0.15s;
+    &:hover { background: ${C.paper2}; color: ${C.ink}; }
+    &.active { background: ${C.paper2}; color: ${C.ink}; }
+  }
 `;
 // Positioning context for the display-name gate overlay: it covers the content
 // but leaves the top bar (Sign out) reachable.
 const Content = styled.div`position: relative;`;
-const Byline = styled.span`
-  font-size: 11.5px;
-  color: ${C.mutedSoft};
-`;
-const Form = styled.form`
-  display: flex;
-  gap: 8px;
-  margin-bottom: 22px;
-  flex-wrap: wrap;
-  input {
-    flex: 1; min-width: 160px;
-    padding: 10px 12px; font-size: 14px;
-    color: ${C.ink}; background: ${C.paper2};
-    border: 1px solid ${C.line}; border-radius: 10px; outline: none;
-    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px rgba(164,255,17,0.18); }
-  }
-`;
-const List = styled.div`display: flex; flex-direction: column; gap: 10px;`;
-const ItemRow = styled.div`
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 14px 16px; background: ${C.paper2};
-  border: 1px solid ${C.line}; border-radius: 12px;
-  .text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .text strong { font-size: 15px; color: ${C.ink}; }
-  .text span { font-size: 13px; color: ${C.muted}; }
-  button {
-    flex-shrink: 0; width: 30px; height: 30px; font-size: 20px; line-height: 1;
-    color: ${C.mutedSoft}; background: transparent; border: none; border-radius: 8px; cursor: pointer;
-    &:hover { background: ${C.paper}; color: ${C.danger}; }
-  }
-`;
-const Hint = styled.p`font-size: 14px; color: ${C.muted}; padding: 8px 2px;`;
 const ErrLine = styled.p`margin: 8px 0; font-size: 13px; color: ${C.danger};`;
 
 const Empty = styled.div`
@@ -218,7 +159,7 @@ const NameField = styled.input`
   &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px rgba(164,255,17,0.18); }
 `;
 
-const Primary = styled.button`
+export const Primary = styled.button`
   display: inline-flex; align-items: center; justify-content: center;
   padding: 10px 18px; font-size: 13.5px; font-weight: 600; border-radius: 10px; cursor: pointer;
   color: ${C.onAccent}; background: ${C.green}; border: 1px solid #93e60c;
@@ -226,7 +167,7 @@ const Primary = styled.button`
   &:hover:not(:disabled) { background: ${C.greenHover}; transform: translateY(-1px); }
   &:disabled { opacity: 0.55; cursor: default; }
 `;
-const Secondary = styled.button`
+export const Secondary = styled.button`
   padding: 10px 16px; font-size: 13.5px; font-weight: 600; border-radius: 10px; cursor: pointer;
   color: ${C.ink}; background: ${C.paper}; border: 1px solid ${C.line};
   transition: background 0.15s, border-color 0.15s;

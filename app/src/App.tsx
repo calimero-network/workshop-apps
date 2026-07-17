@@ -6,6 +6,9 @@ import { ToastProvider } from '@calimero-network/mero-ui';
 import LandingPage from './pages/landing/LandingPage';
 import LoginPage from './pages/login/LoginPage';
 import AppPage from './pages/app/AppPage';
+import DashboardView from './pages/app/DashboardView';
+import IncidentDetailView from './pages/app/IncidentDetailView';
+import PostmortemsView from './pages/app/PostmortemsView';
 import { APP_PACKAGE, APP_ROUTE } from './config';
 
 /**
@@ -55,7 +58,13 @@ export default function App() {
                 SSO skip) are redirected straight into the app. */}
             <Route path="/" element={<RedirectIfAuthed><LandingPage /></RedirectIfAuthed>} />
             <Route path="/login" element={<RedirectIfAuthed><LoginPage /></RedirectIfAuthed>} />
-            <Route path={APP_ROUTE} element={<RequireAuth><AppPage /></RequireAuth>} />
+            <Route path={APP_ROUTE} element={<RequireAuth><AppPage /></RequireAuth>}>
+              {/* Nested under the workspace shell (AppPage renders workspace
+                  gating + the Outlet). One route per spec frontendView. */}
+              <Route index element={<DashboardView />} />
+              <Route path="incidents/:incidentId" element={<IncidentDetailView />} />
+              <Route path="postmortems" element={<PostmortemsView />} />
+            </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

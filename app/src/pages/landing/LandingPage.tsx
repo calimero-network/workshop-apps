@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '🚨', title: 'Report in seconds', body: 'Fire off a title, severity, and affected area — the whole team sees it appear on the dashboard right away.' },
+  { icon: '🧭', title: 'Coordinate live', body: 'Update status, assign an owner, and drop comments with @mentions — everyone watching the incident stays in sync.' },
+  { icon: '📚', title: 'Learn from every incident', body: 'Write a postmortem once it’s resolved and publish it — root cause and action items stay browsable for the whole team.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['What is a node?', 'A node (merod) is the runtime that stores your incidents and runs the tracker’s logic. You run your own — locally or on your own infrastructure — so nothing about an outage leaves your control.'],
+  ['Where does incident data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — no third party ever holds your incident history.'],
+  ['What is a context?', 'A context is your team’s shared, encrypted incident tracker. Everyone in it sees the same incidents, statuses, and postmortems in real time, synced directly between nodes.'],
+  ['How does my team join?', 'Connect your node, then share an invitation link. Anyone you invite joins the tracker and starts reporting and coordinating instantly — no accounts, no sign-up.'],
+  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the teammates you invite.'],
+  ['Is it really decentralized?', 'Yes. Incidents, comments, and postmortems are peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -101,32 +101,41 @@ function R({
 
 const STEPS = [
   { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '02', t: 'Open your tracker', d: 'Create or join your team’s shared incident context. State is CRDT data that merges across peers automatically.' },
+  { k: '03', t: 'Invite your team', d: 'Share a link. Anyone you invite joins instantly and sees the same open incidents — no accounts.' },
+  { k: '04', t: 'Respond & learn', d: 'Report, assign, comment, resolve — then publish a postmortem so the whole team learns from it.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: an incident moves through the board, loops ────── */
+type Stage = { id: number; sev: 'Critical' | 'High' | 'Medium'; title: string; status: string; who: string };
+const SCRIPT: Stage[] = [
+  { id: 1, sev: 'Critical', title: 'Checkout down', status: 'Reported', who: 'A' },
+  { id: 2, sev: 'Critical', title: 'Checkout down', status: 'Investigating', who: 'M' },
+  { id: 3, sev: 'High', title: 'Checkout down', status: 'Mitigating · assigned to you', who: 'you' },
+  { id: 4, sev: 'High', title: 'Checkout down', status: 'Resolved', who: 'J' },
 ];
+
+const SEV_COLOR: Record<Stage['sev'], string> = {
+  Critical: '#ff6b57',
+  High: '#ffbd4a',
+  Medium: C.green,
+};
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [stepIdx, setStepIdx] = useState(0);
   const [pulse, setPulse] = useState(false);
+  const [log, setLog] = useState<Stage[]>([]);
 
   useEffect(() => {
     const timers: number[] = [];
     const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
     const run = () => {
-      setShown([]);
-      SCRIPT.forEach((it, i) => {
+      setStepIdx(-1);
+      setLog([]);
+      SCRIPT.forEach((s, i) => {
         at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
+          setStepIdx(i);
+          setLog((p) => [...p, s]);
           setPulse(true);
           at(500 + i * 1300 + 350, () => setPulse(false));
         });
@@ -136,6 +145,8 @@ function LivePreview() {
     const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
     return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
   }, []);
+
+  const current = stepIdx >= 0 ? SCRIPT[stepIdx] : null;
 
   return (
     <Preview aria-hidden="true">
@@ -147,14 +158,18 @@ function LivePreview() {
         <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
       </div>
       <div className="body">
-        <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
+        <div className="incidentCard">
+          <span className="sev" style={{ background: current ? SEV_COLOR[current.sev] : SEV_COLOR.Medium }}>
+            {current?.sev ?? 'Medium'}
+          </span>
+          <b>{SCRIPT[0].title}</b>
+          <span className="status">{current?.status ?? 'Reported'}</span>
         </div>
         <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
+          {log.map((it) => (
+            <div key={it.id} className={`row ${it.who === 'you' ? 'me' : ''}`}>
               <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+              <p>{it.status}</p>
             </div>
           ))}
         </div>
@@ -222,9 +237,9 @@ export default function LandingPage() {
             </GhostBtn>
           </Cta>
           <TrustRow>
-            <span>Private by design</span><i />
-            <span>Real-time sync</span><i />
-            <span>Peer-to-peer</span>
+            <span>Live status &amp; assignee updates</span><i />
+            <span>Timeline on every incident</span><i />
+            <span>Published postmortems</span>
           </TrustRow>
         </HeroInner>
         <PreviewWrap><LivePreview /></PreviewWrap>
@@ -532,17 +547,17 @@ const Preview = styled.div`
     em.on { color: ${C.green}; }
   }
   .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
-  .peers { display: flex; align-items: center; gap: 0; }
-  .peers i {
-    width: 22px; height: 22px; border-radius: 50%;
-    display: grid; place-items: center;
-    font-size: 10px; font-weight: 700; color: ${C.ink};
-    background: linear-gradient(135deg, ${C.green}, #cde88a);
-    border: 1.5px solid ${C.ink};
-    margin-left: -6px;
+  .incidentCard {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; border-radius: 11px;
+    background: rgba(255,255,255,0.04); border: 1px solid ${C.lineDark};
+    .sev {
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+      color: ${C.ink}; padding: 3px 8px; border-radius: 999px; transition: background 0.3s;
+    }
+    b { font-size: 13px; color: #dfe7db; flex: 1; }
+    .status { font-size: 11px; color: ${C.mutedSoft}; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
   }
-  .peers i:first-child { margin-left: 0; }
-  .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
   .stream { display: flex; flex-direction: column; gap: 9px; }
   .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
   .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
