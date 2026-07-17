@@ -1,57 +1,75 @@
 import React, { useState } from 'react';
 import styled from 'styled-components';
-import { useSearchParams } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { C } from '../../theme';
 import { MemberLabel } from '../../components/MemberLabel';
+import { describeError } from '../../utils/errors';
 import { Primary, Secondary } from './AppPage';
-import { MOCK_POSTMORTEMS, Postmortem } from './mockData';
+import { usePostmortems } from '../../hooks/usePostmortems';
+import { UseWorkspaceReturn } from '../../hooks/useWorkspace';
 
 /**
  * PostmortemsView — list of postmortems (draft + published) and the
- * postmortem editor/template.
- *
- * SHELL PASS: seeded from MOCK_POSTMORTEMS (placeholder). The API has no
- * "update" method — `create_postmortem` always creates a fresh draft, and
- * `publish_postmortem` is the only transition, after which content is locked.
- * The next pass swaps local state for `usePostmortems` wrapping the generated
- * IncidentflowClient's `create_postmortem` / `publish_postmortem` /
- * `list_postmortems`.
+ * postmortem editor. Backed by `usePostmortems` (create_postmortem /
+ * publish_postmortem / list_postmortems). The API has no "update" method —
+ * `create_postmortem` always creates a fresh draft, and `publish_postmortem`
+ * (owner-gated on the backend) is the only transition, after which content
+ * is locked.
  */
 export default function PostmortemsView() {
+  const ws = useOutletContext<UseWorkspaceReturn>();
   const [params] = useSearchParams();
-  const [postmortems, setPostmortems] = useState<Postmortem[]>(MOCK_POSTMORTEMS);
+  const { postmortems, createPostmortem, publishPostmortem } = usePostmortems({
+    contextId: ws.contextId,
+    executorPublicKey: ws.executorPublicKey,
+  });
 
   const [incidentId, setIncidentId] = useState(params.get('incidentId') ?? '');
   const [summary, setSummary] = useState('');
   const [rootCause, setRootCause] = useState('');
   const [resolutionSteps, setResolutionSteps] = useState('');
   const [lessonsLearned, setLessonsLearned] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
 
   const canCreate = incidentId.trim() && summary.trim() && rootCause.trim();
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canCreate) return;
-    const next: Postmortem = {
-      id: `pm-${Date.now().toString(16)}`,
-      incident_id: incidentId.trim(),
-      author: 'you',
-      summary: summary.trim(),
-      root_cause: rootCause.trim(),
-      resolution_steps: resolutionSteps.trim(),
-      lessons_learned: lessonsLearned.trim(),
-      status: 'draft',
-      created_at: Date.now(),
-    };
-    setPostmortems((prev) => [next, ...prev]);
-    setSummary('');
-    setRootCause('');
-    setResolutionSteps('');
-    setLessonsLearned('');
+    if (!canCreate || submitting) return;
+    setSubmitting(true);
+    setCreateError(null);
+    try {
+      await createPostmortem(
+        incidentId.trim(),
+        summary.trim(),
+        rootCause.trim(),
+        resolutionSteps.trim(),
+        lessonsLearned.trim(),
+      );
+      setSummary('');
+      setRootCause('');
+      setResolutionSteps('');
+      setLessonsLearned('');
+    } catch (err) {
+      setCreateError(describeError(err));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const publish = (id: string) => {
-    setPostmortems((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'published' } : p)));
+  const publish = async (id: string) => {
+    setPublishingId(id);
+    setPublishError(null);
+    try {
+      await publishPostmortem(id);
+    } catch (err) {
+      setPublishError(describeError(err));
+    } finally {
+      setPublishingId(null);
+    }
   };
 
   const sorted = [...postmortems].sort((a, b) => b.created_at - a.created_at);
@@ -91,10 +109,11 @@ export default function PostmortemsView() {
             value={lessonsLearned}
             onChange={(e) => setLessonsLearned(e.target.value)}
           />
-          <Primary data-testid="action-create_postmortem" type="submit" disabled={!canCreate}>
+          <Primary data-testid="action-create_postmortem" type="submit" disabled={!canCreate || submitting}>
             Save draft
           </Primary>
         </Form>
+        {createError && <ErrLine>{createError}</ErrLine>}
       </Section>
 
       <Section>
@@ -115,13 +134,19 @@ export default function PostmortemsView() {
               </dl>
               <Byline>By <MemberLabel memberId={pm.author} /></Byline>
               {pm.status === 'draft' && (
-                <Secondary data-testid="action-publish_postmortem" type="button" onClick={() => publish(pm.id)}>
+                <Secondary
+                  data-testid="action-publish_postmortem"
+                  type="button"
+                  onClick={() => publish(pm.id)}
+                  disabled={publishingId === pm.id}
+                >
                   Publish
                 </Secondary>
               )}
             </Card>
           ))}
         </List>
+        {publishError && <ErrLine>{publishError}</ErrLine>}
       </Section>
     </View>
   );
@@ -159,3 +184,4 @@ const StatusBadge = styled.span<{ $published: boolean }>`
 `;
 const Byline = styled.p`font-size: 12px; color: ${C.mutedSoft}; margin-bottom: 10px;`;
 const Hint = styled.p`font-size: 14px; color: ${C.muted}; padding: 8px 2px;`;
+const ErrLine = styled.p`margin: 8px 0 0; font-size: 13px; color: ${C.danger};`;

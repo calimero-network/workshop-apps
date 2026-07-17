@@ -1,77 +1,117 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useOutletContext, useParams } from 'react-router-dom';
+import { useGroupMembers } from '@calimero-network/mero-react';
 import { C } from '../../theme';
 import { APP_ROUTE } from '../../config';
 import { MemberLabel } from '../../components/MemberLabel';
+import { describeError } from '../../utils/errors';
 import { Primary, Secondary } from './AppPage';
-import {
-  Comment,
-  IncidentStatus,
-  MOCK_COMMENTS,
-  MOCK_INCIDENTS,
-  MOCK_TIMELINE,
-  STATUSES,
-  TimelineEntry,
-} from './mockData';
+import { useIncidents } from '../../hooks/useIncidents';
+import { useComments } from '../../hooks/useComments';
+import { UseWorkspaceReturn } from '../../hooks/useWorkspace';
+import { STATUSES } from './constants';
 
 /**
- * IncidentDetailView — incident info, status/assignee controls, timeline, and
- * comments with @mentions.
+ * IncidentDetailView — incident info, status/assignee controls, timeline,
+ * and comments with @mentions. Backed by `useIncidents` (update_status /
+ * assign_incident) and `useComments` (add_comment / list_comments).
  *
- * SHELL PASS: incident/timeline/comments are looked up from the MOCK_* fixtures
- * by :incidentId. Status/assignee changes and new comments update local state
- * so the flow is fully clickable; the next pass swaps this for `useIncidents` /
- * `useComments` hooks wrapping the generated IncidentflowClient's
- * `update_status` / `assign_incident` / `add_comment` / `list_comments`.
+ * The backend keeps only the incident's *current* status + `updated_at`
+ * (no persisted status-change log), so the timeline below shows what's
+ * actually stored: when it was reported and its current status — not a
+ * full transition history.
  */
 export default function IncidentDetailView() {
   const { incidentId } = useParams<{ incidentId: string }>();
-  const found = MOCK_INCIDENTS.find((i) => i.id === incidentId) ?? MOCK_INCIDENTS[0];
+  const ws = useOutletContext<UseWorkspaceReturn>();
+  const { incidents, updateStatus, assignIncident } = useIncidents({
+    contextId: ws.contextId,
+    executorPublicKey: ws.executorPublicKey,
+  });
+  const { comments, addComment } = useComments({
+    contextId: ws.contextId,
+    executorPublicKey: ws.executorPublicKey,
+    incidentId: incidentId ?? null,
+  });
+  const { members } = useGroupMembers(ws.namespaceId);
 
-  const [status, setStatus] = useState<IncidentStatus>(found.status);
-  const [statusDraft, setStatusDraft] = useState<IncidentStatus>(found.status);
-  const [assignedTo, setAssignedTo] = useState<string | null>(found.assigned_to);
-  const [assigneeDraft, setAssigneeDraft] = useState(found.assigned_to ?? '');
-  const [timeline, setTimeline] = useState<TimelineEntry[]>(
-    MOCK_TIMELINE.filter((t) => t.incident_id === found.id),
-  );
-  const [comments, setComments] = useState<Comment[]>(
-    MOCK_COMMENTS.filter((c) => c.incident_id === found.id),
-  );
+  const found = incidents.find((i) => i.id === incidentId);
+
+  const [statusDraft, setStatusDraft] = useState('');
+  const [assigneeDraft, setAssigneeDraft] = useState('');
   const [body, setBody] = useState('');
   const [mentions, setMentions] = useState('');
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [applyingStatus, setApplyingStatus] = useState(false);
+  const [applyingAssignee, setApplyingAssignee] = useState(false);
+  const [submittingComment, setSubmittingComment] = useState(false);
 
-  const applyStatus = () => {
-    if (statusDraft === status) return;
-    const now = Date.now();
-    setStatus(statusDraft);
-    setTimeline((prev) => [...prev, { incident_id: found.id, status: statusDraft, at: now }]);
+  // Server-driven drafts: sync whenever the incident's persisted values change.
+  useEffect(() => {
+    if (found) setStatusDraft(found.status);
+  }, [found?.status]);
+  useEffect(() => {
+    if (found) setAssigneeDraft(found.assigned_to ?? '');
+  }, [found?.assigned_to]);
+
+  // Assignee options: every workspace member (self + peers) by identity.
+  const assigneeOptions = Array.from(
+    new Set([ws.executorPublicKey, ...members.map((m) => m.identity)].filter((v): v is string => !!v)),
+  );
+
+  if (!found) {
+    return (
+      <View>
+        <Back to={APP_ROUTE}>&larr; Back to dashboard</Back>
+        <Hint>Loading incident…</Hint>
+      </View>
+    );
+  }
+
+  const applyStatus = async () => {
+    if (statusDraft === found.status || applyingStatus) return;
+    setApplyingStatus(true);
+    setStatusError(null);
+    try {
+      await updateStatus(found.id, statusDraft);
+    } catch (err) {
+      setStatusError(describeError(err));
+    } finally {
+      setApplyingStatus(false);
+    }
   };
 
-  const applyAssignee = () => {
-    const next = assigneeDraft.trim() || null;
-    setAssignedTo(next);
+  const applyAssignee = async () => {
+    if (!assigneeDraft.trim() || applyingAssignee) return;
+    setApplyingAssignee(true);
+    setAssignError(null);
+    try {
+      await assignIncident(found.id, assigneeDraft.trim());
+    } catch (err) {
+      setAssignError(describeError(err));
+    } finally {
+      setApplyingAssignee(false);
+    }
   };
 
-  const submitComment = (e: React.FormEvent) => {
+  const submitComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!body.trim()) return;
-    const next: Comment = {
-      id: `cmt-${Date.now().toString(16)}`,
-      incident_id: found.id,
-      author: 'you',
-      body: body.trim(),
-      mentions: mentions.split(',').map((m) => m.trim()).filter(Boolean),
-      created_at: Date.now(),
-    };
-    setComments((prev) => [...prev, next]);
-    setBody('');
-    setMentions('');
-  };
-
-  const removeComment = (id: string) => {
-    setComments((prev) => prev.filter((c) => c.id !== id));
+    if (!body.trim() || submittingComment) return;
+    setSubmittingComment(true);
+    setCommentError(null);
+    try {
+      const mentionList = mentions.split(',').map((m) => m.trim()).filter(Boolean);
+      await addComment(body.trim(), mentionList);
+      setBody('');
+      setMentions('');
+    } catch (err) {
+      setCommentError(describeError(err));
+    } finally {
+      setSubmittingComment(false);
+    }
   };
 
   return (
@@ -97,33 +137,44 @@ export default function IncidentDetailView() {
             <select
               data-testid="field-status"
               value={statusDraft}
-              onChange={(e) => setStatusDraft(e.target.value as IncidentStatus)}
+              onChange={(e) => setStatusDraft(e.target.value)}
             >
+              {!STATUSES.includes(statusDraft as (typeof STATUSES)[number]) && (
+                <option value={statusDraft}>{statusDraft}</option>
+              )}
               {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
-            <Secondary data-testid="action-update_status" type="button" onClick={applyStatus} disabled={statusDraft === status}>
+            <Secondary data-testid="action-update_status" type="button" onClick={applyStatus} disabled={statusDraft === found.status || applyingStatus}>
               Update
             </Secondary>
           </div>
+          {statusError && <ErrLine>{statusError}</ErrLine>}
         </Field>
         <Field>
           <label>Assignee</label>
           <div className="row">
-            <input
+            <select
               data-testid="field-assigned_to"
-              placeholder="Teammate name"
               value={assigneeDraft}
               onChange={(e) => setAssigneeDraft(e.target.value)}
-            />
-            <Secondary data-testid="action-assign_incident" type="button" onClick={applyAssignee} disabled={!assigneeDraft.trim()}>
+            >
+              <option value="">Unassigned</option>
+              {assigneeOptions.map((id) => (
+                <option key={id} value={id}>
+                  {id === ws.executorPublicKey ? 'You' : id}
+                </option>
+              ))}
+            </select>
+            <Secondary data-testid="action-assign_incident" type="button" onClick={applyAssignee} disabled={!assigneeDraft.trim() || applyingAssignee}>
               Assign
             </Secondary>
           </div>
-          {assignedTo && <Assigned>Currently: <MemberLabel memberId={assignedTo} /></Assigned>}
+          {found.assigned_to && <Assigned>Currently: <MemberLabel memberId={found.assigned_to} /></Assigned>}
+          {assignError && <ErrLine>{assignError}</ErrLine>}
         </Field>
       </Controls>
 
-      {status === 'Resolved' && (
+      {found.status === 'Resolved' && (
         <ResolvedBanner>
           Incident resolved.{' '}
           <Link to={`${APP_ROUTE}/postmortems?incidentId=${found.id}`}>Write the postmortem &rarr;</Link>
@@ -133,13 +184,18 @@ export default function IncidentDetailView() {
       <Section>
         <h2>Timeline</h2>
         <Timeline>
-          {timeline.map((t, i) => (
-            <li key={`${t.status}-${t.at}-${i}`}>
+          <li>
+            <span className="dot" />
+            <span className="status">Reported</span>
+            <time>{new Date(found.created_at).toLocaleString()}</time>
+          </li>
+          {found.updated_at !== found.created_at && (
+            <li>
               <span className="dot" />
-              <span className="status">{t.status}</span>
-              <time>{new Date(t.at).toLocaleString()}</time>
+              <span className="status">{found.status}</span>
+              <time>{new Date(found.updated_at).toLocaleString()}</time>
             </li>
-          ))}
+          )}
         </Timeline>
       </Section>
 
@@ -152,9 +208,6 @@ export default function IncidentDetailView() {
               <div className="head">
                 <MemberLabel memberId={c.author} />
                 <time>{new Date(c.created_at).toLocaleTimeString()}</time>
-                {c.author === 'you' && (
-                  <button aria-label="Delete comment" onClick={() => removeComment(c.id)}>&times;</button>
-                )}
               </div>
               <p>{c.body}</p>
               {c.mentions.length > 0 && (
@@ -177,12 +230,13 @@ export default function IncidentDetailView() {
           />
           <input
             data-testid="field-mentions"
-            placeholder="Mention teammates (comma separated)"
+            placeholder="Mention teammates (comma separated identities)"
             value={mentions}
             onChange={(e) => setMentions(e.target.value)}
           />
-          <Primary data-testid="action-add_comment" type="submit" disabled={!body.trim()}>Comment</Primary>
+          <Primary data-testid="action-add_comment" type="submit" disabled={!body.trim() || submittingComment}>Comment</Primary>
         </CommentForm>
+        {commentError && <ErrLine>{commentError}</ErrLine>}
       </Section>
     </View>
   );
@@ -238,9 +292,7 @@ const Comments = styled.ul`
   list-style: none; display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;
   li {
     padding: 12px 14px; background: ${C.paper2}; border: 1px solid ${C.line}; border-radius: 12px;
-    .head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; color: ${C.mutedSoft};
-      button { margin-left: auto; background: none; border: none; color: ${C.mutedSoft}; font-size: 16px; cursor: pointer; &:hover { color: ${C.danger}; } }
-    }
+    .head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; color: ${C.mutedSoft}; }
     p { font-size: 13.5px; color: ${C.ink}; }
     .mentions { margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap;
       span { font-size: 12px; color: var(--color-accent); font-weight: 600; }
@@ -258,3 +310,4 @@ const CommentForm = styled.form`
   }
 `;
 const Hint = styled.p`font-size: 14px; color: ${C.muted}; padding: 8px 2px;`;
+const ErrLine = styled.p`margin: 6px 0 0; font-size: 12.5px; color: ${C.danger};`;

@@ -14,11 +14,12 @@ import { DisplayNameGate } from '../../components/DisplayNameGate';
 /**
  * Workspace shell for IncidentFlow.
  *
- * SHELL PASS: this renders the workspace create/join gate, the top bar (nav +
+ * Renders the workspace create/join gate, the top bar (nav +
  * Invite/Join/Sign out), and an <Outlet/> for the three spec views
  * (DashboardView / IncidentDetailView / PostmortemsView routed in App.tsx).
- * The views themselves use placeholder data for now — the generated
- * IncidentflowClient is wired into domain hooks in a later pass.
+ * The views are wired to the incident-tracker service via `useIncidents` /
+ * `useComments` / `usePostmortems`, which wrap the generated
+ * `IncidentTrackerClient` the same way `useItems` wraps `ServiceClient`.
  *
  * Keep: workspace resolution (bootstrap/join), the Invite/Join wiring, and the
  * `workspace-ready` testid the e2e collaboration helpers wait on.
