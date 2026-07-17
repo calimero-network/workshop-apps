@@ -1,33 +1,33 @@
-# Two-node smoke test for the neutral item-registry foundation service.
+# Two-node smoke test for the snake-arcade "room" service.
 #
-# Exercises the parts the v2 generator most often breaks, end-to-end on real
-# nodes (what the in-process TestHost / converge harness can't cover):
-#   - the `service` crate installed + a context created for it from a bundle
-#   - registry state (UnorderedMap<String, Item> with a nested LwwRegister)
-#     replicating across two peers
-#   - the AuthoredMap owner-gate: a non-owner `delete` is rejected on a real
-#     signed-delta path (the gate the bare converge harness can't verify)
+# Exercises the parts a bare converge harness can't reach on real nodes:
+#   - the `room` service crate installed + a context created from the bundle
+#   - PlayerStatus (AuthoredMap) status/score/length replicating across peers
+#   - Duel lifecycle: start -> in-progress guard -> submit result -> finish
+#   - DuelResult and the all-time leaderboard aggregating best_score
+#
+# [Verifier] NOTE: this file previously held a generic neutral item-registry
+# template (service_name: service, methods add/list/count/delete) that never
+# matched this app's actual `room` service or bundle. Rewritten in full to
+# exercise the spec's real mutate methods, since "augment" only makes sense
+# once the floor actually targets the right service.
 #
 # Usage (run from the chat project root, after a dev bundle has been built):
 #   merobox bootstrap run test/smoke.workflow.yml
 #
 # Pre-flight: `bash logic/build-bundle.sh` must have produced
-# `logic/res/foundation-1.0.0.mpk` (appName/appVersion from studio.config.json).
+# `logic/res/snake-arcade-1.0.0.mpk` (appName/appVersion from studio.config.json).
 
-name: Foundation item-registry smoke
-description: Verify the item-registry service replicates state and owner-gates delete across two nodes.
+name: snake-arcade room smoke
+description: Verify the room service's member status, duel lifecycle, and leaderboard replicate across two nodes.
 log_level: info
 nodes:
   count: 2
-  prefix: foundation-node
-  # ponytail: pinned off `:edge` to the rc.8-matching tag so the verify merod
-  # matches the SDK the logic pins (0.11.0-rc.11). Bump in lockstep with
-  # logic/Cargo.toml's SDK tag, or bootstrap skews. ASSUMPTION: ghcr publishes
-  # an image tag matching the core git tag `0.11.0-rc.11`; if the registry uses a
-  # different naming scheme, correct this tag (and verifierWorkflow.js).
+  prefix: room-node
+  # ponytail: pinned off `:edge` to the rc.11-matching tag so the verify merod
+  # matches the SDK the logic pins. Bump in lockstep with logic/Cargo.toml's
+  # SDK tag, or bootstrap skews.
   image: ghcr.io/calimero-network/merod:0.11.0-rc.11
-  # High base ports to avoid colliding with a host-native merod on the
-  # defaults (2428 P2P / 2528 RPC). Each node gets base + i.
   base_port: 12428      # P2P / swarm
   base_rpc_port: 12528  # JSON-RPC / admin API
 nuke_on_start: true
@@ -38,132 +38,242 @@ steps:
   # --- Bootstrap application + namespace ---
 
   - type: install_application
-    name: Install foundation bundle on node 1
-    node: foundation-node-1
+    name: Install snake-arcade bundle on node 1
+    node: room-node-1
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/snake-arcade-1.0.0.mpk
     outputs:
       app_id: applicationId
 
   - type: install_application
-    name: Install foundation bundle on node 2
-    node: foundation-node-2
+    name: Install snake-arcade bundle on node 2
+    node: room-node-2
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/snake-arcade-1.0.0.mpk
 
   - type: create_namespace
     name: Create namespace on node 1
-    node: foundation-node-1
+    node: room-node-1
     application_id: '{{app_id}}'
     outputs:
       namespace_id: namespaceId
 
   - type: create_context
-    name: Create service context on node 1
-    node: foundation-node-1
+    name: Create room service context on node 1
+    node: room-node-1
     application_id: '{{app_id}}'
     group_id: '{{namespace_id}}'
-    service_name: service
+    service_name: room
     outputs:
-      ctx: contextId
+      room_ctx: contextId
 
   - type: create_namespace_invitation
     name: Issue namespace invitation
-    node: foundation-node-1
+    node: room-node-1
     namespace_id: '{{namespace_id}}'
     outputs:
       invitation: invitation
 
   - type: join_namespace
     name: Node 2 joins namespace
-    node: foundation-node-2
+    node: room-node-2
     namespace_id: '{{namespace_id}}'
     invitation: '{{invitation}}'
 
-  # --- Registry state replicates across peers ---
+  # --- Deterministic floor: parameterless views start empty ---
 
   - type: call
-    name: Node 1 adds an item
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: add
-    args:
-      label: widget
-      value: v1
+    name: list_members starts empty
+    node: room-node-1
+    context_id: '{{room_ctx}}'
+    method: list_members
+    args: {}
     outputs:
-      item_id: result
+      members_initial: result.output
+
+  - type: json_assert
+    name: No members before anyone updates status
+    statements:
+      - 'json_equal({{members_initial}}, [])'
+
+  - type: call
+    name: get_duels starts empty
+    node: room-node-1
+    context_id: '{{room_ctx}}'
+    method: get_duels
+    args: {}
+    outputs:
+      duels_initial: result.output
+
+  - type: json_assert
+    name: No duels before anyone starts one
+    statements:
+      - 'json_equal({{duels_initial}}, [])'
+
+  - type: call
+    name: get_leaderboard starts empty
+    node: room-node-1
+    context_id: '{{room_ctx}}'
+    method: get_leaderboard
+    args: {}
+    outputs:
+      leaderboard_initial: result.output
+
+  - type: json_assert
+    name: No leaderboard entries before anyone plays
+    statements:
+      - 'json_equal({{leaderboard_initial}}, [])'
+
+  # --- update_status replicates across peers ---
+
+  - type: call
+    name: Node 1 updates status to playing
+    node: room-node-1
+    context_id: '{{room_ctx}}'
+    method: update_status
+    args:
+      status: playing
+      score: 40
+      length: 6
 
   - type: wait_for_sync
-    name: Wait for the add to sync across both nodes
-    context_id: '{{ctx}}'
-    nodes: [foundation-node-1, foundation-node-2]
+    name: Wait for status update to sync
+    context_id: '{{room_ctx}}'
+    nodes: [room-node-1, room-node-2]
     timeout: 30
     trigger_sync: true
 
-  # Both nodes must see the same single-item list — replication of the
-  # UnorderedMap<String, Item> (incl. the nested LwwRegister value).
   - type: call
-    name: List items from node 1
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: list
+    name: Node 2 sees node 1's live status
+    node: room-node-2
+    context_id: '{{room_ctx}}'
+    method: list_members
     args: {}
     outputs:
-      list_n1: result
-
-  - type: call
-    name: List items from node 2
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: list
-    args: {}
-    outputs:
-      list_n2: result
+      member_0: result.output.0
 
   - type: json_assert
-    name: Both nodes see the same item list
+    name: Member entry reflects the update
     statements:
-      - 'equal({{list_n1}}, {{list_n2}})'
+      - 'json_subset({{member_0}}, {"status": "playing", "live_score": 40, "live_length": 6})'
 
-  # --- Owner-gated delete (AuthoredMap) ---
-  # Node 2 is not the owner of the item node 1 added, so its delete must be
-  # rejected. This is the per-entry authorization the bare converge harness
-  # cannot test (it needs the signed-delta apply path).
+  # --- Duel lifecycle: start, in-progress guard, submit result, finish ---
+
   - type: call
-    name: Non-owner delete from node 2 must be rejected
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: delete
+    name: Node 1 starts a duel
+    node: room-node-1
+    context_id: '{{room_ctx}}'
+    method: start_duel
     args:
-      id: '{{item_id}}'
+      duration_seconds: 60
+    outputs:
+      duel_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for duel start to sync
+    context_id: '{{room_ctx}}'
+    nodes: [room-node-1, room-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: A second duel cannot start while one is in progress
+    node: room-node-2
+    context_id: '{{room_ctx}}'
+    method: start_duel
+    args:
+      duration_seconds: 30
     expect_error: true
 
-  # The owner (node 1) can delete it.
   - type: call
-    name: Owner delete from node 1 succeeds
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: delete
+    name: Node 2 sees the duel node 1 started
+    node: room-node-2
+    context_id: '{{room_ctx}}'
+    method: get_duels
+    args: {}
+    outputs:
+      duel_after_start: result.output.0
+
+  - type: json_assert
+    name: Duel entry has the requested duration
+    statements:
+      - 'json_subset({{duel_after_start}}, {"duration_seconds": 60})'
+
+  - type: call
+    name: Node 1 submits its duel result
+    node: room-node-1
+    context_id: '{{room_ctx}}'
+    method: submit_duel_result
     args:
-      id: '{{item_id}}'
+      duel_id: '{{duel_id}}'
+      score: 55
+      length: 8
+    outputs:
+      result_id: result.output
 
   - type: wait_for_sync
-    name: Wait for the delete to sync across both nodes
-    context_id: '{{ctx}}'
-    nodes: [foundation-node-1, foundation-node-2]
+    name: Wait for duel result to sync
+    context_id: '{{room_ctx}}'
+    nodes: [room-node-1, room-node-2]
     timeout: 30
     trigger_sync: true
 
   - type: call
-    name: Node 2 sees the empty registry
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: count
-    args: {}
+    name: Node 2 sees the submitted duel result
+    node: room-node-2
+    context_id: '{{room_ctx}}'
+    method: get_duel_results
+    args:
+      duel_id: '{{duel_id}}'
     outputs:
-      count_n2: result
+      duel_result_0: result.output.0
 
   - type: json_assert
-    name: Registry is empty on node 2 after the owner delete
+    name: Duel result reflects the submitted score and length
     statements:
-      - 'equal({{count_n2}}, 0)'
+      - 'json_subset({{duel_result_0}}, {"score": 55, "length": 8})'
+
+  - type: call
+    name: Node 1 finishes the duel
+    node: room-node-1
+    context_id: '{{room_ctx}}'
+    method: finish_duel
+    args:
+      duel_id: '{{duel_id}}'
+
+  - type: wait_for_sync
+    name: Wait for duel finish to sync
+    context_id: '{{room_ctx}}'
+    nodes: [room-node-1, room-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: Node 2 sees the duel marked finished
+    node: room-node-2
+    context_id: '{{room_ctx}}'
+    method: get_duels
+    args: {}
+    outputs:
+      duel_status: result.output.0.status
+
+  - type: json_assert
+    name: Duel status is finished after the timer elapses
+    statements:
+      - 'json_equal({{duel_status}}, "finished")'
+
+  # --- Leaderboard reflects the best-ever score across game + duel ---
+
+  - type: call
+    name: Node 2 checks the leaderboard after the duel
+    node: room-node-2
+    context_id: '{{room_ctx}}'
+    method: get_leaderboard
+    args: {}
+    outputs:
+      leaderboard_best: result.output.0.best_score
+
+  - type: json_assert
+    name: Leaderboard shows the higher duel score as the new best
+    statements:
+      - 'json_equal({{leaderboard_best}}, 55)'
