@@ -1,0 +1,22 @@
+{
+  "appName": "incidentflow",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.incidentflow",
+  "metadata": {
+    "name": "incidentflow",
+    "description": "A shared incident tracker for reporting, coordinating, and learning from incidents together",
+    "author": "Calimero",
+    "route": "/incidentflow"
+  },
+  "theme": {
+    "primaryColor": "#DC2626",
+    "accentColor": "#2563EB",
+    "style": "modern-playful"
+  },
+  "services": [
+    {
+      "name": "incident-tracker",
+      "crate": "incidentflow-incident-tracker"
+    }
+  ]
+}
