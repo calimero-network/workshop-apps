@@ -11,7 +11,9 @@
   "theme": {
     "primaryColor": "#8B5E3C",
     "accentColor": "#E0A458",
-    "style": "cozy-lounge"
+    "style": "cozy-lounge",
+    "preset": "arcade",
+    "defaultMode": "dark"
   },
   "layoutPreset": "game-lobby",
   "topology": {
