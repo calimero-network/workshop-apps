@@ -8,4 +8,6 @@ pub enum Event<'a> {
     RoomLinked { room_id: &'a str },
     /// A room reported it finished (via xcall from the room context).
     RoomFinished { room_id: &'a str },
+    /// A win was recorded on the group leaderboard for this player.
+    WinRecorded { winner: &'a str },
 }

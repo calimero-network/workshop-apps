@@ -120,9 +120,23 @@ pub struct RoomSummaryView {
     pub context_id: Option<String>,
 }
 
+/// One row of the group leaderboard: a player's total wins across all matches.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(crate = "calimero_sdk::serde")]
+pub struct LeaderboardEntry {
+    pub player: String,
+    pub wins: u64,
+}
+
 #[app::state(emits = for<'a> Event<'a>)]
 pub struct Directory {
     rooms: UnorderedMap<String, RoomSummary>,
+    /// Group leaderboard source of truth: `room_id -> winner (base58)`, one
+    /// entry per finished match. Keyed by room id (not winner) so a duplicate
+    /// `on_room_finished` delivery is naturally idempotent - no G-Counter /
+    /// increment race, just re-writing the same fact. `get_leaderboard`
+    /// aggregates this into per-player win counts on read.
+    winners: UnorderedMap<String, LwwRegister<String>>,
 }
 
 #[app::logic]
@@ -131,6 +145,7 @@ impl Directory {
     pub fn init() -> Directory {
         Directory {
             rooms: UnorderedMap::new_with_field_name("directory:rooms"),
+            winners: UnorderedMap::new_with_field_name("directory:winners"),
         }
     }
 
@@ -185,8 +200,9 @@ impl Directory {
     }
 
     /// xcall TARGET: the room context calls this when the session ends.
-    /// Idempotent - a duplicate delivery just re-sets Finished.
-    pub fn on_room_finished(&mut self, room_id: String, _winner: String) -> app::Result<()> {
+    /// Idempotent - a duplicate delivery just re-sets Finished and skips the
+    /// leaderboard write (keyed by room id, so it can't double-count).
+    pub fn on_room_finished(&mut self, room_id: String, winner: String) -> app::Result<()> {
         if let Some(mut guard) = self
             .rooms
             .get_mut(&room_id)
@@ -197,8 +213,39 @@ impl Directory {
             guard.state.set(st);
             drop(guard);
             app::emit!(Event::RoomFinished { room_id: &room_id });
+
+            let already_recorded = self
+                .winners
+                .contains(&room_id)
+                .map_err(|e| AppError::msg(format!("winners.contains: {e}")))?;
+            if !already_recorded {
+                self.winners
+                    .insert(room_id, LwwRegister::new(winner.clone()))
+                    .map_err(|e| AppError::msg(format!("winners.insert: {e}")))?;
+                app::emit!(Event::WinRecorded { winner: &winner });
+            }
         }
         Ok(())
+    }
+
+    /// Group leaderboard: total wins per player across every finished match.
+    /// Sorted by wins descending, then player ascending for a stable order.
+    pub fn get_leaderboard(&self) -> app::Result<Vec<LeaderboardEntry>> {
+        use std::collections::BTreeMap;
+        let mut counts: BTreeMap<String, u64> = BTreeMap::new();
+        for (_, winner) in self
+            .winners
+            .entries()
+            .map_err(|e| AppError::msg(format!("winners.entries: {e}")))?
+        {
+            *counts.entry(winner.get().clone()).or_insert(0) += 1;
+        }
+        let mut out: Vec<LeaderboardEntry> = counts
+            .into_iter()
+            .map(|(player, wins)| LeaderboardEntry { player, wins })
+            .collect();
+        out.sort_by(|a, b| b.wins.cmp(&a.wins).then_with(|| a.player.cmp(&b.player)));
+        Ok(out)
     }
 
     pub fn get_rooms(&self) -> app::Result<Vec<RoomSummaryView>> {
@@ -271,6 +318,46 @@ mod tests {
         app.call(|s| s.on_room_finished(id.clone(), "winner".into())).unwrap();
         let rooms = app.view(|s| s.get_rooms()).unwrap();
         assert_eq!(rooms[0].status, RoomStatus::Finished);
+    }
+
+    #[test]
+    fn on_room_finished_records_leaderboard_win() {
+        let mut app = TestHost::new(Directory::init);
+        let id = app.call(|s| s.create_room("Table 1".into())).unwrap();
+        app.call(|s| s.on_room_finished(id, "alice".into())).unwrap();
+        let board = app.view(|s| s.get_leaderboard()).unwrap();
+        assert_eq!(board.len(), 1);
+        assert_eq!(board[0].player, "alice");
+        assert_eq!(board[0].wins, 1);
+    }
+
+    #[test]
+    fn leaderboard_ranks_by_wins_descending() {
+        let mut app = TestHost::new(Directory::init);
+        let r1 = app.call(|s| s.create_room("Table 1".into())).unwrap();
+        let r2 = app.call(|s| s.create_room("Table 2".into())).unwrap();
+        let r3 = app.call(|s| s.create_room("Table 3".into())).unwrap();
+        app.call(|s| s.on_room_finished(r1, "alice".into())).unwrap();
+        app.call(|s| s.on_room_finished(r2, "bob".into())).unwrap();
+        app.call(|s| s.on_room_finished(r3, "alice".into())).unwrap();
+        let board = app.view(|s| s.get_leaderboard()).unwrap();
+        assert_eq!(board[0].player, "alice");
+        assert_eq!(board[0].wins, 2);
+        assert_eq!(board[1].player, "bob");
+        assert_eq!(board[1].wins, 1);
+    }
+
+    // A duplicate xcall delivery for the same room (e.g. a retried finish)
+    // must not double-count the winner's leaderboard total.
+    #[test]
+    fn duplicate_finish_delivery_does_not_double_count() {
+        let mut app = TestHost::new(Directory::init);
+        let id = app.call(|s| s.create_room("Table 1".into())).unwrap();
+        app.call(|s| s.on_room_finished(id.clone(), "alice".into())).unwrap();
+        app.call(|s| s.on_room_finished(id, "alice".into())).unwrap();
+        let board = app.view(|s| s.get_leaderboard()).unwrap();
+        assert_eq!(board.len(), 1);
+        assert_eq!(board[0].wins, 1);
     }
 
     // Direct `merge()` unit test: a Finished status must outrank a concurrent
