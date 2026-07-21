@@ -1,0 +1,44 @@
+{
+  "appName": "ludo-lounge",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.ludo-lounge",
+  "metadata": {
+    "name": "ludo-lounge",
+    "description": "A cozy digital Ludo lounge where friends open matches, wait for exactly 4 players, play a full turn-based board game with dice, extra turns on sixes, and captures, and track wins on a group leaderboard",
+    "author": "Calimero",
+    "route": "/ludo-lounge"
+  },
+  "theme": {
+    "primaryColor": "#8B5E3C",
+    "accentColor": "#E0A458",
+    "style": "cozy-lounge"
+  },
+  "layoutPreset": "game-lobby",
+  "topology": {
+    "kind": "rooms",
+    "unitName": "match",
+    "unitNamePlural": "matches",
+    "minMembersToStart": 4,
+    "maxMembers": 4,
+    "roomVisibility": "open",
+    "directoryEntity": "Match",
+    "defaultCapabilities": [
+      "CAN_CREATE_CONTEXT",
+      "CAN_INVITE",
+      "CAN_JOIN_OPEN_CONTEXTS",
+      "MANAGE_MEMBERS"
+    ]
+  },
+  "services": [
+    {
+      "id": "directory",
+      "name": "directory",
+      "crate": "foundation-directory"
+    },
+    {
+      "id": "room",
+      "name": "room",
+      "crate": "foundation-room"
+    }
+  ]
+}

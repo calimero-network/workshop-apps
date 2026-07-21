@@ -1,0 +1,95 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ── App theme tokens (light default). The landing page does NOT use these. ──
+   `--c-on-accent` is text on the bright green accent — stays dark in both
+   themes. `--c-green-ink`/`--c-green-deep` are accent TEXT, so they lighten in
+   dark mode for contrast on dark surfaces. */
+:root {
+  --c-green: #a4ff11;
+  --c-green-hover: #93e60c;
+  --c-green-deep: #4e7a06;
+  --c-green-ink: #37610a;
+  --c-on-accent: #0e140f;
+  --c-ink: #0e140f;
+  --c-paper: #ffffff;
+  --c-paper2: #f5f8f1;
+  --c-line: #e7ece2;
+  --c-muted: #5d6b60;
+  --c-muted-soft: #93a394;
+  --c-off: #c4ccbf;
+  --c-disabled: #e2e8da;
+  --c-danger: #d23b2f;
+}
+
+:root[data-theme='dark'] {
+  --c-green: #a4ff11;
+  --c-green-hover: #b4ff3d;
+  --c-green-deep: #bdf76a;
+  --c-green-ink: #cdf78a;
+  --c-on-accent: #0e140f;
+  --c-ink: #e7edf2;
+  --c-paper: #14181d;
+  --c-paper2: #1b2027;
+  --c-line: #2b313a;
+  --c-muted: #9aa6ad;
+  --c-muted-soft: #6d7884;
+  --c-off: #3a414b;
+  --c-disabled: #2a2f37;
+  --c-danger: #ff6b6b;
+}
+
+/* ── Style-driven decoration tokens ──────────────────────────────────────
+   Keyed on <html data-style>, set from studio.config theme.style. Green
+   (--c-green*) stays the canonical primary in EVERY style - these vars only
+   tune surface shape and the SECONDARY highlight, which draws from the spec
+   accent (--color-accent). Never redefine --c-green* here. */
+:root {
+  --c-decoration-radius: 12px;
+  --c-decoration-accent: var(--color-accent, var(--c-green));
+}
+:root[data-style='minimal'] { --c-decoration-radius: 6px; }
+:root[data-style='playful'] { --c-decoration-radius: 18px; }
+:root[data-style='editorial'] { --c-decoration-radius: 2px; }
+:root[data-style='technical'] { --c-decoration-radius: 8px; }
+
+/* ── Preset-driven layout tokens ──────────────────────────────────────────
+   Keyed on <html data-preset>, set from studio.config layoutPreset. Presets
+   tune layout metrics only (max width, side-rail width); consumed by overlay
+   AppPages, e.g. `max-width: var(--c-app-max)`. */
+:root[data-preset='sidebar-workspace'] { --c-app-max: 1100px; --c-app-rail: 240px; }
+:root[data-preset='game-lobby']        { --c-app-max: 960px;  --c-app-rail: 260px; }
+:root[data-preset='centered-tool']     { --c-app-max: 720px;  --c-app-rail: 0; }
+:root[data-preset='feed']              { --c-app-max: 640px;  --c-app-rail: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--c-paper);
+  color: var(--c-ink);
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-bg {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 1rem;
+}
