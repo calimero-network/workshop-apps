@@ -1,33 +1,32 @@
-# Two-node smoke test for the neutral item-registry foundation service.
+# Two-node smoke test for the ludo-lounge app (rooms topology: a `directory`
+# service listing matches + a per-match `room` service running the game).
 #
-# Exercises the parts the v2 generator most often breaks, end-to-end on real
-# nodes (what the in-process TestHost / converge harness can't cover):
-#   - the `service` crate installed + a context created for it from a bundle
-#   - registry state (UnorderedMap<String, Item> with a nested LwwRegister)
-#     replicating across two peers
-#   - the AuthoredMap owner-gate: a non-owner `delete` is rejected on a real
-#     signed-delta path (the gate the bare converge harness can't verify)
+# NOTE: this file was a stale scaffold leftover (a generic item-registry demo
+# unrelated to this app's ABI - `add`/`list`/`delete`/`count` methods don't
+# exist here) that was never customized by the backend/frontend build steps.
+# Rewritten here against the real directory+room ABI (logic/crates/*/res/abi.json).
+#
+# Exercises what the 3-node Playwright e2e harness structurally cannot: this
+# app requires exactly 4 joined players to start a match
+# (topology.minMembersToStart === maxMembers === 4), but e2e only
+# authenticates 3 distinct identities. So the full game-in-progress and
+# match-finished paths (roll_dice, move_token, on_room_finished ->
+# leaderboard) are verified here at the RPC layer instead, on real merod
+# nodes, across the two real services.
 #
 # Usage (run from the chat project root, after a dev bundle has been built):
 #   merobox bootstrap run test/smoke.workflow.yml
 #
 # Pre-flight: `bash logic/build-bundle.sh` must have produced
-# `logic/res/foundation-1.0.0.mpk` (appName/appVersion from studio.config.json).
+# `logic/res/ludo-lounge-1.0.0.mpk` (appName/appVersion from studio.config.json).
 
-name: Foundation item-registry smoke
-description: Verify the item-registry service replicates state and owner-gates delete across two nodes.
+name: Ludo Lounge smoke
+description: Verify the directory + room services replicate state and enforce match-lifecycle rules across two nodes.
 log_level: info
 nodes:
   count: 2
-  prefix: foundation-node
-  # ponytail: pinned off `:edge` to the rc.8-matching tag so the verify merod
-  # matches the SDK the logic pins (0.11.0-rc.11). Bump in lockstep with
-  # logic/Cargo.toml's SDK tag, or bootstrap skews. ASSUMPTION: ghcr publishes
-  # an image tag matching the core git tag `0.11.0-rc.11`; if the registry uses a
-  # different naming scheme, correct this tag (and verifierWorkflow.js).
+  prefix: ludo-node
   image: ghcr.io/calimero-network/merod:0.11.0-rc.11
-  # High base ports to avoid colliding with a host-native merod on the
-  # defaults (2428 P2P / 2528 RPC). Each node gets base + i.
   base_port: 12428      # P2P / swarm
   base_rpc_port: 12528  # JSON-RPC / admin API
 nuke_on_start: true
@@ -38,132 +37,258 @@ steps:
   # --- Bootstrap application + namespace ---
 
   - type: install_application
-    name: Install foundation bundle on node 1
-    node: foundation-node-1
+    name: Install ludo-lounge bundle on node 1
+    node: ludo-node-1
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/ludo-lounge-1.0.0.mpk
     outputs:
       app_id: applicationId
 
   - type: install_application
-    name: Install foundation bundle on node 2
-    node: foundation-node-2
+    name: Install ludo-lounge bundle on node 2
+    node: ludo-node-2
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/ludo-lounge-1.0.0.mpk
 
   - type: create_namespace
     name: Create namespace on node 1
-    node: foundation-node-1
+    node: ludo-node-1
     application_id: '{{app_id}}'
     outputs:
       namespace_id: namespaceId
 
+  - type: get_namespace_identity
+    name: Capture node 1's identity (for the winner arg later)
+    node: ludo-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      node1_identity: publicKey
+
   - type: create_context
-    name: Create service context on node 1
-    node: foundation-node-1
+    name: Create directory context on node 1
+    node: ludo-node-1
     application_id: '{{app_id}}'
     group_id: '{{namespace_id}}'
-    service_name: service
+    service_name: directory
     outputs:
-      ctx: contextId
+      directory_ctx: contextId
 
   - type: create_namespace_invitation
     name: Issue namespace invitation
-    node: foundation-node-1
+    node: ludo-node-1
     namespace_id: '{{namespace_id}}'
     outputs:
       invitation: invitation
 
   - type: join_namespace
     name: Node 2 joins namespace
-    node: foundation-node-2
+    node: ludo-node-2
     namespace_id: '{{namespace_id}}'
     invitation: '{{invitation}}'
 
-  # --- Registry state replicates across peers ---
+  # --- Open a match (directory.create_room) and replicate across peers ---
 
   - type: call
-    name: Node 1 adds an item
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: add
+    name: Node 1 opens a match via create_room
+    node: ludo-node-1
+    context_id: '{{directory_ctx}}'
+    method: create_room
     args:
-      label: widget
-      value: v1
+      name: "Fireside Table"
     outputs:
-      item_id: result
+      room_id: result.output
 
   - type: wait_for_sync
-    name: Wait for the add to sync across both nodes
-    context_id: '{{ctx}}'
-    nodes: [foundation-node-1, foundation-node-2]
+    name: Wait for the new room to sync across both nodes
+    context_id: '{{directory_ctx}}'
+    nodes: [ludo-node-1, ludo-node-2]
     timeout: 30
     trigger_sync: true
 
-  # Both nodes must see the same single-item list — replication of the
-  # UnorderedMap<String, Item> (incl. the nested LwwRegister value).
   - type: call
-    name: List items from node 1
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: list
+    name: List rooms from node 2
+    node: ludo-node-2
+    context_id: '{{directory_ctx}}'
+    method: get_rooms
     args: {}
     outputs:
-      list_n1: result
+      rooms_n2: result.output
+
+  # Every group member sees the new match in the lobby (the e2e-untestable
+  # "every group member sees it" half of the open-a-new-ludo-match story,
+  # covered here at the replication layer).
+  - type: json_assert
+    name: Node 2 sees exactly one room, matching what node 1 created
+    statements:
+      - 'json_subset({{rooms_n2}}, [{"name": "Fireside Table"}])'
+
+  # --- Link a room-service context to the match (atomic create+register) ---
+
+  - type: create_context
+    name: Create the match's room context on node 1
+    node: ludo-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: room
+    outputs:
+      room_ctx: contextId
 
   - type: call
-    name: List items from node 2
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: list
+    name: Initialize the room service for this match
+    node: ludo-node-1
+    context_id: '{{room_ctx}}'
+    method: init
+    args:
+      directory_context_id: '{{directory_ctx}}'
+      room_id: '{{room_id}}'
+      min_members_to_start: 4
+
+  - type: call
+    name: Link the room context back onto the directory entry
+    node: ludo-node-1
+    context_id: '{{directory_ctx}}'
+    method: set_room_context_id
+    args:
+      room_id: '{{room_id}}'
+      context_id: '{{room_ctx}}'
+
+  - type: wait_for_sync
+    name: Wait for the room link to sync across both nodes
+    context_id: '{{directory_ctx}}'
+    nodes: [ludo-node-1, ludo-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  # --- Two players join the match (room.join_room) ---
+  # Only 2 of the 4 required seats can be filled by this 2-node cluster - the
+  # same ceiling the Playwright e2e harness runs into. This still exercises
+  # join_room + member_count replication and the "must not start below
+  # threshold" gate, which is the part the 3-node e2e harness could only
+  # partially cover.
+
+  - type: call
+    name: Node 1 joins the match as seat 0
+    node: ludo-node-1
+    context_id: '{{room_ctx}}'
+    method: join_room
     args: {}
     outputs:
-      list_n2: result
+      seat_0: result.output
 
   - type: json_assert
-    name: Both nodes see the same item list
+    name: First join is seated at index 0
     statements:
-      - 'equal({{list_n1}}, {{list_n2}})'
+      - 'json_equal({{seat_0}}, 0)'
 
-  # --- Owner-gated delete (AuthoredMap) ---
-  # Node 2 is not the owner of the item node 1 added, so its delete must be
-  # rejected. This is the per-entry authorization the bare converge harness
-  # cannot test (it needs the signed-delta apply path).
+  - type: wait_for_sync
+    name: Wait for the first join to sync
+    context_id: '{{room_ctx}}'
+    nodes: [ludo-node-1, ludo-node-2]
+    timeout: 30
+    trigger_sync: true
+
   - type: call
-    name: Non-owner delete from node 2 must be rejected
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: delete
-    args:
-      id: '{{item_id}}'
+    name: Node 2 joins the match as seat 1
+    node: ludo-node-2
+    context_id: '{{room_ctx}}'
+    method: join_room
+    args: {}
+    outputs:
+      seat_1: result.output
+
+  - type: json_assert
+    name: Second join is seated at index 1
+    statements:
+      - 'json_equal({{seat_1}}, 1)'
+
+  - type: wait_for_sync
+    name: Wait for the second join to sync
+    context_id: '{{room_ctx}}'
+    nodes: [ludo-node-1, ludo-node-2]
+    timeout: 30
+    trigger_sync: true
+
+  - type: call
+    name: Confirm member_count is 2 on node 2
+    node: ludo-node-2
+    context_id: '{{room_ctx}}'
+    method: member_count
+    args: {}
+    outputs:
+      member_count_n2: result.output
+
+  - type: json_assert
+    name: Both nodes agree member_count is 2 (below the 4-player threshold)
+    statements:
+      - 'json_equal({{member_count_n2}}, 2)'
+
+  - type: call
+    name: is_started must still be false with only 2/4 seats filled
+    node: ludo-node-1
+    context_id: '{{room_ctx}}'
+    method: is_started
+    args: {}
+    outputs:
+      started_below_threshold: result.output
+
+  - type: json_assert
+    name: Match has not started below the 4-player minimum
+    statements:
+      - 'json_equal({{started_below_threshold}}, false)'
+
+  # roll_dice/move_token must be rejected while the match hasn't started -
+  # this is the "further roll/move attempts are rejected" guard, exercised
+  # here since a real game can never reach this state through the 3-node e2e
+  # harness (which caps out at 3/4 seats).
+  - type: call
+    name: roll_dice is rejected before the match has started
+    node: ludo-node-1
+    context_id: '{{room_ctx}}'
+    method: roll_dice
+    args: {}
     expect_error: true
 
-  # The owner (node 1) can delete it.
   - type: call
-    name: Owner delete from node 1 succeeds
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: delete
+    name: move_token is rejected before the match has started
+    node: ludo-node-1
+    context_id: '{{room_ctx}}'
+    method: move_token
     args:
-      id: '{{item_id}}'
+      token_index: 0
+    expect_error: true
+
+  # --- Winner recording + leaderboard (directory.on_room_finished) ---
+  # A real 4-player game can't be played to completion through this 2-node
+  # cluster either, so the win-recording contract is exercised directly: the
+  # directory's on_room_finished is the only path that increments the
+  # leaderboard, independent of how the match actually finished.
+
+  - type: call
+    name: Record node 1 as the match winner
+    node: ludo-node-1
+    context_id: '{{directory_ctx}}'
+    method: on_room_finished
+    args:
+      room_id: '{{room_id}}'
+      winner: '{{node1_identity}}'
 
   - type: wait_for_sync
-    name: Wait for the delete to sync across both nodes
-    context_id: '{{ctx}}'
-    nodes: [foundation-node-1, foundation-node-2]
+    name: Wait for the win to sync across both nodes
+    context_id: '{{directory_ctx}}'
+    nodes: [ludo-node-1, ludo-node-2]
     timeout: 30
     trigger_sync: true
 
   - type: call
-    name: Node 2 sees the empty registry
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: count
+    name: Read the leaderboard from node 2
+    node: ludo-node-2
+    context_id: '{{directory_ctx}}'
+    method: get_leaderboard
     args: {}
     outputs:
-      count_n2: result
+      leaderboard_entry_0: result.output.0
 
   - type: json_assert
-    name: Registry is empty on node 2 after the owner delete
+    name: The winner's win count increased by 1, visible to every group member
     statements:
-      - 'equal({{count_n2}}, 0)'
+      - 'json_subset({{leaderboard_entry_0}}, {"wins": 1})'
