@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '🎲', title: 'Real Ludo rules', body: 'Roll the dice, get an extra turn on a six, and send opponents home with a well-placed capture — classic Ludo, played straight.' },
+  { icon: '🪑', title: 'Exactly 4 to a table', body: 'Open a match and it waits in the lobby until all 4 seats fill — then everyone\'s tokens land at home together, at once.' },
+  { icon: '🏆', title: 'A lounge that remembers', body: 'Every finished match adds a win to the shared group leaderboard, synced live to every friend in your lounge.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['How does a match start?', 'Anyone in the group opens a match and it appears in the lobby as Waiting. The moment a 4th player joins, the board is set up and all 4 players see their tokens at home together.'],
+  ['Where does the match state live?', 'Each match runs in its own Calimero context, spread across the 4 players\' nodes as CRDT state. There\'s no central game server — every roll and move syncs peer-to-peer.'],
+  ['What happens on a six?', 'Rolling a six lets a token leave home and grants an extra roll — your turn doesn\'t pass. Land on an opponent off a safe square and their token goes straight back home.'],
+  ['How is the leaderboard kept fair?', 'When a match finishes, the winner is recorded back to the shared group context automatically, so every member\'s win tally updates live — no manual score-keeping.'],
+  ['Do I need an account?', 'No. You connect with your Calimero node identity and join the group by invitation — no sign-up, no separate login.'],
+  ['Can a match be replayed or rejoined?', 'Once 4 seats are filled the match locks to those players and rolls until someone gets all 4 tokens home — after that it\'s Finished and stays in the lobby as a record.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -100,24 +100,26 @@ function R({
 }
 
 const STEPS = [
-  { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '01', t: 'Open a match', d: 'Start a table and it shows up in the lobby as Waiting — your friend group sees it instantly.' },
+  { k: '02', t: 'Fill 4 seats', d: 'The match holds until exactly 4 players join, then every token drops onto the board at home, together.' },
+  { k: '03', t: 'Roll & race', d: 'Take turns rolling, moving, and capturing — a six always earns you another roll.' },
+  { k: '04', t: 'Climb the board', d: 'The first to get all 4 tokens home wins the match and a point on the group leaderboard.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: a mini Ludo turn cycle, loops ──────────────────── */
+const SEAT_DOTS = ['#d9534f', '#4f83d9', '#e0c458', '#63c168'];
+const SEAT_NAMES = ['Priya', 'Marcus', 'Dana', 'you'];
+type Turn = { id: number; seat: number; dice: number; text: string };
+const SCRIPT: Turn[] = [
+  { id: 1, seat: 0, dice: 4, text: 'moves a token 4 squares' },
+  { id: 2, seat: 1, dice: 6, text: 'rolls a six — extra turn!' },
+  { id: 3, seat: 2, dice: 2, text: 'captures a token' },
+  { id: 4, seat: 3, dice: 5, text: 'rolls a 5 and moves' },
 ];
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
-  const [pulse, setPulse] = useState(false);
+  const [shown, setShown] = useState<Turn[]>([]);
+  const [rolling, setRolling] = useState(false);
 
   useEffect(() => {
     const timers: number[] = [];
@@ -126,9 +128,9 @@ function LivePreview() {
       setShown([]);
       SCRIPT.forEach((it, i) => {
         at(500 + i * 1300, () => {
+          setRolling(true);
+          at(220, () => setRolling(false));
           setShown((p) => [...p, it]);
-          setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
         });
       });
     };
@@ -137,24 +139,31 @@ function LivePreview() {
     return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
   }, []);
 
+  const current = shown[shown.length - 1];
+
   return (
     <Preview aria-hidden="true">
       <div className="bar">
         <s style={{ background: '#ff5f56' }} />
         <s style={{ background: '#ffbd2e' }} />
         <s style={{ background: C.green }} />
-        <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · your node</span>
-        <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
+        <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · match table</span>
+        <em className={rolling ? 'on' : ''}>● {rolling ? 'rolling' : 'live'}</em>
       </div>
       <div className="body">
         <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
+          {SEAT_NAMES.map((n, i) => (
+            <i key={n} style={{ background: SEAT_DOTS[i] }}>{n === 'you' ? '·' : n[0]}</i>
+          ))}
+        </div>
+        <div className="dice">
+          <span className={`face ${rolling ? 'spin' : ''}`}>{current ? current.dice : '–'}</span>
         </div>
         <div className="stream">
           {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+            <div key={it.id} className={`row ${SEAT_NAMES[it.seat] === 'you' ? 'me' : ''}`}>
+              <span className="av" style={{ background: SEAT_DOTS[it.seat] }}>{SEAT_NAMES[it.seat][0]}</span>
+              <p>{SEAT_NAMES[it.seat]} {it.text}</p>
             </div>
           ))}
         </div>
@@ -222,9 +231,9 @@ export default function LandingPage() {
             </GhostBtn>
           </Cta>
           <TrustRow>
-            <span>Private by design</span><i />
-            <span>Real-time sync</span><i />
-            <span>Peer-to-peer</span>
+            <span>4-player matches</span><i />
+            <span>Live dice &amp; captures</span><i />
+            <span>Group leaderboard</span>
           </TrustRow>
         </HeroInner>
         <PreviewWrap><LivePreview /></PreviewWrap>
@@ -293,8 +302,8 @@ export default function LandingPage() {
       {/* ── final CTA ──────────────────────────────────────────── */}
       <CtaBand>
         <R v="zoom">
-          <h2>Connect your node to get started.</h2>
-          <p>It takes seconds — your data never leaves your control.</p>
+          <h2>Connect your node and open a table.</h2>
+          <p>Gather 4 friends, roll the dice, and see who tops the lounge leaderboard.</p>
           <div className="btn"><ConnectButton /></div>
         </R>
       </CtaBand>
@@ -304,7 +313,7 @@ export default function LandingPage() {
         <div className="top">
           <div className="brand">
             <span className="wm"><span className="mk"><CalimeroLogo size={20} color={C.green} /></span> {APP_DISPLAY_NAME}</span>
-            <p>Private. Real-time. Yours.</p>
+            <p>Cozy matches. Roll, capture, race home.</p>
           </div>
           <div className="cols">
             <div>
@@ -342,6 +351,7 @@ const drift = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform
 const travel = keyframes`0%{left:0;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{left:100%;opacity:0;}`;
 const rowIn = keyframes`from{opacity:0;transform:translateY(8px) scale(0.97);}to{opacity:1;transform:none;}`;
 const rowInMe = keyframes`from{opacity:0;transform:translateY(8px) translateX(8px) scale(0.97);}to{opacity:1;transform:none;}`;
+const diceSpin = keyframes`from{transform:rotate(0deg) scale(1.15);}to{transform:rotate(180deg) scale(1);}`;
 
 /* ════════════════════════ layout ════════════════════════ */
 const Root = styled.div`
@@ -542,7 +552,14 @@ const Preview = styled.div`
     margin-left: -6px;
   }
   .peers i:first-child { margin-left: 0; }
-  .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
+  .dice { display: flex; justify-content: center; padding: 6px 0; }
+  .dice .face {
+    width: 40px; height: 40px; border-radius: 9px; background: #fff; color: ${C.ink};
+    display: grid; place-items: center; font-size: 17px; font-weight: 800;
+    box-shadow: 0 6px 16px -8px rgba(0,0,0,0.6);
+  }
+  .dice .face.spin { animation: ${diceSpin} 0.22s linear; }
+  @media (prefers-reduced-motion: reduce) { .dice .face.spin { animation: none; } }
   .stream { display: flex; flex-direction: column; gap: 9px; }
   .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
   .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }

@@ -19,10 +19,10 @@ const STATUS_LABEL: Record<RoomView['status'], string> = {
 };
 
 /**
- * SCAFFOLD-OWNED lobby: create-room form + room list, mirrors multi's
+ * SCAFFOLD-OWNED lobby: create-match form + match list, mirrors multi's
  * UnitRail structure. A row with `context_id: null` is an orphaned Pending
  * entry (a crashed create between registering the room and linking its
- * context - see useRooms.createRoom) and has no room to join yet, so it
+ * context - see useRooms.createRoom) and has no match to join yet, so it
  * renders disabled rather than clickable.
  */
 export default function RoomList({ ws }: Props): React.ReactElement {
@@ -64,8 +64,8 @@ export default function RoomList({ ws }: Props): React.ReactElement {
   return (
     <Wrap data-testid="room-list">
       <Head>
-        <span className="title">Rooms</span>
-        <AddBtn data-testid="create-room-btn" aria-label="New room" onClick={() => setCreating((v) => !v)}>+</AddBtn>
+        <span className="title">Open &amp; Recent Matches</span>
+        <AddBtn data-testid="create-room-btn" aria-label="New match" onClick={() => setCreating((v) => !v)}>+</AddBtn>
       </Head>
       {creating && (
         <CreateForm onSubmit={submit}>
@@ -73,18 +73,18 @@ export default function RoomList({ ws }: Props): React.ReactElement {
             data-testid="field-room-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Room name"
+            placeholder="Match name"
             maxLength={64}
-            aria-label="Room name"
+            aria-label="Match name"
           />
           <button data-testid="room-create-submit" type="submit" disabled={!name.trim() || submitting}>
-            {submitting ? '…' : 'Create'}
+            {submitting ? '…' : 'Open match'}
           </button>
         </CreateForm>
       )}
       {ws.error && <ErrLine role="alert">{describeError(ws.error)}</ErrLine>}
       <List>
-        {ws.rooms.length === 0 && !ws.roomsLoading && <Empty>No rooms yet - create the first one above.</Empty>}
+        {ws.rooms.length === 0 && !ws.roomsLoading && <Empty>No matches yet - open the first one above.</Empty>}
         {ws.rooms.map((room) => {
           const joinable = room.context_id !== null && !busy;
           return (

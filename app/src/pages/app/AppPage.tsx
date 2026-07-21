@@ -3,47 +3,31 @@ import styled from 'styled-components';
 import { C } from '../../theme';
 import { APP_DISPLAY_NAME } from '../../config';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { useItems } from '../../hooks/useItems';
 import { describeError } from '../../utils/errors';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
-import { DisplayNamesProvider, MemberLabel } from '../../components/MemberLabel';
+import { DisplayNamesProvider } from '../../components/MemberLabel';
 import { DisplayNameGate } from '../../components/DisplayNameGate';
 import WorkspaceChrome from '../../components/WorkspaceChrome';
 import SettingsPanel from '../../components/SettingsPanel';
-import RoomList from '../../components/RoomList';
 import RoomGate from '../../components/RoomGate';
+import LobbyView from '../../components/LobbyView';
+import BoardView from '../../components/BoardView';
 
 /**
  * Rooms-topology app view: chrome + a lobby/gate/domain switch. The active
- * room IS the base workspace context (ws.contextId resolves to it, or to the
- * directory while in the lobby), so `useItems` binds unchanged - only the
- * "which view" decision is rooms-specific.
- *
- * BUILD AGENT: reshape `useItems` -> your domain hook and the form/list ->
- * your entity, exactly as in single/multi. Keep the workspace gating, the
- * RoomList/RoomGate switch, and the WorkspaceChrome wiring - these make the
- * app multi-user + session-gated out of the box. A "room" may be a match,
- * table, or session - rename the copy, not the structure.
+ * room (a Ludo match) IS the base workspace context (ws.contextId resolves to
+ * it, or to the directory while in the lobby). No active match -> LobbyView
+ * (open matches + group leaderboard); match active but not seated 4/4 ->
+ * RoomGate (waiting room); started -> BoardView (the live game).
  */
 export default function AppPage() {
   const ws = useWorkspace();
-  const items = useItems({ contextId: ws.contextId, executorPublicKey: ws.executorPublicKey });
 
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [wsName, setWsName] = useState('My workspace');
+  const [wsName, setWsName] = useState('My friend group');
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    await items.add(title.trim(), body.trim());
-    setTitle('');
-    setBody('');
-  };
 
   // No namespace yet (fresh web session): offer create-or-join, verbatim from
   // single/multi. workspace-ready renders once the NAMESPACE exists (below) -
@@ -53,7 +37,7 @@ export default function AppPage() {
       <Empty>
         <Card>
           <h2>Welcome to {APP_DISPLAY_NAME}</h2>
-          <p>Create a workspace to start, or join one you were invited to.</p>
+          <p>Gather your friend group to start hosting Ludo matches, or join a group you were invited to.</p>
           <NameField
             data-testid="field-workspace-name"
             value={wsName}
@@ -91,31 +75,11 @@ export default function AppPage() {
             </RoomBar>
           )}
           {!ws.activeRoomId ? (
-            <RoomList ws={ws} />
+            <LobbyView ws={ws} />
           ) : !ws.started ? (
             <RoomGate ws={ws} />
           ) : (
-            <>
-              <Form onSubmit={submit}>
-                <input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-                <input placeholder="Details (optional)" value={body} onChange={(e) => setBody(e.target.value)} />
-                <Primary type="submit" disabled={!title.trim() || !items.ready}>Add</Primary>
-              </Form>
-              {items.error && <ErrLine>{describeError(items.error)}</ErrLine>}
-              <List>
-                {items.items.length === 0 && !items.loading && <Hint>No items yet - add the first one above.</Hint>}
-                {items.items.map((item) => (
-                  <ItemRow key={item.id}>
-                    <div className="text">
-                      <strong>{item.title}</strong>
-                      {item.body && <span>{item.body}</span>}
-                      <Byline><MemberLabel memberId={item.author} /></Byline>
-                    </div>
-                    <button onClick={() => items.remove(item.id)} aria-label="Delete">x</button>
-                  </ItemRow>
-                ))}
-              </List>
-            </>
+            <BoardView ws={ws} />
           )}
           <DisplayNameGate injected={ws.injectedContext} />
         </Content>
@@ -136,21 +100,6 @@ const LeaveBtn = styled.button`
   color: ${C.ink}; background: ${C.paper}; border: 1px solid ${C.line};
   &:hover { background: ${C.paper2}; border-color: ${C.green}; }
 `;
-const Byline = styled.span`font-size: 11.5px; color: ${C.mutedSoft};`;
-const Form = styled.form`
-  display: flex; gap: 8px; margin-bottom: 22px; flex-wrap: wrap;
-  input { flex: 1; min-width: 160px; padding: 10px 12px; font-size: 14px; color: ${C.ink}; background: ${C.paper2}; border: 1px solid ${C.line}; border-radius: 10px; outline: none; &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px rgba(164,255,17,0.18); } }
-`;
-const List = styled.div`display: flex; flex-direction: column; gap: 10px;`;
-const ItemRow = styled.div`
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 14px 16px; background: ${C.paper2}; border: 1px solid ${C.line}; border-radius: 12px;
-  .text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .text strong { font-size: 15px; color: ${C.ink}; }
-  .text span { font-size: 13px; color: ${C.muted}; }
-  button { flex-shrink: 0; width: 30px; height: 30px; font-size: 20px; line-height: 1; color: ${C.mutedSoft}; background: transparent; border: none; border-radius: 8px; cursor: pointer; &:hover { background: ${C.paper}; color: ${C.danger}; } }
-`;
-const Hint = styled.p`font-size: 14px; color: ${C.muted}; padding: 8px 2px;`;
 const ErrLine = styled.p`margin: 8px 0; font-size: 13px; color: ${C.danger};`;
 const Empty = styled.div`flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px;`;
 const Card = styled.div`

@@ -31,7 +31,7 @@ export default function RoomGate({ ws }: Props): React.ReactElement {
       {busy && <Spinner aria-hidden="true" />}
       <h2>Waiting for players</h2>
       <Count data-testid="room-gate-count">{ws.memberCount}/{ws.minMembers}</Count>
-      <p>The room starts as soon as enough players join.</p>
+      <p>The match starts the moment all {ws.minMembers} seats are filled - everyone's tokens go home together.</p>
       {failed && (
         <>
           {ws.error && <ErrLine role="alert">{describeError(ws.error)}</ErrLine>}
@@ -42,7 +42,7 @@ export default function RoomGate({ ws }: Props): React.ReactElement {
           )}
         </>
       )}
-      <InviteBtn data-testid="room-invite-btn" onClick={() => setShowInvite(true)}>Invite to workspace</InviteBtn>
+      <InviteBtn data-testid="room-invite-btn" onClick={() => setShowInvite(true)}>Invite friends</InviteBtn>
       {showInvite && <InviteModal onInvite={ws.invite} onClose={() => setShowInvite(false)} />}
     </Wrap>
   );
