@@ -343,15 +343,24 @@ impl Room {
     }
 
     fn set_token_steps(&mut self, key: &str, steps: u8) -> app::Result<()> {
-        // The `?` must not live inside the `if let` scrutinee: its `ControlFlow`
-        // desugaring temporary would keep `self.tokens` mutably borrowed for the
-        // whole `if`/`else`, conflicting with the `insert` call in the `else`
-        // branch (E0499). Binding the result first ends that borrow immediately.
-        let existing = self
+        // A shared `Option<ValueMut<..>>` binding flowing into both the `if`
+        // and `else` arms keeps `self.tokens` mutably borrowed for the whole
+        // statement (`ValueMut` writes back on `Drop`, so NLL extends the
+        // borrow to `existing`'s drop point at the end of this function),
+        // conflicting with the `insert` call in the `else` branch (E0499).
+        // Checking existence first with `contains` (no guard, no live borrow)
+        // and then taking a single, block-scoped `get_mut`/`insert` avoids any
+        // overlapping mutable borrow of `self.tokens`.
+        let exists = self
             .tokens
-            .get_mut(key)
-            .map_err(|e| AppError::msg(format!("tokens.get_mut: {e}")))?;
-        if let Some(mut guard) = existing {
+            .contains(&key.to_string())
+            .map_err(|e| AppError::msg(format!("tokens.contains: {e}")))?;
+        if exists {
+            let mut guard = self
+                .tokens
+                .get_mut(key)
+                .map_err(|e| AppError::msg(format!("tokens.get_mut: {e}")))?
+                .ok_or_else(|| AppError::msg("tokens.get_mut: entry vanished"))?;
             guard.set(steps);
         } else {
             self.tokens
@@ -473,7 +482,7 @@ mod tests {
 
         // turn_seat starts at seat 0: seat 1 may neither roll nor move.
         assert!(app.call_as(seat1, |s| s.roll_dice()).is_err());
-        app.call(|s| {
+        app.call(|s| -> app::Result<()> {
             s.set_token_steps("0:0", 1)?;
             s.pending_dice.set(3);
             Ok(())
@@ -490,7 +499,7 @@ mod tests {
         let (mut app, ids) = started_room();
         let seat0 = seat_id(&mut app, &ids, 0);
 
-        app.call(|s| {
+        app.call(|s| -> app::Result<()> {
             s.pending_dice.set(6);
             Ok(())
         })
@@ -508,7 +517,7 @@ mod tests {
         let (mut app, ids) = started_room();
         let seat0 = seat_id(&mut app, &ids, 0);
 
-        app.call(|s| {
+        app.call(|s| -> app::Result<()> {
             s.set_token_steps("0:0", 1)?;
             s.pending_dice.set(3);
             Ok(())
@@ -525,7 +534,7 @@ mod tests {
     fn cannot_leave_home_without_a_six() {
         let (mut app, ids) = started_room();
         let seat0 = seat_id(&mut app, &ids, 0);
-        app.call(|s| {
+        app.call(|s| -> app::Result<()> {
             s.pending_dice.set(3);
             Ok(())
         })
@@ -540,7 +549,7 @@ mod tests {
         // Seat 0's token 0 sits on its start square (steps=1, square 0);
         // rolling a 5 lands it on square 5, non-safe.
         // Seat 1's token 0 is placed so it also occupies square 5.
-        app.call(|s| {
+        app.call(|s| -> app::Result<()> {
             s.set_token_steps("0:0", 1)?;
             s.set_token_steps("1:0", 45)?;
             s.pending_dice.set(5);
@@ -563,7 +572,7 @@ mod tests {
         let (mut app, ids) = started_room();
         let seat0 = seat_id(&mut app, &ids, 0);
 
-        app.call(|s| {
+        app.call(|s| -> app::Result<()> {
             s.set_token_steps("0:0", FINISHED as u8)?;
             s.set_token_steps("0:1", FINISHED as u8)?;
             s.set_token_steps("0:2", FINISHED as u8)?;
