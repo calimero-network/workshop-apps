@@ -1,7 +1,7 @@
 {
   "appName": "ludo-lounge",
-  "appVersion": "1.0.0",
-  "package": "com.calimero.ludo-lounge",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.ronit-calimero-network-cfee7c9a.ludo-lounge",
   "metadata": {
     "name": "ludo-lounge",
     "description": "A cozy digital Ludo lounge where friends open matches, wait for exactly 4 players, play a full turn-based board game with dice, extra turns on sixes, and captures, and track wins on a group leaderboard",
