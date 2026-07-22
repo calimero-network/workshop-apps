@@ -1,0 +1,279 @@
+name: splitwise-clone smoke (generated)
+description: Spec-derived two-node smoke for splitwise-clone
+log_level: info
+nodes:
+  count: 2
+  prefix: app-node
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.17
+  base_port: 12428
+  base_rpc_port: 12528
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # --- Bootstrap application + namespace ---
+
+  - type: install_application
+    name: Install splitwise-clone on app-node-1
+    node: app-node-1
+    dev: true
+    path: ./logic/res/splitwise-clone-1.0.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install splitwise-clone on app-node-2
+    node: app-node-2
+    dev: true
+    path: ./logic/res/splitwise-clone-1.0.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: app-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: app-node-2 joins namespace
+    node: app-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  - type: create_context
+    name: Create group context on app-node-1
+    node: app-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: group
+    outputs:
+      group_ctx: contextId
+
+  - type: join_context
+    name: app-node-2 joins group context
+    node: app-node-2
+    context_id: '{{group_ctx}}'
+
+  # --- Parameterless views agree across nodes (deterministic floor) ---
+
+  - type: wait_for_sync
+    name: Wait for group sync across both nodes
+    context_id: '{{group_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: View list_expenses from app-node-1
+    node: app-node-1
+    context_id: '{{group_ctx}}'
+    method: list_expenses
+    args: {}
+    outputs:
+      list_expenses_n1: result.output
+
+  - type: call
+    name: View list_expenses from app-node-2
+    node: app-node-2
+    context_id: '{{group_ctx}}'
+    method: list_expenses
+    args: {}
+    outputs:
+      list_expenses_n2: result.output
+
+  - type: json_assert
+    name: list_expenses agrees across nodes
+    statements:
+      - 'json_equal({{list_expenses_n1}}, {{list_expenses_n2}})'
+
+  - type: call
+    name: View list_settlements from app-node-1
+    node: app-node-1
+    context_id: '{{group_ctx}}'
+    method: list_settlements
+    args: {}
+    outputs:
+      list_settlements_n1: result.output
+
+  - type: call
+    name: View list_settlements from app-node-2
+    node: app-node-2
+    context_id: '{{group_ctx}}'
+    method: list_settlements
+    args: {}
+    outputs:
+      list_settlements_n2: result.output
+
+  - type: json_assert
+    name: list_settlements agrees across nodes
+    statements:
+      - 'json_equal({{list_settlements_n1}}, {{list_settlements_n2}})'
+
+  - type: call
+    name: View get_balances from app-node-1
+    node: app-node-1
+    context_id: '{{group_ctx}}'
+    method: get_balances
+    args: {}
+    outputs:
+      get_balances_n1: result.output
+
+  - type: call
+    name: View get_balances from app-node-2
+    node: app-node-2
+    context_id: '{{group_ctx}}'
+    method: get_balances
+    args: {}
+    outputs:
+      get_balances_n2: result.output
+
+  - type: json_assert
+    name: get_balances agrees across nodes
+    statements:
+      - 'json_equal({{get_balances_n1}}, {{get_balances_n2}})'
+
+  # --- Mutate methods (verifier-writer additions) ---
+
+  - type: call
+    name: Exercise add_expense on app-node-1
+    node: app-node-1
+    context_id: '{{group_ctx}}'
+    method: add_expense
+    args:
+      description: "Dinner"
+      amount: 6000
+      paid_by: "alice"
+      split_between: ["alice", "bob", "carol"]
+    outputs:
+      expense_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after add_expense
+    context_id: '{{group_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm add_expense visible on app-node-2
+    node: app-node-2
+    context_id: '{{group_ctx}}'
+    method: list_expenses
+    args: {}
+    outputs:
+      expense_after_add: result.output.0
+
+  - type: json_assert
+    name: add_expense produced a visible Expense on app-node-2
+    statements:
+      - 'json_subset({{expense_after_add}}, {"description": "Dinner", "amount": 6000, "paid_by": "alice", "split_between": ["alice", "bob", "carol"]})'
+
+  - type: call
+    name: Exercise edit_expense on app-node-1
+    node: app-node-1
+    context_id: '{{group_ctx}}'
+    method: edit_expense
+    args:
+      id: '{{expense_id}}'
+      description: "Dinner + tip"
+      amount: 6500
+
+  - type: wait_for_sync
+    name: Wait for sync after edit_expense
+    context_id: '{{group_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm edit_expense visible on app-node-2
+    node: app-node-2
+    context_id: '{{group_ctx}}'
+    method: list_expenses
+    args: {}
+    outputs:
+      expense_after_edit: result.output.0
+
+  - type: json_assert
+    name: edit_expense updated the Expense visible on app-node-2
+    statements:
+      - 'json_subset({{expense_after_edit}}, {"description": "Dinner + tip", "amount": 6500})'
+
+  - type: call
+    name: Exercise delete_expense on app-node-1
+    node: app-node-1
+    context_id: '{{group_ctx}}'
+    method: delete_expense
+    args:
+      id: '{{expense_id}}'
+
+  - type: wait_for_sync
+    name: Wait for sync after delete_expense
+    context_id: '{{group_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm delete_expense removed the Expense on app-node-2
+    node: app-node-2
+    context_id: '{{group_ctx}}'
+    method: list_expenses
+    args: {}
+    outputs:
+      expenses_after_delete: result.output
+
+  - type: json_assert
+    name: expenses list is empty on app-node-2 after delete_expense
+    statements:
+      - 'json_equal({{expenses_after_delete}}, [])'
+
+  - type: call
+    name: Exercise record_settlement on app-node-1
+    node: app-node-1
+    context_id: '{{group_ctx}}'
+    method: record_settlement
+    args:
+      from: "bob"
+      to: "alice"
+      amount: 2000
+    outputs:
+      settlement_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after record_settlement
+    context_id: '{{group_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm record_settlement visible on app-node-2
+    node: app-node-2
+    context_id: '{{group_ctx}}'
+    method: list_settlements
+    args: {}
+    outputs:
+      settlement_after_record: result.output.0
+
+  - type: json_assert
+    name: record_settlement produced a visible Settlement on app-node-2
+    statements:
+      - 'json_subset({{settlement_after_record}}, {"from": "bob", "to": "alice", "amount": 2000})'
+
+  - type: call
+    name: Exercise rename_group on app-node-1
+    node: app-node-1
+    context_id: '{{group_ctx}}'
+    method: rename_group
+    args:
+      new_name: "Bali trip"
+
+  - type: wait_for_sync
+    name: Wait for sync after rename_group
+    context_id: '{{group_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
