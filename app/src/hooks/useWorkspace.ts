@@ -248,7 +248,10 @@ export function useWorkspace(): UseWorkspaceReturn {
         applicationId,
         groupId: namespaceId,
         serviceName: PRIMARY_SERVICE.name,
-        initializationParams: [],
+        // The `group` service's #[app::init] takes `name: String` — encode it
+        // as JSON bytes so the new context's GroupMetadata.name matches the
+        // group's display name from the very first sync.
+        initializationParams: Array.from(new TextEncoder().encode(JSON.stringify({ name: trimmed }))),
         name: trimmed,
       });
       if (!ctx?.contextId) throw new Error('createContext returned no contextId');

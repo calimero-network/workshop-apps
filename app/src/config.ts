@@ -41,7 +41,7 @@ interface StudioConfig {
   services: ServiceEntry[];
 }
 
-const config: StudioConfig = raw as StudioConfig;
+const config: StudioConfig = raw as unknown as StudioConfig;
 
 export const APP_NAME = config.appName;
 export const APP_ROUTE = config.metadata.route;
@@ -63,7 +63,7 @@ const PRESET_DEFAULT_MODE: Record<string, 'light' | 'dark'> = {
 export const THEME_DEFAULT_MODE: 'light' | 'dark' =
   config.theme?.defaultMode === 'dark' || config.theme?.defaultMode === 'light'
     ? config.theme.defaultMode
-    : Object.hasOwn(PRESET_DEFAULT_MODE, THEME_PRESET)
+    : Object.prototype.hasOwnProperty.call(PRESET_DEFAULT_MODE, THEME_PRESET)
       ? PRESET_DEFAULT_MODE[THEME_PRESET]
       : 'dark';
 export const LAYOUT_PRESET: string = (raw as any).layoutPreset || 'centered-tool';

@@ -1,99 +1,59 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import styled from 'styled-components';
 import { C } from '../../theme';
 import { APP_DISPLAY_NAME } from '../../config';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { useGroupLedger } from '../../hooks/useGroupLedger';
 import { describeError } from '../../utils/errors';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
-import { DisplayNamesProvider } from '../../components/MemberLabel';
+import { DisplayNamesProvider, MemberLabel } from '../../components/MemberLabel';
 import { DisplayNameGate } from '../../components/DisplayNameGate';
 import WorkspaceChrome from '../../components/WorkspaceChrome';
 import SettingsPanel from '../../components/SettingsPanel';
 import UnitRail from '../../components/UnitRail';
+import type { ExpenseView, SettlementView } from '../../api/group/GroupClient';
 
 /**
  * Multi-topology app view: chrome + a group rail + the active group's balance
  * sheet. Each group is an independent context (instance) of the `group`
- * service.
- *
- * SHELL PASS (ABI-free): this renders the GroupView layout — balances
- * summary, add-expense, settle-up, history — against local placeholder
- * state only. No generated client import yet; a later pass swaps this local
- * state for a real `useExpenses`/`useSettlements` data hook bound to
- * SplitwisecloneClient, exactly like useItems does in the neutral scaffold.
+ * service, bound live via `useGroupLedger` (GroupClient + useSubscription).
  * Keep the workspace gating, the UnitRail, and the WorkspaceChrome wiring —
  * these make the app multi-user + multi-group out of the box.
  */
 
-/* ── placeholder domain types (stand in for the future generated client) ─── */
-interface PlaceholderExpense {
-  id: string;
-  description: string;
-  amountCents: number;
-  paidBy: string;
-  splitBetween: string[];
-  createdAt: number;
-}
-interface PlaceholderSettlement {
-  id: string;
-  from: string;
-  to: string;
-  amountCents: number;
-  createdAt: number;
-}
 type HistoryEntry =
-  | { kind: 'expense'; at: number; data: PlaceholderExpense }
-  | { kind: 'settlement'; at: number; data: PlaceholderSettlement };
+  | { kind: 'expense'; at: number; data: ExpenseView }
+  | { kind: 'settlement'; at: number; data: SettlementView };
 
 function fmtMoney(cents: number): string {
   const sign = cents < 0 ? '-' : '';
   return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
 }
 
-function computeBalances(
-  expenses: PlaceholderExpense[],
-  settlements: PlaceholderSettlement[],
-): Array<{ member: string; cents: number }> {
-  const balances = new Map<string, number>();
-  const add = (member: string, delta: number) => balances.set(member, (balances.get(member) ?? 0) + delta);
-  for (const e of expenses) {
-    const n = e.splitBetween.length || 1;
-    const share = e.amountCents / n;
-    add(e.paidBy, e.amountCents);
-    for (const person of e.splitBetween) add(person, -share);
-  }
-  for (const s of settlements) {
-    add(s.from, s.amountCents);
-    add(s.to, -s.amountCents);
-  }
-  return [...balances.entries()]
-    .map(([member, cents]) => ({ member, cents: Math.round(cents) }))
-    .sort((a, b) => b.cents - a.cents);
-}
-
-let idSeq = 0;
-function nextId(prefix: string): string {
-  idSeq += 1;
-  return `${prefix}-${idSeq}`;
-}
-
 export default function AppPage() {
   const ws = useWorkspace();
+  const ledger = useGroupLedger({ contextId: ws.contextId, executorPublicKey: ws.executorPublicKey });
 
   const [wsName, setWsName] = useState('My splits');
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  // ── placeholder group state (per-group in a real build; shared here since
-  //    there's no backend yet to key it by activeUnitId) ────────────────────
-  const [groupName, setGroupName] = useState('Untitled group');
+  // The active unit's rail name (set at createContext time) is the only
+  // display name available client-side — the spec exposes no get-metadata
+  // method. `rename_group` mutates the backend's GroupMetadata; since it
+  // can't be read back, track the new name locally once the mutation
+  // succeeds so the header reflects it immediately for this session.
+  const activeUnit = ws.units.find((u) => u.contextId === ws.activeUnitId);
+  const [groupNameOverride, setGroupNameOverride] = useState<string | null>(null);
+  useEffect(() => { setGroupNameOverride(null); }, [ws.activeUnitId]);
+  const groupName = groupNameOverride ?? activeUnit?.name ?? 'Untitled group';
+
   const [editingGroupName, setEditingGroupName] = useState(false);
   const [groupNameDraft, setGroupNameDraft] = useState(groupName);
+  const [renameError, setRenameError] = useState<Error | null>(null);
 
-  const [expenses, setExpenses] = useState<PlaceholderExpense[]>([]);
-  const [settlements, setSettlements] = useState<PlaceholderSettlement[]>([]);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [editDescription, setEditDescription] = useState('');
   const [editAmount, setEditAmount] = useState('');
@@ -107,14 +67,17 @@ export default function AppPage() {
   const [to, setTo] = useState('');
   const [settleAmount, setSettleAmount] = useState('');
 
-  const balances = useMemo(() => computeBalances(expenses, settlements), [expenses, settlements]);
+  const balances = useMemo(
+    () => [...ledger.balances].sort((a, b) => b.balance - a.balance),
+    [ledger.balances],
+  );
   const history = useMemo<HistoryEntry[]>(() => {
     const entries: HistoryEntry[] = [
-      ...expenses.map((e): HistoryEntry => ({ kind: 'expense', at: e.createdAt, data: e })),
-      ...settlements.map((s): HistoryEntry => ({ kind: 'settlement', at: s.createdAt, data: s })),
+      ...ledger.expenses.map((e): HistoryEntry => ({ kind: 'expense', at: e.created_at, data: e })),
+      ...ledger.settlements.map((s): HistoryEntry => ({ kind: 'settlement', at: s.created_at, data: s })),
     ];
     return entries.sort((a, b) => b.at - a.at);
-  }, [expenses, settlements]);
+  }, [ledger.expenses, ledger.settlements]);
 
   const submitExpense = (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,21 +86,17 @@ export default function AppPage() {
     const who = paidBy.trim();
     const split = splitBetween.split(',').map((s) => s.trim()).filter(Boolean);
     if (!desc || !Number.isFinite(dollars) || dollars <= 0 || !who || split.length === 0) return;
-    const now = Date.now();
-    setExpenses((prev) => [
-      ...prev,
-      { id: nextId('exp'), description: desc, amountCents: Math.round(dollars * 100), paidBy: who, splitBetween: split, createdAt: now },
-    ]);
+    void ledger.addExpense(desc, Math.round(dollars * 100), who, split).catch(() => {});
     setDescription('');
     setAmount('');
     setPaidBy('');
     setSplitBetween('');
   };
 
-  const startEditExpense = (exp: PlaceholderExpense) => {
+  const startEditExpense = (exp: ExpenseView) => {
     setEditingExpenseId(exp.id);
     setEditDescription(exp.description);
-    setEditAmount((exp.amountCents / 100).toString());
+    setEditAmount((exp.amount / 100).toString());
   };
 
   const saveEditExpense = (e: React.FormEvent, id: string) => {
@@ -145,11 +104,11 @@ export default function AppPage() {
     const desc = editDescription.trim();
     const dollars = Number(editAmount);
     if (!desc || !Number.isFinite(dollars) || dollars <= 0) return;
-    setExpenses((prev) => prev.map((x) => (x.id === id ? { ...x, description: desc, amountCents: Math.round(dollars * 100) } : x)));
+    void ledger.editExpense(id, desc, Math.round(dollars * 100)).catch(() => {});
     setEditingExpenseId(null);
   };
 
-  const deleteExpense = (id: string) => setExpenses((prev) => prev.filter((x) => x.id !== id));
+  const deleteExpense = (id: string) => { void ledger.deleteExpense(id).catch(() => {}); };
 
   const submitSettlement = (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,22 +116,24 @@ export default function AppPage() {
     const toName = to.trim();
     const dollars = Number(settleAmount);
     if (!fromName || !toName || fromName === toName || !Number.isFinite(dollars) || dollars <= 0) return;
-    const now = Date.now();
-    setSettlements((prev) => [
-      ...prev,
-      { id: nextId('stl'), from: fromName, to: toName, amountCents: Math.round(dollars * 100), createdAt: now },
-    ]);
+    void ledger.recordSettlement(fromName, toName, Math.round(dollars * 100)).catch(() => {});
     setFrom('');
     setTo('');
     setSettleAmount('');
   };
 
-  const saveGroupName = (e: React.FormEvent) => {
+  const saveGroupName = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = groupNameDraft.trim();
     if (!trimmed) return;
-    setGroupName(trimmed);
-    setEditingGroupName(false);
+    setRenameError(null);
+    try {
+      await ledger.renameGroup(trimmed);
+      setGroupNameOverride(trimmed);
+      setEditingGroupName(false);
+    } catch (err) {
+      setRenameError(err instanceof Error ? err : new Error(String(err)));
+    }
   };
 
   // No namespace yet (fresh web session): offer create-or-join. workspace-ready
@@ -241,23 +202,24 @@ export default function AppPage() {
                         aria-label="Group name"
                       />
                       <Primary data-testid="action-rename_group" type="submit" disabled={!groupNameDraft.trim()}>Save</Primary>
-                      <Secondary type="button" onClick={() => { setEditingGroupName(false); setGroupNameDraft(groupName); }}>Cancel</Secondary>
+                      <Secondary type="button" onClick={() => { setEditingGroupName(false); setGroupNameDraft(groupName); setRenameError(null); }}>Cancel</Secondary>
                     </RenameForm>
                   ) : (
                     <h1 onClick={() => { setGroupNameDraft(groupName); setEditingGroupName(true); }} title="Click to rename">
                       {groupName}
                     </h1>
                   )}
+                  {renameError && <ErrLine>{describeError(renameError)}</ErrLine>}
                 </GroupHeader>
 
                 <SectionTitle>Balances</SectionTitle>
                 <Balances>
                   {balances.length === 0 && <Hint>No expenses yet — balances will show up here once someone adds one.</Hint>}
                   {balances.map((b) => (
-                    <BalanceRow key={b.member} data-testid="item-balance" $positive={b.cents > 0} $zero={b.cents === 0}>
+                    <BalanceRow key={b.member} data-testid={`item-balance-${b.member}`} $positive={b.balance > 0} $zero={b.balance === 0}>
                       <span className="who">{b.member}</span>
                       <span className="amt">
-                        {b.cents === 0 ? 'settled up' : b.cents > 0 ? `is owed ${fmtMoney(b.cents)}` : `owes ${fmtMoney(-b.cents)}`}
+                        {b.balance === 0 ? 'settled up' : b.balance > 0 ? `is owed ${fmtMoney(b.balance)}` : `owes ${fmtMoney(-b.balance)}`}
                       </span>
                     </BalanceRow>
                   ))}
@@ -339,6 +301,7 @@ export default function AppPage() {
                 </Columns>
 
                 <SectionTitle>History</SectionTitle>
+                {ledger.error && <ErrLine>{describeError(ledger.error)}</ErrLine>}
                 <List>
                   {history.length === 0 && <Hint>No expenses or settlements yet.</Hint>}
                   {history.map((h) =>
@@ -351,10 +314,13 @@ export default function AppPage() {
                           <Secondary type="button" onClick={() => setEditingExpenseId(null)}>Cancel</Secondary>
                         </EditForm>
                       ) : (
-                        <ItemRow key={h.data.id} data-testid="item-expense">
+                        <ItemRow key={h.data.id} data-testid={`item-expense-${h.data.id}`}>
                           <div className="text">
                             <strong>{h.data.description}</strong>
-                            <span>{h.data.paidBy} paid {fmtMoney(h.data.amountCents)} · split between {h.data.splitBetween.join(', ')}</span>
+                            <span>
+                              {h.data.paid_by} paid {fmtMoney(h.data.amount)} · split between {h.data.split_between.join(', ')}
+                              {' · added by '}<MemberLabel memberId={h.data.author} />
+                            </span>
                           </div>
                           <RowActions>
                             <button onClick={() => startEditExpense(h.data)} aria-label="Edit">✎</button>
@@ -363,10 +329,13 @@ export default function AppPage() {
                         </ItemRow>
                       )
                     ) : (
-                      <ItemRow key={h.data.id} data-testid="item-settlement">
+                      <ItemRow key={h.data.id} data-testid={`item-settlement-${h.data.id}`}>
                         <div className="text">
                           <strong>Settlement</strong>
-                          <span>{h.data.from} paid {h.data.to} {fmtMoney(h.data.amountCents)}</span>
+                          <span>
+                            {h.data.from} paid {h.data.to} {fmtMoney(h.data.amount)}
+                            {' · recorded by '}<MemberLabel memberId={h.data.author} />
+                          </span>
                         </div>
                       </ItemRow>
                     ),
