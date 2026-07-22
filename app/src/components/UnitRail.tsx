@@ -9,9 +9,10 @@ interface Props {
 }
 
 /**
- * SCAFFOLD-OWNED sibling-unit rail. The build agent reskins copy/labels (a
- * "unit" is a board, project, trip, ...) but keeps the list + create-unit
- * testids mounted so the multi e2e stories can drive unit management.
+ * SCAFFOLD-OWNED sibling-unit rail. Reskinned for Splitwise-clone: a "unit" is
+ * an expense GROUP (e.g. "Bali trip", "Flatmates") — keeps the list +
+ * create-unit testids mounted so the multi e2e stories can drive unit
+ * management.
  */
 export default function UnitRail({ ws }: Props): React.ReactElement {
   const [creating, setCreating] = useState(false);
@@ -33,8 +34,8 @@ export default function UnitRail({ ws }: Props): React.ReactElement {
   return (
     <Rail data-testid="unit-rail">
       <Head>
-        <span className="title">Spaces</span>
-        <AddBtn data-testid="create-unit-btn" aria-label="New space" onClick={() => { setCreating((v) => !v); setAttempted(false); }}>+</AddBtn>
+        <span className="title">Groups</span>
+        <AddBtn data-testid="create-unit-btn" aria-label="New group" onClick={() => { setCreating((v) => !v); setAttempted(false); }}>+</AddBtn>
       </Head>
       {creating && (
         <CreateForm onSubmit={submit}>
@@ -42,9 +43,9 @@ export default function UnitRail({ ws }: Props): React.ReactElement {
             data-testid="field-unit-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Name"
+            placeholder="e.g. Bali trip"
             maxLength={64}
-            aria-label="Space name"
+            aria-label="Group name"
           />
           <button data-testid="unit-create-submit" type="submit" disabled={!name.trim() || ws.createUnitLoading}>
             {ws.createUnitLoading ? '...' : 'Add'}
@@ -53,7 +54,7 @@ export default function UnitRail({ ws }: Props): React.ReactElement {
       )}
       {creating && attempted && ws.error && <ErrLine role="alert">{describeError(ws.error)}</ErrLine>}
       <List>
-        {ws.units.length === 0 && !ws.unitsLoading && <Empty>No spaces yet.</Empty>}
+        {ws.units.length === 0 && !ws.unitsLoading && <Empty>No groups yet — create one to start splitting.</Empty>}
         {ws.units.map((u) => (
           <UnitBtn
             key={u.contextId}

@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '👥', title: 'One group, everyone in sync', body: 'Create a group for a trip or a flat, invite your friends, and every expense you add shows up for everyone live — no refreshing, no spreadsheets.' },
+  { icon: '⚖️', title: 'Balances that update themselves', body: 'Who paid what, who owes whom — computed live from every expense and settlement, synced peer-to-peer through Calimero’s CRDT state.' },
+  { icon: '🔒', title: 'Your ledger, your node', body: 'Expenses and settlements live in a context you control — no company holding your group’s financial history on a central server.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['What is a node?', 'A node (merod) is the runtime that stores your groups\' expenses and runs the splitting logic. You run your own — locally or on your own infrastructure — so your group\'s ledger never leaves your control.'],
+  ['Where do my groups\' expenses live?', 'On your own node, as CRDT collections that merge conflict-free across every member\'s device. There is no central database — no third-party server holds your group\'s balances.'],
+  ['What is a context?', 'A context is a shared, encrypted space — in this app, one per expense group. Everyone you invite into a group sees the same expenses, settlements and balances in real time.'],
+  ['How do I add friends to a group?', 'Create a group, then share an invitation link from the group rail. Anyone you invite joins the context and can start adding expenses instantly — no accounts, no sign-up.'],
+  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There\'s no token, no wallet and no gas — just your node, your groups, and the people you split costs with.'],
+  ['Is it really decentralized?', 'Yes. Every group\'s expenses and settlements are peer-to-peer CRDT data on the nodes that participate. Take your node offline and your group\'s ledger goes with it; bring it back and it re-syncs.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -101,18 +101,18 @@ function R({
 
 const STEPS = [
   { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '02', t: 'Create a group', d: 'Open a shared, encrypted context for a trip, a flat, or any shared cost. State is CRDT data that merges across peers automatically.' },
+  { k: '03', t: 'Add expenses as they happen', d: 'Say who paid and who it should split between — everyone in the group sees it, and their share, immediately.' },
+  { k: '04', t: 'Settle up', d: 'Log a payment between two people and the balances update for everyone — no central ledger, just your nodes.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
+/* ── animated live preview: an expense group's balances updating live ─────── */
+type Item = { id: number; who: string; text: string; me?: boolean; amount?: string };
 const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+  { id: 1, who: 'A', text: 'added "Dinner"', amount: '$60.00' },
+  { id: 2, who: 'M', text: 'added "Groceries"', amount: '$34.20' },
+  { id: 3, who: 'you', text: 'settled up with A', amount: '-$20.00', me: true },
+  { id: 4, who: 'J', text: 'balances synced — square with everyone' },
 ];
 
 function LivePreview() {
@@ -143,7 +143,7 @@ function LivePreview() {
         <s style={{ background: '#ff5f56' }} />
         <s style={{ background: '#ffbd2e' }} />
         <s style={{ background: C.green }} />
-        <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · your node</span>
+        <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · Bali trip</span>
         <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
       </div>
       <div className="body">
@@ -154,7 +154,7 @@ function LivePreview() {
           {shown.map((it) => (
             <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
               <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
+              <p>{it.text}{it.amount ? <b className="amt"> · {it.amount}</b> : null}</p>
             </div>
           ))}
         </div>
@@ -222,8 +222,8 @@ export default function LandingPage() {
             </GhostBtn>
           </Cta>
           <TrustRow>
-            <span>Private by design</span><i />
-            <span>Real-time sync</span><i />
+            <span>Live balances</span><i />
+            <span>No spreadsheets</span><i />
             <span>Peer-to-peer</span>
           </TrustRow>
         </HeroInner>
@@ -235,8 +235,8 @@ export default function LandingPage() {
         <Inner>
           <R v="up">
             <Kicker>How it works</Kicker>
-            <H2>From your node to a shared app — in four moves</H2>
-            <Sub>No accounts, no servers, no setup friction. Connect a node and you’re collaborating.</Sub>
+            <H2>From connecting your node to settling up — in four moves</H2>
+            <Sub>No accounts, no servers, no spreadsheets. Connect a node and start splitting.</Sub>
           </R>
           <Pipeline>
             <span className="track" />
@@ -293,8 +293,8 @@ export default function LandingPage() {
       {/* ── final CTA ──────────────────────────────────────────── */}
       <CtaBand>
         <R v="zoom">
-          <h2>Connect your node to get started.</h2>
-          <p>It takes seconds — your data never leaves your control.</p>
+          <h2>Connect your node and start a group.</h2>
+          <p>It takes seconds — your group's ledger never leaves your control.</p>
           <div className="btn"><ConnectButton /></div>
         </R>
       </CtaBand>
@@ -304,7 +304,7 @@ export default function LandingPage() {
         <div className="top">
           <div className="brand">
             <span className="wm"><span className="mk"><CalimeroLogo size={20} color={C.green} /></span> {APP_DISPLAY_NAME}</span>
-            <p>Private. Real-time. Yours.</p>
+            <p>Split expenses, not friendships.</p>
           </div>
           <div className="cols">
             <div>
@@ -547,8 +547,10 @@ const Preview = styled.div`
   .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
   .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
   .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
+  .row p .amt { color: ${C.green}; font-weight: 700; }
   .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
   .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+  .row.me p .amt { color: ${C.ink}; }
 `;
 
 /* sections */
