@@ -37,9 +37,10 @@ const STORAGE_KEY = 'app:theme';
 
 export function getStoredTheme(): ThemeMode {
   try {
-    return localStorage.getItem(STORAGE_KEY) === 'dark' ? 'dark' : 'light';
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored === 'light' ? 'light' : 'dark';
   } catch {
-    return 'light';
+    return 'dark';
   }
 }
 
