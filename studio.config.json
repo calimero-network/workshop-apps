@@ -1,0 +1,47 @@
+{
+  "appName": "splitwise-clone",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.splitwise-clone",
+  "metadata": {
+    "name": "splitwise-clone",
+    "description": "A workspace of shared expense groups; each group tracks who paid what and who owes whom",
+    "author": "Calimero",
+    "route": "/splitwise-clone"
+  },
+  "theme": {
+    "primaryColor": "#0F766E",
+    "accentColor": "#FBBF24",
+    "style": "calm-focus",
+    "preset": "tide",
+    "defaultMode": "dark"
+  },
+  "layoutPreset": "sidebar-workspace",
+  "topology": {
+    "kind": "multi",
+    "unitName": "group",
+    "unitNamePlural": "groups",
+    "defaultCapabilities": [
+      "CAN_CREATE_CONTEXT",
+      "CAN_INVITE",
+      "MANAGE_MEMBERS"
+    ],
+    "example": {
+      "circles": [
+        "Bali trip",
+        "Flatmates"
+      ],
+      "flow": [
+        "Create a group and invite friends",
+        "Everyone adds expenses as they happen",
+        "Balances update live for the whole group",
+        "Settle up and record the payment"
+      ]
+    }
+  },
+  "services": [
+    {
+      "name": "group",
+      "crate": "splitwise-clone-group"
+    }
+  ]
+}
