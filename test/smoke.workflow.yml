@@ -1,25 +1,26 @@
-# Two-node smoke test for the neutral item-registry foundation service.
+# Two-node smoke test for the team-crm app's `crm` service.
 #
-# Exercises the parts the v2 generator most often breaks, end-to-end on real
-# nodes (what the in-process TestHost / converge harness can't cover):
-#   - the `service` crate installed + a context created for it from a bundle
-#   - registry state (UnorderedMap<String, Item> with a nested LwwRegister)
-#     replicating across two peers
-#   - the AuthoredMap owner-gate: a non-owner `delete` is rejected on a real
-#     signed-delta path (the gate the bare converge harness can't verify)
+# Exercises the parts an in-process test host can't cover: the bundle
+# installed + a context created for the `crm` service, then every
+# apiMethod from the spec exercised end-to-end on real nodes:
+#   - add_contact / list_contacts (LwwRegister-backed shared Contact)
+#   - create_deal / update_deal_stage / set_contract_details / list_deals
+#     (shared Deal, pipeline-stage + contract-detail mutation replication)
+#   - log_interaction / edit_interaction / delete_interaction /
+#     list_interactions (AuthoredMap-backed Interaction lifecycle)
 #
 # Usage (run from the chat project root, after a dev bundle has been built):
 #   merobox bootstrap run test/smoke.workflow.yml
 #
 # Pre-flight: `bash logic/build-bundle.sh` must have produced
-# `logic/res/foundation-1.0.0.mpk` (appName/appVersion from studio.config.json).
+# `logic/res/team-crm-1.0.0.mpk` (appName/appVersion from studio.config.json).
 
-name: Foundation item-registry smoke
-description: Verify the item-registry service replicates state and owner-gates delete across two nodes.
+name: team-crm crm-service smoke
+description: Verify the crm service replicates contacts, deals, and interactions across two nodes.
 log_level: info
 nodes:
   count: 2
-  prefix: foundation-node
+  prefix: app-node
   # Pinned off `:edge` to a tag matching the SDK the logic pins
   # (0.11.0-rc.17). Bump in lockstep with logic/Cargo.toml's SDK tag, or
   # bootstrap skews. ASSUMPTION: ghcr publishes an image tag matching the
@@ -35,135 +36,298 @@ nuke_on_end: true
 wait_timeout: 90
 
 steps:
-  # --- Bootstrap application + namespace ---
+  # --- Bootstrap application + namespace + crm context ---
 
   - type: install_application
-    name: Install foundation bundle on node 1
-    node: foundation-node-1
+    name: Install team-crm bundle on node 1
+    node: app-node-1
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/team-crm-1.0.0.mpk
     outputs:
       app_id: applicationId
 
   - type: install_application
-    name: Install foundation bundle on node 2
-    node: foundation-node-2
+    name: Install team-crm bundle on node 2
+    node: app-node-2
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/team-crm-1.0.0.mpk
 
   - type: create_namespace
     name: Create namespace on node 1
-    node: foundation-node-1
+    node: app-node-1
     application_id: '{{app_id}}'
     outputs:
       namespace_id: namespaceId
 
   - type: create_context
-    name: Create service context on node 1
-    node: foundation-node-1
+    name: Create crm service context on node 1
+    node: app-node-1
     application_id: '{{app_id}}'
     group_id: '{{namespace_id}}'
-    service_name: service
+    service_name: crm
     outputs:
-      ctx: contextId
+      crm_ctx: contextId
 
   - type: create_namespace_invitation
     name: Issue namespace invitation
-    node: foundation-node-1
+    node: app-node-1
     namespace_id: '{{namespace_id}}'
     outputs:
       invitation: invitation
 
   - type: join_namespace
     name: Node 2 joins namespace
-    node: foundation-node-2
+    node: app-node-2
     namespace_id: '{{namespace_id}}'
     invitation: '{{invitation}}'
 
-  # --- Registry state replicates across peers ---
+  # --- Deterministic floor: parameterless views agree (empty) on both nodes ---
 
   - type: call
-    name: Node 1 adds an item
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: add
-    args:
-      label: widget
-      value: v1
-    outputs:
-      item_id: result
-
-  - type: wait_for_sync
-    name: Wait for the add to sync across both nodes
-    context_id: '{{ctx}}'
-    nodes: [foundation-node-1, foundation-node-2]
-    timeout: 30
-    trigger_sync: true
-
-  # Both nodes must see the same single-item list — replication of the
-  # UnorderedMap<String, Item> (incl. the nested LwwRegister value).
-  - type: call
-    name: List items from node 1
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: list
+    name: List contacts from node 1 (floor)
+    node: app-node-1
+    context_id: '{{crm_ctx}}'
+    method: list_contacts
     args: {}
     outputs:
-      list_n1: result
-
-  - type: call
-    name: List items from node 2
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: list
-    args: {}
-    outputs:
-      list_n2: result
+      contacts_floor: result.output
 
   - type: json_assert
-    name: Both nodes see the same item list
+    name: Contacts list starts empty
     statements:
-      - 'equal({{list_n1}}, {{list_n2}})'
-
-  # --- Owner-gated delete (AuthoredMap) ---
-  # Node 2 is not the owner of the item node 1 added, so its delete must be
-  # rejected. This is the per-entry authorization the bare converge harness
-  # cannot test (it needs the signed-delta apply path).
-  - type: call
-    name: Non-owner delete from node 2 must be rejected
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: delete
-    args:
-      id: '{{item_id}}'
-    expect_error: true
-
-  # The owner (node 1) can delete it.
-  - type: call
-    name: Owner delete from node 1 succeeds
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: delete
-    args:
-      id: '{{item_id}}'
-
-  - type: wait_for_sync
-    name: Wait for the delete to sync across both nodes
-    context_id: '{{ctx}}'
-    nodes: [foundation-node-1, foundation-node-2]
-    timeout: 30
-    trigger_sync: true
+      - 'json_equal({{contacts_floor}}, [])'
 
   - type: call
-    name: Node 2 sees the empty registry
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: count
+    name: List deals from node 1 (floor)
+    node: app-node-1
+    context_id: '{{crm_ctx}}'
+    method: list_deals
     args: {}
     outputs:
-      count_n2: result
+      deals_floor: result.output
 
   - type: json_assert
-    name: Registry is empty on node 2 after the owner delete
+    name: Deals list starts empty
     statements:
-      - 'equal({{count_n2}}, 0)'
+      - 'json_equal({{deals_floor}}, [])'
+
+  # --- add_contact / list_contacts ---
+
+  - type: call
+    name: Exercise add_contact on node 1
+    node: app-node-1
+    context_id: '{{crm_ctx}}'
+    method: add_contact
+    args:
+      name: "Jane Doe"
+      email: "jane@acme.com"
+      phone: "555-0101"
+      company: "Acme Co"
+    outputs:
+      contact_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after add_contact
+    context_id: '{{crm_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm contact visible on node 2
+    node: app-node-2
+    context_id: '{{crm_ctx}}'
+    method: list_contacts
+    args: {}
+    outputs:
+      contact_0: result.output.0
+
+  - type: json_assert
+    name: add_contact produced a visible Contact on node 2
+    statements:
+      - 'json_subset({{contact_0}}, {"name": "Jane Doe", "email": "jane@acme.com", "company": "Acme Co"})'
+
+  # --- create_deal / update_deal_stage / set_contract_details / list_deals ---
+
+  - type: call
+    name: Exercise create_deal on node 1
+    node: app-node-1
+    context_id: '{{crm_ctx}}'
+    method: create_deal
+    args:
+      contact_id: '{{contact_id}}'
+      title: "Acme renewal"
+      value: 5000
+    outputs:
+      deal_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after create_deal
+    context_id: '{{crm_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm deal visible on node 2
+    node: app-node-2
+    context_id: '{{crm_ctx}}'
+    method: list_deals
+    args: {}
+    outputs:
+      deal_0: result.output.0
+
+  - type: json_assert
+    name: create_deal produced a visible Deal on node 2
+    statements:
+      - 'json_subset({{deal_0}}, {"title": "Acme renewal", "value": 5000})'
+
+  - type: call
+    name: Exercise update_deal_stage on node 1
+    node: app-node-1
+    context_id: '{{crm_ctx}}'
+    method: update_deal_stage
+    args:
+      deal_id: '{{deal_id}}'
+      stage: "Proposal"
+
+  - type: wait_for_sync
+    name: Wait for sync after update_deal_stage
+    context_id: '{{crm_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm updated stage visible on node 2
+    node: app-node-2
+    context_id: '{{crm_ctx}}'
+    method: list_deals
+    args: {}
+    outputs:
+      deal_after_stage: result.output.0
+
+  - type: json_assert
+    name: update_deal_stage produced the new stage on node 2
+    statements:
+      - 'json_subset({{deal_after_stage}}, {"stage": "Proposal"})'
+
+  - type: call
+    name: Exercise set_contract_details on node 1
+    node: app-node-1
+    context_id: '{{crm_ctx}}'
+    method: set_contract_details
+    args:
+      deal_id: '{{deal_id}}'
+      details: "Signed 12-mo contract, NET 30"
+
+  - type: wait_for_sync
+    name: Wait for sync after set_contract_details
+    context_id: '{{crm_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm contract details visible on node 2
+    node: app-node-2
+    context_id: '{{crm_ctx}}'
+    method: list_deals
+    args: {}
+    outputs:
+      deal_after_contract: result.output.0
+
+  - type: json_assert
+    name: set_contract_details produced the details on node 2
+    statements:
+      - 'json_subset({{deal_after_contract}}, {"contract_details": "Signed 12-mo contract, NET 30"})'
+
+  # --- log_interaction / edit_interaction / delete_interaction / list_interactions ---
+
+  - type: call
+    name: Exercise log_interaction on node 1
+    node: app-node-1
+    context_id: '{{crm_ctx}}'
+    method: log_interaction
+    args:
+      contact_id: '{{contact_id}}'
+      kind: "call"
+      note: "Discussed renewal terms"
+    outputs:
+      interaction_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after log_interaction
+    context_id: '{{crm_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm interaction visible on node 2
+    node: app-node-2
+    context_id: '{{crm_ctx}}'
+    method: list_interactions
+    args:
+      contact_id: '{{contact_id}}'
+    outputs:
+      interaction_0: result.output.0
+
+  - type: json_assert
+    name: log_interaction produced a visible Interaction on node 2
+    statements:
+      - 'json_subset({{interaction_0}}, {"kind": "call", "note": "Discussed renewal terms"})'
+
+  - type: call
+    name: Exercise edit_interaction on node 1
+    node: app-node-1
+    context_id: '{{crm_ctx}}'
+    method: edit_interaction
+    args:
+      id: '{{interaction_id}}'
+      note: "Discussed renewal terms and pricing"
+
+  - type: wait_for_sync
+    name: Wait for sync after edit_interaction
+    context_id: '{{crm_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm edited note visible on node 2
+    node: app-node-2
+    context_id: '{{crm_ctx}}'
+    method: list_interactions
+    args:
+      contact_id: '{{contact_id}}'
+    outputs:
+      interaction_after_edit: result.output.0
+
+  - type: json_assert
+    name: edit_interaction produced the updated note on node 2
+    statements:
+      - 'json_subset({{interaction_after_edit}}, {"note": "Discussed renewal terms and pricing"})'
+
+  - type: call
+    name: Exercise delete_interaction on node 1
+    node: app-node-1
+    context_id: '{{crm_ctx}}'
+    method: delete_interaction
+    args:
+      id: '{{interaction_id}}'
+
+  - type: wait_for_sync
+    name: Wait for sync after delete_interaction
+    context_id: '{{crm_ctx}}'
+    nodes: [app-node-1, app-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm interaction removed on node 2
+    node: app-node-2
+    context_id: '{{crm_ctx}}'
+    method: list_interactions
+    args:
+      contact_id: '{{contact_id}}'
+    outputs:
+      interactions_after_delete: result.output
+
+  - type: json_assert
+    name: delete_interaction leaves an empty interaction list on node 2
+    statements:
+      - 'json_equal({{interactions_after_delete}}, [])'
