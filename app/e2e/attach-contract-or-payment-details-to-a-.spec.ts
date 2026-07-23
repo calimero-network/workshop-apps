@@ -59,7 +59,9 @@ test.describe(`sales rep: attach contract or payment details to a deal once it's
 
     await pageB.getByTestId('nav-pipeline').click();
     const cardB = pageB.getByTestId(/^item-deal-/).filter({ hasText: dealTitle });
-    await expect(cardB.getByText(details)).toBeVisible({ timeout: 5_000 });
+    // Match only the persisted "Saved: <details>" confirmation text, not the
+    // field-details textarea (whose value also equals `details` once synced).
+    await expect(cardB.getByText(`Saved: ${details}`)).toBeVisible({ timeout: 5_000 });
 
     await ctxA.close();
     await ctxB.close();
