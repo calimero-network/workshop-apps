@@ -1,50 +1,94 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import styled from 'styled-components';
 import { C } from '../../theme';
 import { APP_DISPLAY_NAME } from '../../config';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { useItems } from '../../hooks/useItems';
 import { describeError } from '../../utils/errors';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
-import { DisplayNamesProvider, MemberLabel } from '../../components/MemberLabel';
+import { DisplayNamesProvider } from '../../components/MemberLabel';
 import { DisplayNameGate } from '../../components/DisplayNameGate';
 import WorkspaceChrome from '../../components/WorkspaceChrome';
 import SettingsPanel from '../../components/SettingsPanel';
+import ContactsView, { type Contact, type Interaction } from './ContactsView';
+import PipelineView, { type Deal } from './PipelineView';
 
 /**
- * Neutral single-context CRUD view — the foundation's "app" screen.
- *
- * BUILD AGENT: this is the canonical data-binding shell. Reshape it to the
- * spec's entity:
- *  - `useItems` → your domain hook over the generated `ServiceClient`,
- *  - the form fields + list rows → your entity's fields,
- *  - the page copy → your product.
- * Keep the structure: workspace resolution (bootstrap / join), the item form,
- * the live list, and the Invite/Join wiring — these make it multi-user out of
- * the box. Do NOT reintroduce chat concepts (rooms, messages, presence).
+ * SHELL PASS (ABI-free): the pipeline/contact data below is local placeholder
+ * state shaped exactly like the spec's methods (add_contact, create_deal,
+ * update_deal_stage, set_contract_details, log_interaction/edit/delete) so a
+ * later pass can swap these handlers 1:1 for real hooks over the generated
+ * TeamcrmClient without touching the view components' props.
  */
+type ViewKey = 'contacts' | 'pipeline';
+const NAV: { key: ViewKey; label: string; icon: string }[] = [
+  { key: 'contacts', label: 'Contacts', icon: '👤' },
+  { key: 'pipeline', label: 'Pipeline', icon: '📊' },
+];
+
 export default function AppPage() {
   const ws = useWorkspace();
-  const items = useItems({
-    contextId: ws.contextId,
-    executorPublicKey: ws.executorPublicKey,
-  });
 
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [wsName, setWsName] = useState('My workspace');
+  const [wsName, setWsName] = useState('My sales team');
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [view, setView] = useState<ViewKey>('contacts');
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    await items.add(title.trim(), body.trim());
-    setTitle('');
-    setBody('');
-  };
+  // ── placeholder domain state (replaced by real hooks once the ABI client is wired) ──
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [deals, setDeals] = useState<Deal[]>([]);
+  const [interactions, setInteractions] = useState<Interaction[]>([]);
+
+  const addContact = useCallback((name: string, email: string, phone: string, company: string) => {
+    const contact: Contact = {
+      id: `contact-${Date.now()}-${Math.round(Math.random() * 1e4)}`,
+      name, email, phone, company,
+      created_at: Date.now(),
+    };
+    setContacts((prev) => [...prev, contact]);
+  }, []);
+
+  const createDeal = useCallback((contactId: string, title: string, value: number) => {
+    const deal: Deal = {
+      id: `deal-${Date.now()}-${Math.round(Math.random() * 1e4)}`,
+      contact_id: contactId,
+      title,
+      stage: 'Lead',
+      value,
+      contract_details: '',
+      created_at: Date.now(),
+    };
+    setDeals((prev) => [...prev, deal]);
+  }, []);
+
+  const updateDealStage = useCallback((dealId: string, stage: string) => {
+    setDeals((prev) => prev.map((d) => (d.id === dealId ? { ...d, stage } : d)));
+  }, []);
+
+  const setContractDetails = useCallback((dealId: string, details: string) => {
+    setDeals((prev) => prev.map((d) => (d.id === dealId ? { ...d, contract_details: details } : d)));
+  }, []);
+
+  const logInteraction = useCallback((contactId: string, kind: string, note: string, author: string) => {
+    const item: Interaction = {
+      id: `interaction-${Date.now()}-${Math.round(Math.random() * 1e4)}`,
+      author,
+      contact_id: contactId,
+      kind,
+      note,
+      created_at: Date.now(),
+    };
+    setInteractions((prev) => [...prev, item]);
+  }, []);
+
+  const editInteraction = useCallback((id: string, note: string) => {
+    setInteractions((prev) => prev.map((it) => (it.id === id ? { ...it, note } : it)));
+  }, []);
+
+  const deleteInteraction = useCallback((id: string) => {
+    setInteractions((prev) => prev.filter((it) => it.id !== id));
+  }, []);
 
   // No workspace yet (fresh web session): offer create-or-join.
   if (!ws.ready && !ws.loading) {
@@ -52,7 +96,7 @@ export default function AppPage() {
       <Empty>
         <Card>
           <h2>Welcome to {APP_DISPLAY_NAME}</h2>
-          <p>Create a workspace to start, or join one you were invited to.</p>
+          <p>Create a workspace for your sales team, or join one you were invited to.</p>
           <NameField
             data-testid="field-workspace-name"
             value={wsName}
@@ -92,39 +136,42 @@ export default function AppPage() {
         />
 
         <Content>
-          <Form onSubmit={submit}>
-            <input
-              placeholder="Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-            <input
-              placeholder="Details (optional)"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-            />
-            <Primary type="submit" disabled={!title.trim() || !items.ready}>Add</Primary>
-          </Form>
+          <Body>
+            <Sidebar>
+              {NAV.map((n) => (
+                <NavItem
+                  key={n.key}
+                  data-testid={`nav-${n.key}`}
+                  $active={view === n.key}
+                  onClick={() => setView(n.key)}
+                >
+                  <span className="ic">{n.icon}</span>{n.label}
+                </NavItem>
+              ))}
+            </Sidebar>
 
-          {items.error && <ErrLine>{describeError(items.error)}</ErrLine>}
-
-          <List>
-            {items.items.length === 0 && !items.loading && (
-              <Hint>No items yet — add the first one above.</Hint>
-            )}
-            {items.items.map((item) => (
-              <ItemRow key={item.id}>
-                <div className="text">
-                  <strong>{item.title}</strong>
-                  {item.body && <span>{item.body}</span>}
-                  <Byline>
-                    <MemberLabel memberId={item.author} />
-                  </Byline>
-                </div>
-                <button onClick={() => items.remove(item.id)} aria-label="Delete">×</button>
-              </ItemRow>
-            ))}
-          </List>
+            <Main>
+              {view === 'contacts' ? (
+                <ContactsView
+                  contacts={contacts}
+                  addContact={addContact}
+                  interactions={interactions}
+                  logInteraction={logInteraction}
+                  editInteraction={editInteraction}
+                  deleteInteraction={deleteInteraction}
+                  selfIdentity={ws.executorPublicKey}
+                />
+              ) : (
+                <PipelineView
+                  contacts={contacts}
+                  deals={deals}
+                  createDeal={createDeal}
+                  updateDealStage={updateDealStage}
+                  setContractDetails={setContractDetails}
+                />
+              )}
+            </Main>
+          </Body>
 
           {/* Blocks the content (not the top bar) until a name is set. Never
               shown on the injected/SSO path (desktop + e2e). */}
@@ -149,7 +196,7 @@ export default function AppPage() {
 }
 
 const Page = styled.div`
-  max-width: 720px;
+  max-width: var(--c-app-max, 1100px);
   margin: 0 auto;
   padding: 28px 20px 64px;
   width: 100%;
@@ -157,38 +204,32 @@ const Page = styled.div`
 // Positioning context for the display-name gate overlay: it covers the content
 // but leaves the chrome bar (Settings, etc.) reachable.
 const Content = styled.div`position: relative;`;
-const Byline = styled.span`
-  font-size: 11.5px;
-  color: ${C.mutedSoft};
-`;
-const Form = styled.form`
+const Body = styled.div`
   display: flex;
-  gap: 8px;
-  margin-bottom: 22px;
-  flex-wrap: wrap;
-  input {
-    flex: 1; min-width: 160px;
-    padding: 10px 12px; font-size: 14px;
-    color: ${C.ink}; background: ${C.paper2};
-    border: 1px solid ${C.line}; border-radius: 10px; outline: none;
-    &:focus { border-color: ${C.green}; box-shadow: 0 0 0 3px rgba(164,255,17,0.18); }
-  }
+  gap: 22px;
+  align-items: flex-start;
+  @media (max-width: 760px) { flex-direction: column; }
 `;
-const List = styled.div`display: flex; flex-direction: column; gap: 10px;`;
-const ItemRow = styled.div`
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 14px 16px; background: ${C.paper2};
-  border: 1px solid ${C.line}; border-radius: 12px;
-  .text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .text strong { font-size: 15px; color: ${C.ink}; }
-  .text span { font-size: 13px; color: ${C.muted}; }
-  button {
-    flex-shrink: 0; width: 30px; height: 30px; font-size: 20px; line-height: 1;
-    color: ${C.mutedSoft}; background: transparent; border: none; border-radius: 8px; cursor: pointer;
-    &:hover { background: ${C.paper}; color: ${C.danger}; }
-  }
+const Sidebar = styled.nav`
+  flex: 0 0 var(--c-app-rail, 220px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 12px;
+  @media (max-width: 760px) { position: static; flex-direction: row; width: 100%; }
 `;
-const Hint = styled.p`font-size: 14px; color: ${C.muted}; padding: 8px 2px;`;
+const NavItem = styled.button<{ $active: boolean }>`
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; font-size: 14px; font-weight: 600; text-align: left;
+  border-radius: 10px; cursor: pointer; border: 1px solid transparent;
+  color: ${(p) => (p.$active ? C.accentInk : C.ink)};
+  background: ${(p) => (p.$active ? C.accent : 'transparent')};
+  transition: background 0.15s, border-color 0.15s;
+  .ic { font-size: 15px; }
+  &:hover { ${(p) => (p.$active ? '' : `background: ${C.paper2}; border-color: ${C.line};`)} }
+`;
+const Main = styled.div`flex: 1; min-width: 0;`;
 const ErrLine = styled.p`margin: 8px 0; font-size: 13px; color: ${C.danger};`;
 
 const Empty = styled.div`

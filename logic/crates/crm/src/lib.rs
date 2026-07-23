@@ -1,34 +1,23 @@
-//! Item-registry service — the neutral foundation template.
+//! Team CRM service — shared contacts, deals, and communication history for
+//! one sales team.
 //!
-//! A generic shared registry of items (`add` / `list` / `get` / `update` /
-//! owner-gated `delete`). It is deliberately domain-agnostic: the build agent
-//! copies this crate per spec service and renames the entity. It demonstrates,
-//! in one cohesive context, the core Calimero patterns every generated app
-//! needs:
-//!
-//! - `#[app::state]` / `#[app::logic]` / `#[app::init]`
-//! - `UnorderedMap` (the registry) and `AuthoredMap` (the authorship index that
-//!   structurally owner-gates `update`/`delete`)
-//! - `LwwRegister` (the item's mutable value, last-writer-wins on conflict)
-//! - one hand-written `Mergeable` + matching `RekeyTarget` on `Item` (it nests a
-//!   CRDT, so it must re-key its child or the nested register is LWW'd as an
-//!   opaque blob — see `RekeyTarget` impl)
-//! - deriving `Mergeable` via `#[derive(Mergeable)]` (`use calimero_sdk::app::Mergeable;`)
-//!   is the normal path for a struct whose fields are all CRDTs already — this
-//!   template hand-writes the impl instead only because `Item` nests a register
-//!   that requires custom rekeying (see above)
-//! - `app::emit!`, `#[app::private]` (per-node draft, never replicated),
-//!   named-struct returns (`Item` / `ItemView`), and base58 owner keys.
+//! - `contacts` / `deals` are `UnorderedMap`s: anyone on the team may add or
+//!   edit any record (a `#[derive(Mergeable)]` struct of `LwwRegister` fields
+//!   converges concurrent field edits by last-writer-wins per field).
+//! - `interactions` is an `AuthoredMap`: only the team member who logged a
+//!   call/email/meeting note may edit or delete it — storage rejects
+//!   `update`/`remove` by anyone else, surfaced here as `Forbidden`.
+//! - `interaction_ids` is a small `UnorderedSet` index: `AuthoredMap` has no
+//!   enumeration method, so we keep a side-set of ids to support
+//!   `list_interactions` (filtered by `contact_id`) and drop the id on delete.
 
 use calimero_sdk::app;
+use calimero_sdk::app::Mergeable;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use calimero_sdk::env;
 use calimero_sdk::serde::{Deserialize, Serialize};
 use calimero_sdk::types::Error as AppError;
-use calimero_storage::address::Id;
-use calimero_storage::collections::crdt_meta::MergeError;
-use calimero_storage::collections::rekey::{field_child_id, RekeyTarget};
-use calimero_storage::collections::{AuthoredMap, LwwRegister, Mergeable, UnorderedMap};
+use calimero_storage::collections::{AuthoredMap, LwwRegister, StoreError, UnorderedMap, UnorderedSet};
 use calimero_storage::env as storage_env;
 use team_crm_types::{generate_id, validate_label, Error};
 
@@ -36,260 +25,396 @@ pub mod events;
 use events::Event;
 
 // ---------------------------------------------------------------------------
-// Data models
+// Data models — internal storage records (nest CRDTs, Borsh-only)
 // ---------------------------------------------------------------------------
 
-/// A registry item. `value` is a `LwwRegister` so concurrent edits converge by
-/// hybrid-logical-clock last-writer-wins; `label` and `created_ms` are set once
-/// at add time and never change. Because this struct **nests a CRDT** and is
-/// stored as a map value, it implements `Mergeable` by hand AND `RekeyTarget`
-/// (see below).
-// Nests a `LwwRegister`, which is Borsh-only (no serde impl in calimero_storage).
-// Item is the internal map value, stored/replicated via Borsh; callers get the
-// serde-able `ItemView` instead. So no serde derives here.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+/// A contact record. Every field is individually last-writer-wins, so two
+/// reps concurrently editing different fields (or the same field) of the same
+/// contact converge cleanly. `#[derive(Mergeable)]` generates both the
+/// field-wise merge and the required `RekeyTarget` re-keying for the nested
+/// `LwwRegister`s.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Mergeable)]
 #[borsh(crate = "calimero_sdk::borsh")]
-pub struct Item {
-    pub label: String,
-    /// The item's mutable body. LWW on concurrent updates.
-    pub value: LwwRegister<String>,
-    pub created_ms: u64,
+pub struct ContactRecord {
+    pub name: LwwRegister<String>,
+    pub email: LwwRegister<String>,
+    pub phone: LwwRegister<String>,
+    pub company: LwwRegister<String>,
+    pub created_at: LwwRegister<u64>,
 }
 
-/// Hand-written merge. The immutable fields (`label`, `created_ms`) tie-break
-/// deterministically; `value` delegates to the nested `LwwRegister` so the
-/// freshest write wins. A `#[derive(Mergeable)]` would generate this, but we
-/// write it by hand to demonstrate the pattern (and to pair it with the
-/// required `RekeyTarget`).
-impl Mergeable for Item {
-    fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        // Deterministic tie-break for the set-once fields so merge is
-        // commutative even if two replicas raced the initial insert.
-        if (other.created_ms, &other.label) < (self.created_ms, &self.label) {
-            self.label = other.label.clone();
-            self.created_ms = other.created_ms;
-        }
-        // `LwwRegister::merge` returns `()` (infallible HLC last-writer-wins),
-        // so wrap it back into the fallible `Mergeable::merge` signature.
-        self.value.merge(&other.value);
-        Ok(())
-    }
+/// A deal record. `stage` and `contract_details` are the fields expected to
+/// change after creation; all fields are LWW so concurrent edits converge.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Mergeable)]
+#[borsh(crate = "calimero_sdk::borsh")]
+pub struct DealRecord {
+    pub contact_id: LwwRegister<String>,
+    pub title: LwwRegister<String>,
+    pub stage: LwwRegister<String>,
+    pub value: LwwRegister<u64>,
+    pub contract_details: LwwRegister<String>,
+    pub created_at: LwwRegister<u64>,
 }
 
-/// Deterministic re-keying for a hand-written CRDT-value struct (#2577).
-///
-/// `Item` nests a `LwwRegister`. Stored as an `UnorderedMap` value it would be
-/// LWW'd as an opaque blob unless we re-key the nested register under a
-/// field-namespaced child of the entry id, so every replica derives identical
-/// ids and the register converges as a child entity. `#[derive(Mergeable)]`
-/// generates this for you; a hand-written `Mergeable` MUST provide it too.
-impl RekeyTarget for Item {
-    fn rekey_relative_to(&mut self, parent_id: Id) {
-        calimero_storage::rekey_field_if_supported!(
-            &mut self.value,
-            field_child_id(parent_id, "value")
-        );
-    }
+/// An interaction (call/email/meeting note) logged against a contact. Stored
+/// in an `AuthoredMap`, so only its author may `edit_interaction` /
+/// `delete_interaction` — storage enforces this structurally.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Mergeable)]
+#[borsh(crate = "calimero_sdk::borsh")]
+pub struct InteractionRecord {
+    pub author: LwwRegister<String>,
+    pub contact_id: LwwRegister<String>,
+    pub kind: LwwRegister<String>,
+    pub note: LwwRegister<String>,
+    pub created_at: LwwRegister<u64>,
 }
 
-/// Read-shaped view returned to callers: the registry id, the item, and the
-/// base58 owner key. A named struct (not a tuple) so the generated ABI client
-/// gets typed fields.
+// ---------------------------------------------------------------------------
+// Read-shaped views — serde-able, returned to callers
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct ItemView {
+pub struct Contact {
     pub id: String,
-    pub label: String,
-    pub value: String,
-    pub created_ms: u64,
-    pub owner: String,
+    pub name: String,
+    pub email: String,
+    pub phone: String,
+    pub company: String,
+    pub created_at: u64,
 }
 
-/// Per-node draft, never replicated. `#[app::private]` keeps it local to the
-/// node — handy for "save before submit" UX that should not leak to peers.
-#[derive(BorshSerialize, BorshDeserialize, Debug)]
-#[borsh(crate = "calimero_sdk::borsh")]
-#[calimero_sdk::app::private]
-pub struct Draft {
-    pub text: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(crate = "calimero_sdk::serde")]
+pub struct Deal {
+    pub id: String,
+    pub contact_id: String,
+    pub title: String,
+    pub stage: String,
+    pub value: u64,
+    pub contract_details: String,
+    pub created_at: u64,
 }
 
-impl Default for Draft {
-    fn default() -> Draft {
-        Draft { text: String::new() }
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(crate = "calimero_sdk::serde")]
+pub struct Interaction {
+    pub id: String,
+    pub author: String,
+    pub contact_id: String,
+    pub kind: String,
+    pub note: String,
+    pub created_at: u64,
 }
+
+/// Default stage assigned to every newly created deal.
+const INITIAL_STAGE: &str = "Lead";
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-// `#[app::state]` injects the borsh derives itself (SDK 0.11+); a manual derive
-// here would collide.
 #[app::state(emits = for<'a> Event<'a>)]
-pub struct Registry {
-    /// The items, keyed by generated id. Plain `UnorderedMap`: any peer may add
-    /// or update an item's value (LWW), so no per-author gate on the data.
-    items: UnorderedMap<String, Item>,
-    /// Authorship index: `item_id → owner-claim`. `AuthoredMap` stamps the
-    /// adding executor as owner and rejects `update`/`remove` by anyone else,
-    /// so it structurally owner-gates deletion without a manual key check.
-    owners: AuthoredMap<String, LwwRegister<u64>>,
+pub struct CrmState {
+    /// Shared contact book. Anyone may add or edit a contact.
+    contacts: UnorderedMap<String, ContactRecord>,
+    /// Shared pipeline. Anyone may create a deal or move it between stages.
+    deals: UnorderedMap<String, DealRecord>,
+    /// Per-author communication history. Only the logging member may edit or
+    /// delete their own entries.
+    interactions: AuthoredMap<String, InteractionRecord>,
+    /// Enumeration index for `interactions` (`AuthoredMap` has no `entries()`).
+    interaction_ids: UnorderedSet<String>,
 }
 
 #[app::logic]
-impl Registry {
+impl CrmState {
     #[app::init]
-    pub fn init() -> Registry {
-        Registry {
-            items: UnorderedMap::new_with_field_name("registry:items"),
-            owners: AuthoredMap::new_with_field_name("registry:owners"),
+    pub fn init() -> CrmState {
+        CrmState {
+            contacts: UnorderedMap::new_with_field_name("crm:contacts"),
+            deals: UnorderedMap::new_with_field_name("crm:deals"),
+            interactions: AuthoredMap::new_with_field_name("crm:interactions"),
+            interaction_ids: UnorderedSet::new_with_field_name("crm:interaction_ids"),
         }
     }
 
-    /// Add an item. Returns its generated id. The caller becomes the owner; only
-    /// the owner may later delete it.
-    pub fn add(&mut self, label: String, value: String) -> app::Result<String> {
-        validate_label(&label).map_err(AppError::from)?;
+    // ---- Contacts ----
 
-        let now = storage_env::time_now();
+    pub fn add_contact(
+        &mut self,
+        name: String,
+        email: String,
+        phone: String,
+        company: String,
+    ) -> app::Result<String> {
+        validate_label(&name).map_err(AppError::from)?;
+
+        let now = storage_env::time_now() / 1_000_000;
         let mut nonce = [0u8; 4];
         env::random_bytes(&mut nonce);
-        let id = generate_id("item", now, &nonce);
+        let id = generate_id("contact", now, &nonce);
 
-        let item = Item {
-            label,
-            value: LwwRegister::new(value),
-            created_ms: now,
+        let record = ContactRecord {
+            name: LwwRegister::new(name.clone()),
+            email: LwwRegister::new(email),
+            phone: LwwRegister::new(phone),
+            company: LwwRegister::new(company),
+            created_at: LwwRegister::new(now),
         };
-        self.items
-            .insert(id.clone(), item)
-            .map_err(|e| AppError::msg(format!("items.insert: {e}")))?;
-        // Stamp the adding executor as the owner. The value is unused; the
-        // authorship stamp on the AuthoredMap entry is what gates delete.
-        self.owners
-            .insert(id.clone(), LwwRegister::new(now))
-            .map_err(|e| AppError::msg(format!("owners.insert: {e}")))?;
+        self.contacts
+            .insert(id.clone(), record)
+            .map_err(|e| AppError::msg(format!("contacts.insert: {e}")))?;
 
-        let owner = self.owner_b58();
-        app::emit!(Event::ItemAdded {
+        app::emit!(Event::ContactAdded { id: &id, name: &name });
+        Ok(id)
+    }
+
+    /// List all contacts, sorted by creation time then id for a stable order
+    /// (`UnorderedMap` iteration order is unspecified).
+    pub fn list_contacts(&self) -> app::Result<Vec<Contact>> {
+        let mut out: Vec<Contact> = self
+            .contacts
+            .entries()
+            .map_err(|e| AppError::msg(format!("contacts.entries: {e}")))?
+            .map(|(id, rec)| Contact {
+                id,
+                name: rec.name.get().clone(),
+                email: rec.email.get().clone(),
+                phone: rec.phone.get().clone(),
+                company: rec.company.get().clone(),
+                created_at: *rec.created_at.get(),
+            })
+            .collect();
+        out.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
+        Ok(out)
+    }
+
+    // ---- Deals ----
+
+    /// Create a deal against an existing contact. Starts at the `Lead` stage
+    /// with empty contract details.
+    pub fn create_deal(&mut self, contact_id: String, title: String, value: u64) -> app::Result<String> {
+        validate_label(&title).map_err(AppError::from)?;
+        let known = self
+            .contacts
+            .contains(&contact_id)
+            .map_err(|e| AppError::msg(format!("contacts.contains: {e}")))?;
+        if !known {
+            app::bail!(Error::NotFound(contact_id));
+        }
+
+        let now = storage_env::time_now() / 1_000_000;
+        let mut nonce = [0u8; 4];
+        env::random_bytes(&mut nonce);
+        let id = generate_id("deal", now, &nonce);
+
+        let record = DealRecord {
+            contact_id: LwwRegister::new(contact_id.clone()),
+            title: LwwRegister::new(title.clone()),
+            stage: LwwRegister::new(INITIAL_STAGE.to_string()),
+            value: LwwRegister::new(value),
+            contract_details: LwwRegister::new(String::new()),
+            created_at: LwwRegister::new(now),
+        };
+        self.deals
+            .insert(id.clone(), record)
+            .map_err(|e| AppError::msg(format!("deals.insert: {e}")))?;
+
+        app::emit!(Event::DealCreated {
             id: &id,
-            owner: &owner,
+            contact_id: &contact_id,
+            title: &title,
         });
         Ok(id)
     }
 
-    /// Update an item's value (LWW). Anyone may update — concurrent edits
-    /// converge to the last writer. Errors if the id is unknown.
-    pub fn update(&mut self, id: String, value: String) -> app::Result<()> {
+    /// Move a deal to a new pipeline stage (LWW — concurrent stage changes
+    /// converge to the last writer).
+    pub fn update_deal_stage(&mut self, deal_id: String, stage: String) -> app::Result<()> {
+        validate_label(&stage).map_err(AppError::from)?;
+
         let mut guard = self
-            .items
-            .get_mut(&id)
-            .map_err(|e| AppError::msg(format!("items.get_mut: {e}")))?
-            .ok_or_else(|| AppError::from(Error::NotFound(id.clone())))?;
-        guard.value.set(value);
+            .deals
+            .get_mut(&deal_id)
+            .map_err(|e| AppError::msg(format!("deals.get_mut: {e}")))?
+            .ok_or_else(|| AppError::from(Error::NotFound(deal_id.clone())))?;
+        guard.stage.set(stage.clone());
         drop(guard);
 
-        app::emit!(Event::ItemUpdated { id: &id });
+        app::emit!(Event::DealStageUpdated {
+            id: &deal_id,
+            stage: &stage,
+        });
         Ok(())
     }
 
-    /// Delete an item. Owner-gated: `AuthoredMap::remove` returns
-    /// `ActionNotAllowed` for non-owners, surfaced here as `Forbidden`.
-    pub fn delete(&mut self, id: String) -> app::Result<()> {
-        let removed = self
-            .owners
-            .remove(&id)
-            .map_err(map_owner_error())?;
-        if removed.is_none() {
-            app::bail!(Error::NotFound(id));
-        }
-        self.items
-            .remove(&id)
-            .map_err(|e| AppError::msg(format!("items.remove: {e}")))?;
+    /// Attach contract/payment details to a deal (LWW).
+    pub fn set_contract_details(&mut self, deal_id: String, details: String) -> app::Result<()> {
+        let mut guard = self
+            .deals
+            .get_mut(&deal_id)
+            .map_err(|e| AppError::msg(format!("deals.get_mut: {e}")))?
+            .ok_or_else(|| AppError::from(Error::NotFound(deal_id.clone())))?;
+        guard.contract_details.set(details);
+        drop(guard);
 
-        app::emit!(Event::ItemDeleted { id: &id });
+        app::emit!(Event::ContractDetailsSet { id: &deal_id });
         Ok(())
     }
 
-    /// Get one item by id.
-    pub fn get(&self, id: String) -> app::Result<Option<ItemView>> {
-        let Some(item) = self
-            .items
-            .get(&id)
-            .map_err(|e| AppError::msg(format!("items.get: {e}")))?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(self.to_view(id, &item)?))
-    }
-
-    /// List all items, sorted by creation time then id for a stable order
-    /// (`UnorderedMap` iteration order is unspecified).
-    pub fn list(&self) -> app::Result<Vec<ItemView>> {
-        let mut out: Vec<ItemView> = self
-            .items
+    /// List all deals, sorted by creation time then id for a stable order.
+    /// The frontend groups these by `stage` for the pipeline view.
+    pub fn list_deals(&self) -> app::Result<Vec<Deal>> {
+        let mut out: Vec<Deal> = self
+            .deals
             .entries()
-            .map_err(|e| AppError::msg(format!("items.entries: {e}")))?
-            .map(|(id, item)| self.to_view(id, &item))
-            .collect::<app::Result<_>>()?;
-        out.sort_by(|a, b| (a.created_ms, &a.id).cmp(&(b.created_ms, &b.id)));
+            .map_err(|e| AppError::msg(format!("deals.entries: {e}")))?
+            .map(|(id, rec)| Deal {
+                id,
+                contact_id: rec.contact_id.get().clone(),
+                title: rec.title.get().clone(),
+                stage: rec.stage.get().clone(),
+                value: *rec.value.get(),
+                contract_details: rec.contract_details.get().clone(),
+                created_at: *rec.created_at.get(),
+            })
+            .collect();
+        out.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
         Ok(out)
     }
 
-    /// Number of items in the registry.
-    pub fn count(&self) -> app::Result<usize> {
-        self.items
-            .len()
-            .map_err(|e| AppError::msg(format!("items.len: {e}")))
+    // ---- Interactions ----
+
+    /// Log a call/email/meeting note against a contact. The caller becomes
+    /// the author; only they may later edit or delete it.
+    pub fn log_interaction(&mut self, contact_id: String, kind: String, note: String) -> app::Result<String> {
+        validate_label(&kind).map_err(AppError::from)?;
+        let known = self
+            .contacts
+            .contains(&contact_id)
+            .map_err(|e| AppError::msg(format!("contacts.contains: {e}")))?;
+        if !known {
+            app::bail!(Error::NotFound(contact_id));
+        }
+
+        let now = storage_env::time_now() / 1_000_000;
+        let mut nonce = [0u8; 4];
+        env::random_bytes(&mut nonce);
+        let id = generate_id("interaction", now, &nonce);
+        let author = self.owner_b58();
+
+        let record = InteractionRecord {
+            author: LwwRegister::new(author.clone()),
+            contact_id: LwwRegister::new(contact_id.clone()),
+            kind: LwwRegister::new(kind),
+            note: LwwRegister::new(note),
+            created_at: LwwRegister::new(now),
+        };
+        self.interactions
+            .insert(id.clone(), record)
+            .map_err(|e| AppError::msg(format!("interactions.insert: {e}")))?;
+        self.interaction_ids
+            .insert(id.clone())
+            .map_err(|e| AppError::msg(format!("interaction_ids.insert: {e}")))?;
+
+        app::emit!(Event::InteractionLogged {
+            id: &id,
+            contact_id: &contact_id,
+            author: &author,
+        });
+        Ok(id)
     }
 
-    // ---- Per-node draft (never replicated) ----
+    /// Edit an interaction's note. Author-only: `AuthoredMap::update` rejects
+    /// anyone else with `ActionNotAllowed`, surfaced here as `Forbidden`.
+    pub fn edit_interaction(&mut self, id: String, note: String) -> app::Result<()> {
+        let existing = self
+            .interactions
+            .get(&id)
+            .map_err(|e| AppError::msg(format!("interactions.get: {e}")))?
+            .ok_or_else(|| AppError::from(Error::NotFound(id.clone())))?;
 
-    pub fn save_draft(&self, text: String) -> app::Result<()> {
-        let mut draft = Draft::private_load_or_default()?;
-        draft.as_mut().text = text;
+        let mut updated = existing;
+        updated.note.set(note);
+        self.interactions
+            .update(&id, updated)
+            .map_err(map_interaction_error("edit"))?;
+
+        app::emit!(Event::InteractionEdited { id: &id });
         Ok(())
     }
 
-    pub fn get_draft(&self) -> app::Result<String> {
-        Ok(Draft::private_load_or_default()?.text.clone())
+    /// Delete an interaction. Author-only: `AuthoredMap::remove` rejects
+    /// anyone else with `ActionNotAllowed`, surfaced here as `Forbidden`.
+    pub fn delete_interaction(&mut self, id: String) -> app::Result<()> {
+        let removed = self
+            .interactions
+            .remove(&id)
+            .map_err(map_interaction_error("delete"))?;
+        if removed.is_none() {
+            app::bail!(Error::NotFound(id));
+        }
+        self.interaction_ids
+            .remove(&id)
+            .map_err(|e| AppError::msg(format!("interaction_ids.remove: {e}")))?;
+
+        app::emit!(Event::InteractionDeleted { id: &id });
+        Ok(())
+    }
+
+    /// List every interaction logged against one contact, sorted by creation
+    /// time then id. `AuthoredMap` has no enumeration method, so this walks
+    /// the `interaction_ids` index and filters by `contact_id`.
+    pub fn list_interactions(&self, contact_id: String) -> app::Result<Vec<Interaction>> {
+        let ids: Vec<String> = self
+            .interaction_ids
+            .iter()
+            .map_err(|e| AppError::msg(format!("interaction_ids.iter: {e}")))?
+            .collect();
+
+        let mut out = Vec::new();
+        for id in ids {
+            let Some(rec) = self
+                .interactions
+                .get(&id)
+                .map_err(|e| AppError::msg(format!("interactions.get: {e}")))?
+            else {
+                continue;
+            };
+            if *rec.contact_id.get() == contact_id {
+                out.push(Interaction {
+                    id,
+                    author: rec.author.get().clone(),
+                    contact_id: rec.contact_id.get().clone(),
+                    kind: rec.kind.get().clone(),
+                    note: rec.note.get().clone(),
+                    created_at: *rec.created_at.get(),
+                });
+            }
+        }
+        out.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
+        Ok(out)
     }
 }
 
-impl Registry {
-    /// Base58 of the current executor — the public, shareable owner identity.
+impl CrmState {
+    /// Base58 of the current executor — the public, shareable author identity.
     fn owner_b58(&self) -> String {
         bs58::encode(env::executor_id()).into_string()
-    }
-
-    fn to_view(&self, id: String, item: &Item) -> app::Result<ItemView> {
-        // `owner_of` yields a `PublicKey`; `String::from(PublicKey)` is its
-        // canonical base58 encoding (see calimero_primitives::identity).
-        let owner = self
-            .owners
-            .owner_of(&id)
-            .map_err(|e| AppError::msg(format!("owners.owner_of: {e}")))?
-            .map(String::from)
-            .unwrap_or_default();
-        Ok(ItemView {
-            id,
-            label: item.label.clone(),
-            value: item.value.get().clone(),
-            created_ms: item.created_ms,
-            owner,
-        })
     }
 }
 
 /// Translate an `AuthoredMap` access-control error into a friendly `Forbidden`.
-fn map_owner_error() -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
+fn map_interaction_error(action: &'static str) -> impl FnOnce(StoreError) -> AppError {
     move |e| {
         let s = e.to_string();
         if s.contains("ActionNotAllowed") {
-            AppError::from(Error::Forbidden("only the owner may delete this item".into()))
+            AppError::from(Error::Forbidden(format!(
+                "can only {action} interactions you logged"
+            )))
         } else {
-            AppError::msg(format!("owners.remove: {s}"))
+            AppError::msg(format!("interactions.{action}: {s}"))
         }
     }
 }
@@ -304,65 +429,160 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn add_get_and_list() {
-        let mut app = TestHost::new(Registry::init);
+    fn add_sample_contact(app: &mut TestHost<CrmState>) -> String {
+        app.call(|s| s.add_contact("Jane Doe".into(), "jane@acme.com".into(), "555-0101".into(), "Acme Co".into()))
+            .unwrap()
+    }
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        let view = app.view(|s| s.get(id.clone())).unwrap().unwrap();
-        assert_eq!(view.label, "widget");
-        assert_eq!(view.value, "v1");
-        assert_eq!(app.view(|s| s.count()).unwrap(), 1);
-        assert_eq!(app.view(|s| s.list()).unwrap().len(), 1);
-        // `add` emits exactly one event.
+    #[test]
+    fn add_contact_then_list_roundtrip() {
+        let mut app = TestHost::new(CrmState::init);
+
+        let id = add_sample_contact(&mut app);
+        let contacts = app.view(|s| s.list_contacts()).unwrap();
+        assert_eq!(contacts.len(), 1);
+        assert_eq!(contacts[0].id, id);
+        assert_eq!(contacts[0].name, "Jane Doe");
+        assert_eq!(contacts[0].company, "Acme Co");
         assert_eq!(app.events().len(), 1);
     }
 
     #[test]
-    fn update_changes_value() {
-        let mut app = TestHost::new(Registry::init);
+    fn create_deal_starts_at_lead_stage() {
+        let mut app = TestHost::new(CrmState::init);
+        let contact_id = add_sample_contact(&mut app);
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        app.call(|s| s.update(id.clone(), "v2".into())).unwrap();
-        assert_eq!(app.view(|s| s.get(id)).unwrap().unwrap().value, "v2");
+        let deal_id = app
+            .call(|s| s.create_deal(contact_id.clone(), "Acme renewal".into(), 5000))
+            .unwrap();
+
+        let deals = app.view(|s| s.list_deals()).unwrap();
+        assert_eq!(deals.len(), 1);
+        assert_eq!(deals[0].id, deal_id);
+        assert_eq!(deals[0].contact_id, contact_id);
+        assert_eq!(deals[0].stage, "Lead");
+        assert_eq!(deals[0].value, 5000);
+        assert_eq!(deals[0].contract_details, "");
     }
 
     #[test]
-    fn update_unknown_id_errors() {
-        let mut app = TestHost::new(Registry::init);
-        assert!(app.call(|s| s.update("nope".into(), "x".into())).is_err());
+    fn create_deal_unknown_contact_errors() {
+        let mut app = TestHost::new(CrmState::init);
+        assert!(app
+            .call(|s| s.create_deal("nope".into(), "Acme renewal".into(), 5000))
+            .is_err());
     }
 
     #[test]
-    fn owner_can_delete() {
-        let mut app = TestHost::new(Registry::init);
+    fn update_deal_stage_changes_stage() {
+        let mut app = TestHost::new(CrmState::init);
+        let contact_id = add_sample_contact(&mut app);
+        let deal_id = app
+            .call(|s| s.create_deal(contact_id, "Acme renewal".into(), 5000))
+            .unwrap();
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        app.call(|s| s.delete(id.clone())).unwrap();
-        assert_eq!(app.view(|s| s.count()).unwrap(), 0);
-        assert!(app.view(|s| s.get(id)).unwrap().is_none());
+        app.call(|s| s.update_deal_stage(deal_id.clone(), "Proposal".into())).unwrap();
+
+        let deals = app.view(|s| s.list_deals()).unwrap();
+        assert_eq!(deals[0].stage, "Proposal");
     }
 
     #[test]
-    fn non_owner_cannot_delete() {
-        let mut app = TestHost::new(Registry::init);
-
-        // Default identity adds the item, so it owns it.
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-
-        // A different executor is not the owner — AuthoredMap rejects the
-        // delete, surfaced as Forbidden.
-        let other = [9u8; 32];
-        assert!(app.call_as(other, |s| s.delete(id.clone())).is_err());
-        // The item survives the rejected delete.
-        assert_eq!(app.view(|s| s.count()).unwrap(), 1);
+    fn update_deal_stage_unknown_id_errors() {
+        let mut app = TestHost::new(CrmState::init);
+        assert!(app.call(|s| s.update_deal_stage("nope".into(), "Proposal".into())).is_err());
     }
 
     #[test]
-    fn private_draft_roundtrips() {
-        let mut app = TestHost::new(Registry::init);
+    fn set_contract_details_roundtrip() {
+        let mut app = TestHost::new(CrmState::init);
+        let contact_id = add_sample_contact(&mut app);
+        let deal_id = app
+            .call(|s| s.create_deal(contact_id, "Acme renewal".into(), 5000))
+            .unwrap();
 
-        app.call(|s| s.save_draft("hello".into())).unwrap();
-        assert_eq!(app.view(|s| s.get_draft()).unwrap(), "hello");
+        app.call(|s| s.set_contract_details(deal_id.clone(), "Signed 12-mo contract, NET 30".into()))
+            .unwrap();
+
+        let deals = app.view(|s| s.list_deals()).unwrap();
+        assert_eq!(deals[0].contract_details, "Signed 12-mo contract, NET 30");
+    }
+
+    #[test]
+    fn log_interaction_then_list_by_contact() {
+        let mut app = TestHost::new(CrmState::init);
+        let contact_id = add_sample_contact(&mut app);
+
+        let interaction_id = app
+            .call(|s| s.log_interaction(contact_id.clone(), "call".into(), "Discussed renewal terms".into()))
+            .unwrap();
+
+        let interactions = app.view(|s| s.list_interactions(contact_id)).unwrap();
+        assert_eq!(interactions.len(), 1);
+        assert_eq!(interactions[0].id, interaction_id);
+        assert_eq!(interactions[0].kind, "call");
+        assert_eq!(interactions[0].note, "Discussed renewal terms");
+    }
+
+    #[test]
+    fn log_interaction_unknown_contact_errors() {
+        let mut app = TestHost::new(CrmState::init);
+        assert!(app
+            .call(|s| s.log_interaction("nope".into(), "call".into(), "note".into()))
+            .is_err());
+    }
+
+    #[test]
+    fn author_can_edit_own_interaction() {
+        let mut app = TestHost::new(CrmState::init);
+        let contact_id = add_sample_contact(&mut app);
+        let interaction_id = app
+            .call(|s| s.log_interaction(contact_id.clone(), "call".into(), "v1".into()))
+            .unwrap();
+
+        app.call(|s| s.edit_interaction(interaction_id.clone(), "v2".into())).unwrap();
+
+        let interactions = app.view(|s| s.list_interactions(contact_id)).unwrap();
+        assert_eq!(interactions[0].note, "v2");
+    }
+
+    #[test]
+    fn non_author_cannot_edit_interaction() {
+        let mut app = TestHost::new(CrmState::init);
+        let contact_id = add_sample_contact(&mut app);
+        let interaction_id = app
+            .call(|s| s.log_interaction(contact_id, "call".into(), "v1".into()))
+            .unwrap();
+
+        let other = [7u8; 32];
+        let denied = app.call_as(other, |s| s.edit_interaction(interaction_id, "v2".into()));
+        assert!(denied.is_err());
+    }
+
+    #[test]
+    fn author_can_delete_own_interaction() {
+        let mut app = TestHost::new(CrmState::init);
+        let contact_id = add_sample_contact(&mut app);
+        let interaction_id = app
+            .call(|s| s.log_interaction(contact_id.clone(), "call".into(), "v1".into()))
+            .unwrap();
+
+        app.call(|s| s.delete_interaction(interaction_id)).unwrap();
+        assert_eq!(app.view(|s| s.list_interactions(contact_id)).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn non_author_cannot_delete_interaction() {
+        let mut app = TestHost::new(CrmState::init);
+        let contact_id = add_sample_contact(&mut app);
+        let interaction_id = app
+            .call(|s| s.log_interaction(contact_id.clone(), "call".into(), "v1".into()))
+            .unwrap();
+
+        let other = [7u8; 32];
+        let denied = app.call_as(other, |s| s.delete_interaction(interaction_id));
+        assert!(denied.is_err());
+        // The interaction survives the rejected delete.
+        assert_eq!(app.view(|s| s.list_interactions(contact_id)).unwrap().len(), 1);
     }
 }

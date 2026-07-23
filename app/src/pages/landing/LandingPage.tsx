@@ -40,18 +40,18 @@ const C = {
    the theme broke the modal's internal contrast (white-on-green), so leave it. */
 
 const FEATURES = [
-  { icon: '🔒', title: 'Private by design', body: 'Your data lives in a decentralized context you control — no central server, no surveillance.' },
-  { icon: '⚡', title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero’s CRDT sync.' },
-  { icon: '🧩', title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network — bring your own logic and identities.' },
+  { icon: '👥', title: 'One shared pipeline', body: 'Contacts, deals, and notes live in one place your whole team sees — no more scattered spreadsheets or notebooks.' },
+  { icon: '📈', title: 'Live deal stages', body: 'Move a deal to Proposal or Won and the pipeline view updates for every teammate instantly, wherever they are.' },
+  { icon: '🗒️', title: 'Full contact history', body: 'Every call, email, and meeting note is logged against the contact — anyone can pick up the thread with full context.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own — locally or on your own infrastructure — so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database — nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly — no accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['What is a node?', 'A node (merod) is the runtime that stores your CRM data and runs the app logic. Your team runs its own — locally or on your own infrastructure — so contact and deal data never leaves your control.'],
+  ['Where does my CRM data live?', 'On your team’s own node, as CRDT collections that merge conflict-free across peers. There is no central database — no third party holds your contacts, deals, or notes.'],
+  ['What is a context?', 'A context is the shared, encrypted workspace your sales team collaborates in. Everyone in it sees the same contacts, deals, and pipeline in real time, synced directly between nodes.'],
+  ['How do teammates join?', 'Connect your node, then share an invitation link. Anyone you invite joins the shared CRM and starts adding contacts and deals instantly — no accounts, no sign-up.'],
+  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas — just your node and the teammates you invite.'],
+  ['Is it really decentralized?', 'Yes. Your pipeline is peer-to-peer CRDT data on the nodes your team runs. Take a node offline and its copy goes with it; bring it back and it re-syncs.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -100,40 +100,34 @@ function R({
 }
 
 const STEPS = [
-  { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state — no accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node your team runs. Your identity and keys stay on your machine.' },
+  { k: '02', t: 'Open your team workspace', d: 'Create or join the shared, encrypted CRM space. Contacts and deals merge across peers automatically.' },
+  { k: '03', t: 'Add contacts &amp; deals', d: 'Log leads, create deals, and move them through the pipeline as conversations progress.' },
+  { k: '04', t: 'Stay in sync', d: 'Stage changes, notes, and contract details appear for the whole team live — no refresh needed.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update ✦' },
-  { id: 3, who: 'you', text: 'synced — everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: a deal card moves across pipeline stages, loops ── */
+const STAGES = ['Lead', 'Contacted', 'Proposal', 'Won'];
+const DEAL_NAME = 'Acme Co · $5,000';
+const EVENTS = [
+  'Jane added a contact',
+  'Deal moved to Contacted',
+  'Mike logged a call',
+  'Deal moved to Won 🎉',
 ];
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [stageIdx, setStageIdx] = useState(0);
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
     const timers: number[] = [];
-    const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
-    const run = () => {
-      setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
-          setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
-        });
-      });
+    const tick = () => {
+      setPulse(true);
+      timers.push(window.setTimeout(() => setPulse(false), 380));
+      timers.push(window.setTimeout(() => setStageIdx((i) => (i + 1) % STAGES.length), 20));
     };
-    run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
+    const loop = window.setInterval(tick, 1900);
     return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
   }, []);
 
@@ -143,21 +137,19 @@ function LivePreview() {
         <s style={{ background: '#ff5f56' }} />
         <s style={{ background: '#ffbd2e' }} />
         <s style={{ background: C.green }} />
-        <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · your node</span>
+        <span><CalimeroLogo size={13} color={C.green} /> {APP_DISPLAY_NAME.toLowerCase()} · pipeline</span>
         <em className={pulse ? 'on' : ''}>● {pulse ? 'syncing' : 'live'}</em>
       </div>
-      <div className="body">
-        <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
-        </div>
-        <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
-            </div>
-          ))}
-        </div>
+      <div className="board">
+        {STAGES.map((s, i) => (
+          <div className={`col ${i === stageIdx ? 'active' : ''}`} key={s}>
+            <span className="label">{s}</span>
+            {i === stageIdx && <div className="card" key={`${s}-${i}`}>{DEAL_NAME}</div>}
+          </div>
+        ))}
+      </div>
+      <div className="feed">
+        <p key={stageIdx}>{EVENTS[stageIdx]}</p>
       </div>
     </Preview>
   );
@@ -222,9 +214,9 @@ export default function LandingPage() {
             </GhostBtn>
           </Cta>
           <TrustRow>
-            <span>Private by design</span><i />
-            <span>Real-time sync</span><i />
-            <span>Peer-to-peer</span>
+            <span>One shared pipeline</span><i />
+            <span>Live deal stages</span><i />
+            <span>Private by design</span>
           </TrustRow>
         </HeroInner>
         <PreviewWrap><LivePreview /></PreviewWrap>
@@ -235,8 +227,8 @@ export default function LandingPage() {
         <Inner>
           <R v="up">
             <Kicker>How it works</Kicker>
-            <H2>From your node to a shared app — in four moves</H2>
-            <Sub>No accounts, no servers, no setup friction. Connect a node and you’re collaborating.</Sub>
+            <H2>From your node to a shared pipeline — in four moves</H2>
+            <Sub>No accounts, no servers, no setup friction. Connect a node and your whole team is tracking deals together.</Sub>
           </R>
           <Pipeline>
             <span className="track" />
@@ -340,8 +332,8 @@ export default function LandingPage() {
 const float = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(14px,-18px) scale(1.05);}`;
 const drift = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-22px,14px) scale(1.07);}`;
 const travel = keyframes`0%{left:0;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{left:100%;opacity:0;}`;
-const rowIn = keyframes`from{opacity:0;transform:translateY(8px) scale(0.97);}to{opacity:1;transform:none;}`;
-const rowInMe = keyframes`from{opacity:0;transform:translateY(8px) translateX(8px) scale(0.97);}to{opacity:1;transform:none;}`;
+const cardIn = keyframes`from{opacity:0;transform:translateX(-14px) scale(0.92);}to{opacity:1;transform:none;}`;
+const feedIn = keyframes`from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}`;
 
 /* ════════════════════════ layout ════════════════════════ */
 const Root = styled.div`
@@ -532,23 +524,22 @@ const Preview = styled.div`
     em.on { color: ${C.green}; }
   }
   .body { padding: 16px; min-height: 230px; display: flex; flex-direction: column; gap: 14px; }
-  .peers { display: flex; align-items: center; gap: 0; }
-  .peers i {
-    width: 22px; height: 22px; border-radius: 50%;
-    display: grid; place-items: center;
-    font-size: 10px; font-weight: 700; color: ${C.ink};
-    background: linear-gradient(135deg, ${C.green}, #cde88a);
-    border: 1.5px solid ${C.ink};
-    margin-left: -6px;
+  .board { padding: 16px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .col {
+    min-height: 148px; display: flex; flex-direction: column; gap: 8px;
+    padding: 9px; border-radius: 10px;
+    background: rgba(255,255,255,0.03); border: 1px solid ${C.lineDark};
+    transition: border-color 0.3s, background 0.3s;
   }
-  .peers i:first-child { margin-left: 0; }
-  .peers b { margin-left: 8px; font-size: 11px; font-weight: 600; color: ${C.mutedSoft}; }
-  .stream { display: flex; flex-direction: column; gap: 9px; }
-  .row { display: flex; align-items: flex-start; gap: 8px; animation: ${rowIn} 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
-  .row .av { width: 20px; height: 20px; border-radius: 50%; background: ${C.ink2}; color: ${C.green}; font-size: 9px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
-  .row p { font-size: 12px; max-width: 82%; color: #dfe7db; background: rgba(255,255,255,0.05); border: 1px solid ${C.lineDark}; padding: 7px 10px; border-radius: 10px; }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.ink}; background: ${C.green}; border-color: ${C.green}; font-weight: 500; }
+  .col.active { border-color: ${C.green}; background: rgba(164,255,17,0.06); }
+  .col .label { font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: ${C.mutedSoft}; }
+  .col .card {
+    animation: ${cardIn} 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+    background: ${C.green}; color: ${C.ink}; font-weight: 600; font-size: 11px;
+    padding: 9px 8px; border-radius: 8px; line-height: 1.35;
+  }
+  .feed { padding: 0 16px 16px; }
+  .feed p { animation: ${feedIn} 0.3s ease both; font-size: 11.5px; color: ${C.mutedSoft}; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 `;
 
 /* sections */
