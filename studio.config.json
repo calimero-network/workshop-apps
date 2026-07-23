@@ -1,0 +1,45 @@
+{
+  "appName": "team-crm",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.team-crm",
+  "metadata": {
+    "name": "team-crm",
+    "description": "A shared CRM where a sales team tracks contacts, deals through a pipeline, communication history, and contract details together",
+    "author": "Calimero",
+    "route": "/team-crm"
+  },
+  "theme": {
+    "primaryColor": "#0F766E",
+    "accentColor": "#FBBF24",
+    "style": "modern-playful",
+    "preset": "tide",
+    "defaultMode": "dark"
+  },
+  "layoutPreset": "sidebar-workspace",
+  "topology": {
+    "kind": "single",
+    "defaultCapabilities": [
+      "CAN_CREATE_CONTEXT",
+      "CAN_INVITE",
+      "MANAGE_MEMBERS"
+    ],
+    "example": {
+      "circles": [
+        "Sales team",
+        "Regional office"
+      ],
+      "flow": [
+        "Add contacts as leads come in",
+        "Create deals and move them through pipeline stages",
+        "Log calls and notes so anyone can pick up the thread",
+        "Attach contract details once a deal is won"
+      ]
+    }
+  },
+  "services": [
+    {
+      "name": "crm",
+      "crate": "team-crm-crm"
+    }
+  ]
+}

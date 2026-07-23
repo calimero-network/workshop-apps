@@ -1,0 +1,146 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* -- App theme tokens. Arcade (today's identity) is the DEFAULT preset and
+   lives in the base :root (light) / :root[data-theme='dark'] blocks, so a
+   config with no preset renders exactly as before. The other four presets are
+   :root[data-theme-preset='X'][data-theme='...'] override blocks appended
+   below. Green (--c-green*) is the UNIVERSAL brand thread (connection dot,
+   success, focus rings, logo) and is defined ONLY here - never inside a preset
+   block. The action accent is a SEPARATE triad (--c-accent / --c-accent-ink =
+   text on the accent / --c-accent-text = accent as text); in arcade it resolves
+   to green, so arcade buttons stay green. --c-on-accent is legacy text-on-green
+   kept for any residual green button. */
+:root {
+  --c-green: #a4ff11;
+  --c-green-hover: #93e60c;
+  --c-green-deep: #4e7a06;
+  --c-green-ink: #37610a;
+  --c-on-accent: #0e140f;
+  --c-accent: var(--c-green);
+  --c-accent-ink: #1a2400;
+  --c-accent-text: #3e6b00;
+  --c-ink: #17201a;
+  --c-paper: #f4f7f2;
+  --c-paper2: #ffffff;
+  --c-line: #e7ece2;
+  --c-muted: #5d6b60;
+  --c-muted-soft: #93a394;
+  --c-off: #c4ccbf;
+  --c-disabled: #e2e8da;
+  --c-danger: #d23b2f;
+}
+
+:root[data-theme='dark'] {
+  --c-green: #a4ff11;
+  --c-green-hover: #b4ff3d;
+  --c-green-deep: #bdf76a;
+  --c-green-ink: #cdf78a;
+  --c-on-accent: #0e140f;
+  --c-accent: var(--c-green);
+  --c-accent-ink: #1a2400;
+  --c-accent-text: #bdf76a;
+  --c-ink: #e8eee7;
+  --c-paper: #0e1210;
+  --c-paper2: #161b17;
+  --c-line: #2a332c;
+  --c-muted: #8fa096;
+  --c-muted-soft: #6d7884;
+  --c-off: #3a414b;
+  --c-disabled: #2a2f37;
+  --c-danger: #ff6b6b;
+}
+
+/* -- Theme-preset override blocks. Each sets the COMPLETE surface + accent-triad
+   set for its mode; green/on-accent/muted-soft/off/disabled/danger inherit the
+   arcade defaults above. Hexes are locked to core/themePresets.js by
+   themePresetParity.test.js. `fill` = counterpart-mode gap (see plan Task 1a). */
+
+:root[data-theme-preset='lounge'][data-theme='light'] {
+  --c-accent: #b4690e; --c-accent-ink: #fff5ec; --c-accent-text: #b4690e;
+  --c-ink: #2a2118; --c-paper: #f7f1e7; --c-paper2: #fffdf8; --c-line: #e7dece; --c-muted: #8a7a65;
+}
+:root[data-theme-preset='lounge'][data-theme='dark'] {
+  --c-accent: #f0a050; --c-accent-ink: #2a1a05; --c-accent-text: #f5b36e;
+  --c-ink: #f2e9dd; --c-paper: #17120e; --c-paper2: #211a14; --c-line: #362c21; --c-muted: #a6947f;
+}
+
+:root[data-theme-preset='paper'][data-theme='light'] {
+  --c-accent: #3e6b00; --c-accent-ink: #f3f8e8; --c-accent-text: #3e6b00;
+  --c-ink: #1d201b; --c-paper: #f7f6f0; --c-paper2: #ffffff; --c-line: #e2e1d4; --c-muted: #68705f;
+}
+:root[data-theme-preset='paper'][data-theme='dark'] {
+  --c-accent: #9fd44a; --c-accent-ink: #14240a; --c-accent-text: #9fd44a;
+  --c-ink: #eceee8; --c-paper: #181a17; --c-paper2: #20231f; --c-line: #2c302b; --c-muted: #8a9184;
+}
+
+:root[data-theme-preset='tide'][data-theme='light'] {
+  --c-accent: #0e7a90; --c-accent-ink: #ecf7fa; --c-accent-text: #0e7a90;
+  --c-ink: #16202b; --c-paper: #f2f6f9; --c-paper2: #ffffff; --c-line: #d8e2ea; --c-muted: #5a6b7a;
+}
+:root[data-theme-preset='tide'][data-theme='dark'] {
+  --c-accent: #5ccfe6; --c-accent-ink: #04222b; --c-accent-text: #7adaf0;
+  --c-ink: #e3eaf2; --c-paper: #0d1420; --c-paper2: #142032; --c-line: #253349; --c-muted: #8598ac;
+}
+
+:root[data-theme-preset='editorial'][data-theme='light'] {
+  --c-accent: #c63a24; --c-accent-ink: #fff3f0; --c-accent-text: #c63a24;
+  --c-ink: #1b1b17; --c-paper: #faf9f5; --c-paper2: #ffffff; --c-line: #e4e3db; --c-muted: #6e6e64;
+}
+:root[data-theme-preset='editorial'][data-theme='dark'] {
+  --c-accent: #e8563f; --c-accent-ink: #fff3f0; --c-accent-text: #f2705b;
+  --c-ink: #f4f3ee; --c-paper: #131311; --c-paper2: #1b1b18; --c-line: #30302b; --c-muted: #9b9c93;
+}
+
+/* -- Style-driven decoration tokens (keyed on data-style, unchanged behavior).
+   The secondary highlight now draws from the PRESET accent, not the old spec
+   --color-accent. Green stays canonical; never redefine --c-green* here. */
+:root {
+  --c-decoration-radius: 12px;
+  --c-decoration-accent: var(--c-accent, var(--c-green));
+}
+:root[data-style='minimal'] { --c-decoration-radius: 6px; }
+:root[data-style='playful'] { --c-decoration-radius: 18px; }
+:root[data-style='editorial'] { --c-decoration-radius: 2px; }
+:root[data-style='technical'] { --c-decoration-radius: 8px; }
+
+/* ── Preset-driven layout tokens ──────────────────────────────────────────
+   Keyed on <html data-preset>, set from studio.config layoutPreset. Presets
+   tune layout metrics only (max width, side-rail width); consumed by overlay
+   AppPages, e.g. `max-width: var(--c-app-max)`. */
+:root[data-preset='sidebar-workspace'] { --c-app-max: 1100px; --c-app-rail: 240px; }
+:root[data-preset='game-lobby']        { --c-app-max: 960px;  --c-app-rail: 260px; }
+:root[data-preset='centered-tool']     { --c-app-max: 720px;  --c-app-rail: 0; }
+:root[data-preset='feed']              { --c-app-max: 640px;  --c-app-rail: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--c-paper);
+  color: var(--c-ink);
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-bg {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 1rem;
+}
