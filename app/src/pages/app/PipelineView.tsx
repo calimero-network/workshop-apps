@@ -1,22 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { C } from '../../theme';
-import type { Contact } from './ContactsView';
+import type { Contact, Deal } from '../../api/crm/CrmClient';
 
-/**
- * SHELL PASS (ABI-free): Deal mirrors the spec's Deal entity exactly, so the
- * data-fetching pass can swap the parent's local state for real hooks over
- * TeamcrmClient without reshaping this component.
- */
-export interface Deal {
-  id: string;
-  contact_id: string;
-  title: string;
-  stage: string;
-  value: number;
-  contract_details: string;
-  created_at: number;
-}
+export type { Deal };
 
 // Mirrors the flow in the spec's example (Lead → Contacted → Proposal → Won).
 const STAGES = ['Lead', 'Contacted', 'Proposal', 'Won'];

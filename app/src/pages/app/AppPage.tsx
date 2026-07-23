@@ -1,8 +1,9 @@
-import React, { useCallback, useState } from 'react';
+import React, { useState } from 'react';
 import styled from 'styled-components';
 import { C } from '../../theme';
 import { APP_DISPLAY_NAME } from '../../config';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { useCrm } from '../../hooks/useCrm';
 import { describeError } from '../../utils/errors';
 import InviteModal from '../../components/InviteModal';
 import JoinModal from '../../components/JoinModal';
@@ -10,16 +11,9 @@ import { DisplayNamesProvider } from '../../components/MemberLabel';
 import { DisplayNameGate } from '../../components/DisplayNameGate';
 import WorkspaceChrome from '../../components/WorkspaceChrome';
 import SettingsPanel from '../../components/SettingsPanel';
-import ContactsView, { type Contact, type Interaction } from './ContactsView';
-import PipelineView, { type Deal } from './PipelineView';
+import ContactsView from './ContactsView';
+import PipelineView from './PipelineView';
 
-/**
- * SHELL PASS (ABI-free): the pipeline/contact data below is local placeholder
- * state shaped exactly like the spec's methods (add_contact, create_deal,
- * update_deal_stage, set_contract_details, log_interaction/edit/delete) so a
- * later pass can swap these handlers 1:1 for real hooks over the generated
- * TeamcrmClient without touching the view components' props.
- */
 type ViewKey = 'contacts' | 'pipeline';
 const NAV: { key: ViewKey; label: string; icon: string }[] = [
   { key: 'contacts', label: 'Contacts', icon: '👤' },
@@ -28,67 +22,13 @@ const NAV: { key: ViewKey; label: string; icon: string }[] = [
 
 export default function AppPage() {
   const ws = useWorkspace();
+  const crm = useCrm({ contextId: ws.contextId, executorPublicKey: ws.executorPublicKey });
 
   const [wsName, setWsName] = useState('My sales team');
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [view, setView] = useState<ViewKey>('contacts');
-
-  // ── placeholder domain state (replaced by real hooks once the ABI client is wired) ──
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [deals, setDeals] = useState<Deal[]>([]);
-  const [interactions, setInteractions] = useState<Interaction[]>([]);
-
-  const addContact = useCallback((name: string, email: string, phone: string, company: string) => {
-    const contact: Contact = {
-      id: `contact-${Date.now()}-${Math.round(Math.random() * 1e4)}`,
-      name, email, phone, company,
-      created_at: Date.now(),
-    };
-    setContacts((prev) => [...prev, contact]);
-  }, []);
-
-  const createDeal = useCallback((contactId: string, title: string, value: number) => {
-    const deal: Deal = {
-      id: `deal-${Date.now()}-${Math.round(Math.random() * 1e4)}`,
-      contact_id: contactId,
-      title,
-      stage: 'Lead',
-      value,
-      contract_details: '',
-      created_at: Date.now(),
-    };
-    setDeals((prev) => [...prev, deal]);
-  }, []);
-
-  const updateDealStage = useCallback((dealId: string, stage: string) => {
-    setDeals((prev) => prev.map((d) => (d.id === dealId ? { ...d, stage } : d)));
-  }, []);
-
-  const setContractDetails = useCallback((dealId: string, details: string) => {
-    setDeals((prev) => prev.map((d) => (d.id === dealId ? { ...d, contract_details: details } : d)));
-  }, []);
-
-  const logInteraction = useCallback((contactId: string, kind: string, note: string, author: string) => {
-    const item: Interaction = {
-      id: `interaction-${Date.now()}-${Math.round(Math.random() * 1e4)}`,
-      author,
-      contact_id: contactId,
-      kind,
-      note,
-      created_at: Date.now(),
-    };
-    setInteractions((prev) => [...prev, item]);
-  }, []);
-
-  const editInteraction = useCallback((id: string, note: string) => {
-    setInteractions((prev) => prev.map((it) => (it.id === id ? { ...it, note } : it)));
-  }, []);
-
-  const deleteInteraction = useCallback((id: string) => {
-    setInteractions((prev) => prev.filter((it) => it.id !== id));
-  }, []);
 
   // No workspace yet (fresh web session): offer create-or-join.
   if (!ws.ready && !ws.loading) {
@@ -153,23 +93,26 @@ export default function AppPage() {
             <Main>
               {view === 'contacts' ? (
                 <ContactsView
-                  contacts={contacts}
-                  addContact={addContact}
-                  interactions={interactions}
-                  logInteraction={logInteraction}
-                  editInteraction={editInteraction}
-                  deleteInteraction={deleteInteraction}
+                  contacts={crm.contacts}
+                  addContact={crm.addContact}
+                  interactions={crm.interactions}
+                  selectedId={crm.selectedContactId}
+                  onSelectContact={crm.selectContact}
+                  logInteraction={crm.logInteraction}
+                  editInteraction={crm.editInteraction}
+                  deleteInteraction={crm.deleteInteraction}
                   selfIdentity={ws.executorPublicKey}
                 />
               ) : (
                 <PipelineView
-                  contacts={contacts}
-                  deals={deals}
-                  createDeal={createDeal}
-                  updateDealStage={updateDealStage}
-                  setContractDetails={setContractDetails}
+                  contacts={crm.contacts}
+                  deals={crm.deals}
+                  createDeal={crm.createDeal}
+                  updateDealStage={crm.updateDealStage}
+                  setContractDetails={crm.setContractDetails}
                 />
               )}
+              {crm.error && <ErrLine>{describeError(crm.error)}</ErrLine>}
             </Main>
           </Body>
 

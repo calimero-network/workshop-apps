@@ -2,29 +2,9 @@ import React, { useState } from 'react';
 import styled from 'styled-components';
 import { C } from '../../theme';
 import { MemberLabel } from '../../components/MemberLabel';
+import type { Contact, Interaction } from '../../api/crm/CrmClient';
 
-/**
- * SHELL PASS (ABI-free): types mirror the spec's Contact / Interaction
- * entities exactly, so the data-fetching pass can swap the parent's local
- * state for real hooks over TeamcrmClient without reshaping this component.
- */
-export interface Contact {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  company: string;
-  created_at: number;
-}
-
-export interface Interaction {
-  id: string;
-  author: string;
-  contact_id: string;
-  kind: string;
-  note: string;
-  created_at: number;
-}
+export type { Contact, Interaction };
 
 const KINDS = ['call', 'email', 'meeting'];
 
@@ -32,7 +12,9 @@ interface Props {
   contacts: Contact[];
   addContact: (name: string, email: string, phone: string, company: string) => void;
   interactions: Interaction[];
-  logInteraction: (contactId: string, kind: string, note: string, author: string) => void;
+  selectedId: string | null;
+  onSelectContact: (id: string) => void;
+  logInteraction: (contactId: string, kind: string, note: string) => void;
   editInteraction: (id: string, note: string) => void;
   deleteInteraction: (id: string) => void;
   selfIdentity: string | null;
@@ -42,6 +24,8 @@ export default function ContactsView({
   contacts,
   addContact,
   interactions,
+  selectedId,
+  onSelectContact,
   logInteraction,
   editInteraction,
   deleteInteraction,
@@ -51,7 +35,6 @@ export default function ContactsView({
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [company, setCompany] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [kind, setKind] = useState(KINDS[0]);
   const [note, setNote] = useState('');
@@ -68,7 +51,7 @@ export default function ContactsView({
   const submitInteraction = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedId || !note.trim()) return;
-    logInteraction(selectedId, kind, note.trim(), selfIdentity ?? 'you');
+    logInteraction(selectedId, kind, note.trim());
     setNote('');
   };
 
@@ -102,7 +85,7 @@ export default function ContactsView({
               key={c.id}
               data-testid={`item-contact-${c.id}`}
               $active={c.id === selectedId}
-              onClick={() => setSelectedId(c.id)}
+              onClick={() => onSelectContact(c.id)}
             >
               <strong>{c.name}</strong>
               {c.company && <span>{c.company}</span>}
