@@ -1,7 +1,7 @@
 {
   "appName": "team-crm",
-  "appVersion": "1.0.0",
-  "package": "com.calimero.team-crm",
+  "appVersion": "0.1.1",
+  "package": "com.calimero-studio.sandi-calimero-network-b543750b.team-crm",
   "metadata": {
     "name": "team-crm",
     "description": "A shared CRM where a sales team tracks contacts, deals through a pipeline, communication history, and contract details together",
