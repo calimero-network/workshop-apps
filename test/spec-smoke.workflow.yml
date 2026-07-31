@@ -1,0 +1,301 @@
+# Two-node smoke test for the pinpoint-feedback design-review service.
+#
+# Exercises the spec's mutate methods end-to-end on real nodes (what the
+# in-process TestHost / converge harness can't cover):
+#   - the `design-review` service crate installed + a context created from
+#     the compiled bundle
+#   - Mockup + Pin state (LwwRegister fields, AuthoredMap-owned Pin) replicating
+#     across two peers after upload_mockup / add_pin / edit_pin / resolve_pin /
+#     remove_pin
+#
+# Usage (run from the chat project root, after a dev bundle has been built):
+#   merobox bootstrap run test/spec-smoke.workflow.yml
+#
+# Pre-flight: `bash logic/build-bundle.sh` must have produced
+# `logic/res/pinpoint-feedback-1.0.0.mpk` (appName/appVersion from studio.config.json).
+
+name: pinpoint-feedback design-review smoke
+description: Verify the design-review service replicates mockups and pins across two nodes and exercises every spec mutate method.
+log_level: info
+nodes:
+  count: 2
+  prefix: pinpoint-feedback-node
+  # Pinned off `:edge` to a tag matching the SDK the logic pins. Bump in
+  # lockstep with logic/Cargo.toml's SDK tag, or bootstrap skews.
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.19
+  # High base ports to avoid colliding with a host-native merod on the
+  # defaults (2428 P2P / 2528 RPC). Each node gets base + i.
+  base_port: 12428      # P2P / swarm
+  base_rpc_port: 12528  # JSON-RPC / admin API
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # --- Bootstrap application + namespace ---
+
+  - type: install_application
+    name: Install pinpoint-feedback bundle on node 1
+    node: pinpoint-feedback-node-1
+    dev: true
+    path: ./logic/res/pinpoint-feedback-1.0.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install pinpoint-feedback bundle on node 2
+    node: pinpoint-feedback-node-2
+    dev: true
+    path: ./logic/res/pinpoint-feedback-1.0.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on node 1
+    node: pinpoint-feedback-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create design-review service context on node 1
+    node: pinpoint-feedback-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: design-review
+    outputs:
+      design_review_ctx: contextId
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation
+    node: pinpoint-feedback-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invitation: invitation
+
+  - type: join_namespace
+    name: Node 2 joins namespace
+    node: pinpoint-feedback-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invitation}}'
+
+  # --- Deterministic floor: parameterless view starts empty on both nodes ---
+
+  - type: call
+    name: List mockups from node 1 (baseline)
+    node: pinpoint-feedback-node-1
+    context_id: '{{design_review_ctx}}'
+    method: list_mockups
+    args: {}
+    outputs:
+      mockups_baseline_n1: result.output
+
+  - type: call
+    name: List mockups from node 2 (baseline)
+    node: pinpoint-feedback-node-2
+    context_id: '{{design_review_ctx}}'
+    method: list_mockups
+    args: {}
+    outputs:
+      mockups_baseline_n2: result.output
+
+  - type: json_assert
+    name: Both nodes see an empty mockup list before any upload
+    statements:
+      - 'json_equal({{mockups_baseline_n1}}, [])'
+      - 'json_equal({{mockups_baseline_n2}}, [])'
+
+  # --- upload_mockup replicates ---
+
+  - type: call
+    name: Exercise upload_mockup on node 1
+    node: pinpoint-feedback-node-1
+    context_id: '{{design_review_ctx}}'
+    method: upload_mockup
+    args:
+      title: "Homepage v3"
+      image: "blob-9f2a"
+      version: 3
+    outputs:
+      mockup_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after upload_mockup
+    context_id: '{{design_review_ctx}}'
+    nodes: [pinpoint-feedback-node-1, pinpoint-feedback-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm the mockup is visible on node 2
+    node: pinpoint-feedback-node-2
+    context_id: '{{design_review_ctx}}'
+    method: list_mockups
+    args: {}
+    outputs:
+      mockup_0: result.output.0
+
+  - type: json_assert
+    name: upload_mockup produced a visible Mockup on node 2
+    statements:
+      - 'json_subset({{mockup_0}}, {"title": "Homepage v3", "version": 3})'
+
+  # --- add_pin replicates ---
+
+  - type: call
+    name: Exercise add_pin on node 1
+    node: pinpoint-feedback-node-1
+    context_id: '{{design_review_ctx}}'
+    method: add_pin
+    args:
+      mockup_id: '{{mockup_id}}'
+      x: 0.42
+      y: 0.71
+      text: "Button feels too small here"
+    outputs:
+      pin_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync after add_pin
+    context_id: '{{design_review_ctx}}'
+    nodes: [pinpoint-feedback-node-1, pinpoint-feedback-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm the pin is visible on node 2
+    node: pinpoint-feedback-node-2
+    context_id: '{{design_review_ctx}}'
+    method: list_pins
+    args:
+      mockup_id: '{{mockup_id}}'
+    outputs:
+      pin_0: result.output.0
+
+  - type: json_assert
+    name: add_pin produced a visible, unresolved Pin at the given position on node 2
+    statements:
+      - 'json_subset({{pin_0}}, {"x": 0.42, "y": 0.71, "text": "Button feels too small here", "resolved": false})'
+
+  # --- edit_pin replicates ---
+
+  - type: call
+    name: Exercise edit_pin on node 1
+    node: pinpoint-feedback-node-1
+    context_id: '{{design_review_ctx}}'
+    method: edit_pin
+    args:
+      pin_id: '{{pin_id}}'
+      text: "Button still feels small on mobile"
+
+  - type: wait_for_sync
+    name: Wait for sync after edit_pin
+    context_id: '{{design_review_ctx}}'
+    nodes: [pinpoint-feedback-node-1, pinpoint-feedback-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm the edited text is visible on node 2
+    node: pinpoint-feedback-node-2
+    context_id: '{{design_review_ctx}}'
+    method: list_pins
+    args:
+      mockup_id: '{{mockup_id}}'
+    outputs:
+      pin_after_edit: result.output.0
+
+  - type: json_assert
+    name: edit_pin updated the pin's text on node 2
+    statements:
+      - 'json_subset({{pin_after_edit}}, {"text": "Button still feels small on mobile"})'
+
+  # --- resolve_pin replicates ---
+
+  - type: call
+    name: Exercise resolve_pin on node 1
+    node: pinpoint-feedback-node-1
+    context_id: '{{design_review_ctx}}'
+    method: resolve_pin
+    args:
+      pin_id: '{{pin_id}}'
+
+  - type: wait_for_sync
+    name: Wait for sync after resolve_pin
+    context_id: '{{design_review_ctx}}'
+    nodes: [pinpoint-feedback-node-1, pinpoint-feedback-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm the pin is resolved on node 2
+    node: pinpoint-feedback-node-2
+    context_id: '{{design_review_ctx}}'
+    method: list_pins
+    args:
+      mockup_id: '{{mockup_id}}'
+    outputs:
+      pin_after_resolve: result.output.0
+
+  - type: json_assert
+    name: resolve_pin marked the pin resolved on node 2
+    statements:
+      - 'json_subset({{pin_after_resolve}}, {"resolved": true})'
+
+  # --- remove_pin replicates ---
+  # A second, isolated mockup+pin so the post-removal list can be asserted
+  # exactly empty (no other pin ever exists for this mockup_id).
+
+  - type: call
+    name: Exercise upload_mockup for the remove_pin scenario on node 1
+    node: pinpoint-feedback-node-1
+    context_id: '{{design_review_ctx}}'
+    method: upload_mockup
+    args:
+      title: "Mobile Nav"
+      image: "blob-77aa"
+      version: 1
+    outputs:
+      mockup_id_b: result.output
+
+  - type: call
+    name: Exercise add_pin for the remove_pin scenario on node 1
+    node: pinpoint-feedback-node-1
+    context_id: '{{design_review_ctx}}'
+    method: add_pin
+    args:
+      mockup_id: '{{mockup_id_b}}'
+      x: 0.1
+      y: 0.2
+      text: "Pin to be removed"
+    outputs:
+      pin_id_b: result.output
+
+  - type: wait_for_sync
+    name: Wait for sync before remove_pin
+    context_id: '{{design_review_ctx}}'
+    nodes: [pinpoint-feedback-node-1, pinpoint-feedback-node-2]
+    timeout: 30
+
+  - type: call
+    name: Exercise remove_pin on node 1
+    node: pinpoint-feedback-node-1
+    context_id: '{{design_review_ctx}}'
+    method: remove_pin
+    args:
+      pin_id: '{{pin_id_b}}'
+
+  - type: wait_for_sync
+    name: Wait for sync after remove_pin
+    context_id: '{{design_review_ctx}}'
+    nodes: [pinpoint-feedback-node-1, pinpoint-feedback-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm the pin is gone on node 2
+    node: pinpoint-feedback-node-2
+    context_id: '{{design_review_ctx}}'
+    method: list_pins
+    args:
+      mockup_id: '{{mockup_id_b}}'
+    outputs:
+      pins_after_remove: result.output
+
+  - type: json_assert
+    name: remove_pin left an empty pin list for the mockup on node 2
+    statements:
+      - 'json_equal({{pins_after_remove}}, [])'
