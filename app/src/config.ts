@@ -42,7 +42,10 @@ interface StudioConfig {
      *  token generator emits. Colour is never overridable. */
     overrides?: Record<string, string>;
   };
-  services: ServiceEntry[];
+  /** Raw service declarations from studio.config.json. `id` is optional on
+   *  disk (single-service apps often omit it) — it's backfilled from `name`
+   *  when building the typed `SERVICES` export below. */
+  services: Array<{ id?: string; name: string; crate: string }>;
 }
 
 const config: StudioConfig = raw as StudioConfig;
@@ -79,22 +82,28 @@ export function applyThemeAttributes(overrides: Record<string, string | undefine
 export const LAYOUT_PRESET: string = (raw as any).layoutPreset || 'centered-tool';
 export const TOPOLOGY = (raw as any).topology || null;
 
-/** All declared services, in config order. One generated client per entry. */
-export const SERVICES: ServiceEntry[] = config.services;
+/** All declared services, in config order. One generated client per entry.
+ *  `id` is backfilled from `name` when the config omits it (common for
+ *  single-service apps). */
+export const SERVICES: ServiceEntry[] = config.services.map((s) => ({
+  id: s.id ?? s.name,
+  name: s.name,
+  crate: s.crate,
+}));
 
 /** The primary (first) service. Single-context apps have exactly one; the
  *  neutral foundation is single-context. Throws at startup if none declared so
  *  a misconfigured studio.config.json fails loudly instead of producing
  *  `undefined` downstream. */
 export const PRIMARY_SERVICE: ServiceEntry = (() => {
-  const svc = config.services[0];
+  const svc = SERVICES[0];
   if (!svc) throw new Error('studio.config.json: services[] is empty');
   return svc;
 })();
 
 /** Look up a declared service by its spec `id`. Throws if absent. */
 export function requireService(id: string): ServiceEntry {
-  const svc = config.services.find((s) => s.id === id);
+  const svc = SERVICES.find((s) => s.id === id);
   if (!svc) {
     throw new Error(`studio.config.json: services[] missing entry for id="${id}"`);
   }

@@ -31,39 +31,39 @@ import { Secondary, NARROW, WIDE } from '../../components/primitives';
 
    BUILD AGENT: draw marks for YOUR domain the same way. Inline SVG or CSS only,
    never emoji and never an external asset. */
-const IconPrivate = (
+const IconPin = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="4" y="10.5" width="16" height="10" rx="2.5" />
-    <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
-    <circle cx="12" cy="15.5" r="1.4" />
+    <path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21z" />
+    <circle cx="12" cy="9.5" r="2.4" />
   </svg>
 );
-const IconSync = (
+const IconVersions = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <circle cx="6" cy="7" r="2.4" /><circle cx="18" cy="7" r="2.4" /><circle cx="12" cy="18" r="2.4" />
-    <path d="M8.2 8.4 10.4 15.9M15.8 8.4 13.6 15.9M8.4 7h7.2" />
+    <rect x="4" y="4" width="12" height="9" rx="1.5" />
+    <path d="M8 17.5h12v-9" />
+    <path d="M8 21.5h12v-9" />
   </svg>
 );
-const IconExtend = (
+const IconResolve = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M4 5.5h7v7H4zM13 11.5h7v7h-7z" />
-    <path d="M11 9h2M13 14.5h-2v-2" />
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M8.3 12.3 10.8 14.8 15.9 9.4" />
   </svg>
 );
 
 const FEATURES = [
-  { icon: IconPrivate, title: 'Private by design', body: 'Your data lives in a decentralized context you control. No central server, no surveillance.' },
-  { icon: IconSync, title: 'Real-time & shared', body: 'Invite others with a link; everyone sees changes live through Calimero\u2019s CRDT sync.' },
-  { icon: IconExtend, title: 'Yours to extend', body: 'Open, composable, and built on the Calimero network, so you can bring your own logic and identities.' },
+  { icon: IconPin, title: 'Pinned to the exact spot', body: 'Drop a comment right on the pixel it\u2019s about. No more "the button in the third row" guesswork.' },
+  { icon: IconVersions, title: 'Every version, side by side', body: 'Upload a new mockup and the whole team sees it appear within seconds, ready for a fresh round of feedback.' },
+  { icon: IconResolve, title: 'Resolved independently', body: 'Anyone can mark a pin resolved. It never touches the status of any other pin, so the open list only shows what\u2019s left.' },
 ];
 
 const FAQS: [string, string][] = [
-  ['What is a node?', 'A node (merod) is the runtime that stores your data and runs the app logic. You run your own, locally or on your own infrastructure, so your keys and data never leave your control.'],
-  ['Where does my data live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database, and nothing about your data is held on a third-party server.'],
-  ['What is a context?', 'A context is a shared, encrypted space that peers join by invitation. Everyone in a context sees the same state in real time, synced directly between nodes.'],
-  ['How do others join?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and starts collaborating instantly. No accounts, no sign-up.'],
-  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas, just your node and the people you invite.'],
-  ['Is it really decentralized?', 'Yes. State is peer-to-peer CRDT data on the nodes that participate. Take your node offline and your data goes with it; bring it back and it re-syncs.'],
+  ['What is a node?', 'A node (merod) is the runtime that stores your mockups and pins and runs the review logic. You run your own, locally or on your own infrastructure, so nothing lives on a third-party server.'],
+  ['Where do my mockups and pins live?', 'On your own node, as CRDT collections that merge conflict-free across peers. There is no central database \u2014 take your node offline and your review board goes with it.'],
+  ['What is a context?', 'A context is the shared review space your team joins by invitation. Everyone in it sees the same mockups and pins in real time, synced directly between nodes.'],
+  ['How do teammates join a review?', 'Connect your node, then share an invitation link. Anyone you invite joins the context and can start pinning feedback instantly. No accounts, no sign-up.'],
+  ['Can two people pin the same spot at once?', 'Yes. Pins are independent CRDT entries, so simultaneous feedback from different teammates merges cleanly \u2014 nobody\u2019s comment overwrites anyone else\u2019s.'],
+  ['Do I need crypto or a wallet?', 'No. You connect with a node identity. There is no token, no wallet and no gas \u2014 just your node and the teammates you invite.'],
 ];
 
 /* ── scroll-reveal hook + wrapper (variants: up / zoom / drop / left) ──────── */
@@ -113,22 +113,22 @@ function R({
 
 const STEPS = [
   { k: '01', t: 'Connect your node', d: 'Point the app at the Calimero node you control. Your identity and keys stay on your machine.' },
-  { k: '02', t: 'Open a context', d: 'Create or join a shared, encrypted space. State is CRDT data that merges across peers automatically.' },
-  { k: '03', t: 'Invite peers', d: 'Share a link. Anyone you invite joins instantly and sees the same live state. No accounts.' },
-  { k: '04', t: 'Own your data', d: 'Everything lives on your node. No central server ever holds your application data.' },
+  { k: '02', t: 'Upload a mockup', d: 'Drop in the latest version. Everyone in the review sees it appear within seconds.' },
+  { k: '03', t: 'Pin the feedback', d: 'Click the exact spot on the image and leave a comment — tied to the pixel, not a screenshot with arrows.' },
+  { k: '04', t: 'Resolve as you go', d: 'Anyone can mark a pin resolved, independently of the others, so the open list shrinks as work lands.' },
 ];
 
-/* ── animated live preview: peers sync items into a shared context, loops ──── */
-type Item = { id: number; who: string; text: string; me?: boolean };
-const SCRIPT: Item[] = [
-  { id: 1, who: 'A', text: 'joined the context' },
-  { id: 2, who: 'M', text: 'shared an update' },
-  { id: 3, who: 'you', text: 'synced, everyone sees it live', me: true },
-  { id: 4, who: 'J', text: 'added to the shared state' },
+/* ── animated live preview: pins landing on a shared mockup, loops ─────────── */
+type PreviewPin = { id: number; x: number; y: number; who: string };
+const SCRIPT: PreviewPin[] = [
+  { id: 1, x: 24, y: 64, who: 'M' },
+  { id: 2, x: 70, y: 30, who: 'J' },
+  { id: 3, x: 46, y: 80, who: 'you' },
 ];
 
 function LivePreview() {
-  const [shown, setShown] = useState<Item[]>([]);
+  const [shown, setShown] = useState<number[]>([]);
+  const [resolved, setResolved] = useState<number[]>([]);
   const [pulse, setPulse] = useState(false);
 
   useEffect(() => {
@@ -136,16 +136,19 @@ function LivePreview() {
     const at = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
     const run = () => {
       setShown([]);
-      SCRIPT.forEach((it, i) => {
-        at(500 + i * 1300, () => {
-          setShown((p) => [...p, it]);
+      setResolved([]);
+      SCRIPT.forEach((p, i) => {
+        at(500 + i * 1100, () => {
+          setShown((prev) => [...prev, p.id]);
           setPulse(true);
-          at(500 + i * 1300 + 350, () => setPulse(false));
+          at(350, () => setPulse(false));
         });
       });
+      at(500 + SCRIPT.length * 1100 + 600, () => setResolved([SCRIPT[0].id]));
     };
     run();
-    const loop = window.setInterval(run, SCRIPT.length * 1300 + 2200);
+    const loopMs = 500 + SCRIPT.length * 1100 + 600 + 2200;
+    const loop = window.setInterval(run, loopMs);
     return () => { timers.forEach(window.clearTimeout); window.clearInterval(loop); };
   }, []);
 
@@ -160,15 +163,23 @@ function LivePreview() {
       </div>
       <div className="body">
         <div className="peers">
-          <i>A</i><i>M</i><i>J</i><b>+ you</b>
+          <i>M</i><i>J</i><b>+ you</b>
         </div>
-        <div className="stream">
-          {shown.map((it) => (
-            <div key={it.id} className={`row ${it.me ? 'me' : ''}`}>
-              <span className="av">{it.who === 'you' ? '·' : it.who}</span>
-              <p>{it.text}</p>
-            </div>
-          ))}
+        <div className="canvas">
+          <div className="frame">
+            <span className="chrome" />
+            <span className="hero" />
+            <span className="cards" />
+            {SCRIPT.filter((p) => shown.includes(p.id)).map((p) => (
+              <div
+                key={p.id}
+                className={`pin ${resolved.includes(p.id) ? 'resolved' : ''}`}
+                style={{ left: `${p.x}%`, top: `${p.y}%` }}
+              >
+                <b>{p.who === 'you' ? '·' : p.who}</b>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </Preview>
@@ -353,7 +364,6 @@ const float = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform
 const drift = keyframes`0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-22px,14px) scale(1.07);}`;
 const travel = keyframes`0%{left:0;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{left:100%;opacity:0;}`;
 const rowIn = keyframes`from{opacity:0;transform:translateY(8px) scale(0.97);}to{opacity:1;transform:none;}`;
-const rowInMe = keyframes`from{opacity:0;transform:translateY(8px) translateX(8px) scale(0.97);}to{opacity:1;transform:none;}`;
 
 /* Page rhythm is fluid between two token steps rather than two raw px values,
    so a roomy preset breathes and a compact one tightens. */
@@ -559,21 +569,38 @@ const Preview = styled.div`
   }
   .peers i:first-child { margin-left: 0; }
   .peers b { margin-left: var(--c-space-2); font-size: var(--c-text-xs); font-weight: 600; color: ${C.mutedSoft}; }
-  .stream { display: flex; flex-direction: column; gap: var(--c-space-2); }
-  .row { display: flex; align-items: flex-start; gap: var(--c-space-2); animation: ${rowIn} var(--c-duration-slow) var(--c-ease) both; }
-  .row .av {
-    width: 20px; height: 20px; border-radius: 50%;
-    background: ${C.paper}; color: ${C.accentText};
-    font-size: var(--c-text-xs); font-weight: 700;
-    display: grid; place-items: center; flex-shrink: 0;
+  .canvas { position: relative; flex: 1; min-height: var(--c-space-16); }
+  .frame {
+    position: absolute; inset: 0;
+    background: ${C.paper}; border: 1px solid ${C.line}; border-radius: var(--c-radius-sm);
+    overflow: hidden;
   }
-  .row p {
-    font-size: var(--c-text-sm); max-width: 82%; color: ${C.ink};
-    background: ${C.paper}; border: 1px solid ${C.line};
-    padding: var(--c-space-2) var(--c-space-3); border-radius: var(--c-radius-sm);
+  .frame .chrome {
+    position: absolute; top: 0; left: 0; right: 0; height: var(--c-space-5);
+    background: ${C.paper2}; border-bottom: 1px solid ${C.line};
   }
-  .row.me { justify-content: flex-end; animation-name: ${rowInMe}; }
-  .row.me p { color: ${C.accentInk}; background: ${C.accent}; border-color: ${C.accent}; font-weight: 500; }
+  .frame .hero {
+    position: absolute; top: var(--c-space-7); left: var(--c-space-3); right: var(--c-space-3);
+    height: var(--c-space-8); background: ${C.paper2}; border-radius: var(--c-radius-sm);
+  }
+  .frame .cards {
+    position: absolute; bottom: var(--c-space-3); left: var(--c-space-3); right: var(--c-space-3);
+    height: var(--c-space-7); background: ${C.paper2}; border-radius: var(--c-radius-sm); opacity: 0.6;
+  }
+  .pin {
+    position: absolute;
+    width: var(--c-space-5); height: var(--c-space-5);
+    transform: translate(-50%, -100%) rotate(45deg);
+    border-radius: var(--c-radius-pill) var(--c-radius-pill) var(--c-radius-pill) 0;
+    background: ${C.accent};
+    border: 1.5px solid ${C.paper2};
+    display: flex; align-items: center; justify-content: center;
+    animation: ${rowIn} var(--c-duration-slow) var(--c-ease) both;
+    transition: background var(--c-duration-base) var(--c-ease);
+    b { transform: rotate(-45deg); font-size: var(--c-text-xs); font-weight: 700; color: ${C.accentInk}; }
+  }
+  .pin.resolved { background: ${C.green}; }
+  .pin.resolved b { color: ${C.greenInk}; }
 `;
 
 /* sections */
