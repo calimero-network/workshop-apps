@@ -5,8 +5,7 @@ edition = "2021"
 
 [lib]
 # `cdylib` for the WASM artifact the bundle ships; `rlib` so the in-process
-# `TestHost` unit tests and the `tests/converge.rs` integration binary can link
-# the crate as a normal Rust library.
+# `TestHost` unit tests can link the crate as a normal Rust library.
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
@@ -21,9 +20,9 @@ calimero-wasm-abi = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-# Enables `register_crdt_merge` + the native mock host so `TestHost` and
-# `converge_app` can drive CRDT state under `cargo test`.
+# Enables `register_crdt_merge` + the native mock host so `TestHost` can drive
+# CRDT state under `cargo test`. No `tests/converge.rs` here: every top-level
+# state field is an `AuthoredMap`/`SharedStorage`, whose per-entry merge runs
+# on the signed-delta path that the bare `converge_app` harness (no signing
+# identity) cannot reconcile — see `get_calimero_patterns("shared-storage")`.
 calimero-storage = { workspace = true, features = ["testing"] }
-# Convergence tests are serial: `converge_app` clears/repopulates the
-# process-global merge registry per run.
-serial_test = { workspace = true }

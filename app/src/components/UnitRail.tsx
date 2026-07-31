@@ -34,8 +34,8 @@ export default function UnitRail({ ws }: Props): React.ReactElement {
   return (
     <Rail data-testid="unit-rail">
       <Head>
-        <span className="title">Spaces</span>
-        <AddBtn data-testid="create-unit-btn" aria-label="New space" onClick={() => { setCreating((v) => !v); setAttempted(false); }}>+</AddBtn>
+        <span className="title">Groups</span>
+        <AddBtn data-testid="create-unit-btn" aria-label="New group" onClick={() => { setCreating((v) => !v); setAttempted(false); }}>+</AddBtn>
       </Head>
       {creating && (
         <CreateForm onSubmit={submit}>
@@ -43,9 +43,9 @@ export default function UnitRail({ ws }: Props): React.ReactElement {
             data-testid="field-unit-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Name"
+            placeholder="Group name"
             maxLength={64}
-            aria-label="Space name"
+            aria-label="Group name"
           />
           <button data-testid="unit-create-submit" type="submit" disabled={!name.trim() || ws.createUnitLoading}>
             {ws.createUnitLoading ? '...' : 'Add'}
@@ -54,7 +54,7 @@ export default function UnitRail({ ws }: Props): React.ReactElement {
       )}
       {creating && attempted && ws.error && <ErrorLine role="alert">{describeError(ws.error)}</ErrorLine>}
       <List>
-        {ws.units.length === 0 && !ws.unitsLoading && <Empty>No spaces yet.</Empty>}
+        {ws.units.length === 0 && !ws.unitsLoading && <Empty>No groups yet.</Empty>}
         {ws.units.map((u) => (
           <UnitBtn
             key={u.contextId}
