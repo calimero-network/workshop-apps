@@ -1,24 +1,23 @@
-//! Item-registry service — the neutral foundation template.
+//! Design-review service — a shared space holding mockups and the feedback
+//! pins teammates drop on them.
 //!
-//! A generic shared registry of items (`add` / `list` / `get` / `update` /
-//! owner-gated `delete`). It is deliberately domain-agnostic: the build agent
-//! copies this crate per spec service and renames the entity. It demonstrates,
-//! in one cohesive context, the core Calimero patterns every generated app
-//! needs:
-//!
-//! - `#[app::state]` / `#[app::logic]` / `#[app::init]`
-//! - `UnorderedMap` (the registry) and `AuthoredMap` (the authorship index that
-//!   structurally owner-gates `update`/`delete`)
-//! - `LwwRegister` (the item's mutable value, last-writer-wins on conflict)
-//! - one hand-written `Mergeable` + matching `RekeyTarget` on `Item` (it nests a
-//!   CRDT, so it must re-key its child or the nested register is LWW'd as an
-//!   opaque blob — see `RekeyTarget` impl)
-//! - deriving `Mergeable` via `#[derive(Mergeable)]` (`use calimero_sdk::app::Mergeable;`)
-//!   is the normal path for a struct whose fields are all CRDTs already — this
-//!   template hand-writes the impl instead only because `Item` nests a register
-//!   that requires custom rekeying (see above)
-//! - `app::emit!`, `#[app::private]` (per-node draft, never replicated),
-//!   named-struct returns (`Item` / `ItemView`), and base58 owner keys.
+//! - `Mockup` is a plain, immutable-after-upload record (there is no
+//!   "update mockup" method, only new uploads) so it's wrapped whole in a
+//!   `LwwRegister` inside a shared `UnorderedMap` — anyone may upload a new
+//!   version.
+//! - `Pin` data lives in a plain `UnorderedMap` (so it can be listed/filtered
+//!   with `.entries()` — `AuthoredMap` deliberately has no `entries()`, only
+//!   keyed access), with a companion `pin_owners: AuthoredMap<String,
+//!   LwwRegister<u64>>` authorship stamp gating `edit_pin`/`remove_pin` to the
+//!   pin's author, exactly like the foundation scaffold's `items`/`owners`
+//!   split — just extended to gate BOTH edit and delete, not delete alone.
+//!   `Pin.text` is nested in a `LwwRegister` so concurrent edits from the
+//!   same author's different replicas still converge (`Pin` hand-writes
+//!   `Mergeable` + `RekeyTarget`, mirroring the scaffold's `Item`).
+//! - `resolved` is tracked in a SEPARATE plain shared map, not inside `Pin`:
+//!   the spec requires ANY teammate (not just the author) to resolve a pin,
+//!   which the author-gated `pin_owners` cannot allow, so resolving needs its
+//!   own open collection.
 
 use calimero_sdk::app;
 use calimero_sdk::borsh::{BorshDeserialize, BorshSerialize};
@@ -30,7 +29,7 @@ use calimero_storage::collections::crdt_meta::MergeError;
 use calimero_storage::collections::rekey::{field_child_id, RekeyTarget};
 use calimero_storage::collections::{AuthoredMap, LwwRegister, Mergeable, UnorderedMap};
 use calimero_storage::env as storage_env;
-use pinpoint_feedback_types::{generate_id, validate_label, Error};
+use pinpoint_feedback_types::{generate_id, Error};
 
 pub mod events;
 use events::Event;
@@ -39,85 +38,90 @@ use events::Event;
 // Data models
 // ---------------------------------------------------------------------------
 
-/// A registry item. `value` is a `LwwRegister` so concurrent edits converge by
-/// hybrid-logical-clock last-writer-wins; `label` and `created_ms` are set once
-/// at add time and never change. Because this struct **nests a CRDT** and is
-/// stored as a map value, it implements `Mergeable` by hand AND `RekeyTarget`
-/// (see below).
-// Nests a `LwwRegister`, which is Borsh-only (no serde impl in calimero_storage).
-// Item is the internal map value, stored/replicated via Borsh; callers get the
-// serde-able `ItemView` instead. So no serde derives here.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+/// A mockup version. `image` is the blob id (as returned by the frontend's
+/// raw-bytes upload, see `app/src/api/blob.ts`) kept as an opaque `String` —
+/// matching the spec's own method signature (`upload_mockup(.., image:
+/// String, ..)`). Every field is set once at `upload_mockup` time — there is
+/// no update method, only new uploads — so the whole record is wrapped in one
+/// `LwwRegister` rather than field-by-field CRDTs. No nested CRDT, so
+/// `Mockup` carries both Borsh (storage) and Serde (ABI) derives directly.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
 #[borsh(crate = "calimero_sdk::borsh")]
-pub struct Item {
-    pub label: String,
-    /// The item's mutable body. LWW on concurrent updates.
-    pub value: LwwRegister<String>,
-    pub created_ms: u64,
+#[serde(crate = "calimero_sdk::serde")]
+pub struct Mockup {
+    pub id: String,
+    pub title: String,
+    pub image: String,
+    pub version: u32,
+    pub created_at: u64,
 }
 
-/// Hand-written merge. The immutable fields (`label`, `created_ms`) tie-break
-/// deterministically; `value` delegates to the nested `LwwRegister` so the
-/// freshest write wins. A `#[derive(Mergeable)]` would generate this, but we
-/// write it by hand to demonstrate the pattern (and to pair it with the
-/// required `RekeyTarget`).
-impl Mergeable for Item {
+/// A feedback pin dropped at an exact spot on a mockup. `mockup_id`/`x`/`y`/
+/// `created_at` are set once at `add_pin` and never change; `text` is a
+/// `LwwRegister` because it's mutated in place by `edit_pin`. Because this
+/// struct **nests a CRDT** and is stored as an `UnorderedMap` value, it
+/// implements `Mergeable` by hand AND `RekeyTarget` (see below). Authorship
+/// (who may edit/remove it) is tracked separately in `pin_owners`, not on
+/// this struct — see the module doc.
+// Borsh-only: nests a `LwwRegister`, which has no serde impl in
+// calimero_storage. Callers get the serde-able `PinView` instead.
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[borsh(crate = "calimero_sdk::borsh")]
+pub struct Pin {
+    pub mockup_id: String,
+    pub x: f32,
+    pub y: f32,
+    /// The pin's comment text. LWW on concurrent author edits.
+    pub text: LwwRegister<String>,
+    pub created_at: u64,
+}
+
+/// Hand-written merge. The set-once fields tie-break deterministically (only
+/// relevant in the freak case of a raced initial insert); `text` delegates to
+/// the nested `LwwRegister` so the freshest edit wins.
+impl Mergeable for Pin {
     fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
-        // Deterministic tie-break for the set-once fields so merge is
-        // commutative even if two replicas raced the initial insert.
-        if (other.created_ms, &other.label) < (self.created_ms, &self.label) {
-            self.label = other.label.clone();
-            self.created_ms = other.created_ms;
+        if other.created_at < self.created_at {
+            self.mockup_id = other.mockup_id.clone();
+            self.x = other.x;
+            self.y = other.y;
+            self.created_at = other.created_at;
         }
         // `LwwRegister::merge` returns `()` (infallible HLC last-writer-wins),
         // so wrap it back into the fallible `Mergeable::merge` signature.
-        self.value.merge(&other.value);
+        self.text.merge(&other.text);
         Ok(())
     }
 }
 
-/// Deterministic re-keying for a hand-written CRDT-value struct (#2577).
-///
-/// `Item` nests a `LwwRegister`. Stored as an `UnorderedMap` value it would be
-/// LWW'd as an opaque blob unless we re-key the nested register under a
-/// field-namespaced child of the entry id, so every replica derives identical
-/// ids and the register converges as a child entity. `#[derive(Mergeable)]`
-/// generates this for you; a hand-written `Mergeable` MUST provide it too.
-impl RekeyTarget for Item {
+/// Deterministic re-keying for a hand-written CRDT-value struct (#2577). `Pin`
+/// nests a `LwwRegister`; without re-keying it under a field-namespaced child
+/// of the entry id, the nested register would be LWW'd as an opaque blob
+/// instead of converging as its own child entity.
+impl RekeyTarget for Pin {
     fn rekey_relative_to(&mut self, parent_id: Id) {
         calimero_storage::rekey_field_if_supported!(
-            &mut self.value,
-            field_child_id(parent_id, "value")
+            &mut self.text,
+            field_child_id(parent_id, "text")
         );
     }
 }
 
-/// Read-shaped view returned to callers: the registry id, the item, and the
-/// base58 owner key. A named struct (not a tuple) so the generated ABI client
-/// gets typed fields.
+/// Read-shaped pin returned to callers: the generated id, the resolved flag
+/// (tracked separately — see `pin_resolved` on state), and the base58 author
+/// key. A named struct (not a tuple) so the generated ABI client gets typed
+/// fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(crate = "calimero_sdk::serde")]
-pub struct ItemView {
+pub struct PinView {
     pub id: String,
-    pub label: String,
-    pub value: String,
-    pub created_ms: u64,
-    pub owner: String,
-}
-
-/// Per-node draft, never replicated. `#[app::private]` keeps it local to the
-/// node — handy for "save before submit" UX that should not leak to peers.
-#[derive(BorshSerialize, BorshDeserialize, Debug)]
-#[borsh(crate = "calimero_sdk::borsh")]
-#[calimero_sdk::app::private]
-pub struct Draft {
+    pub mockup_id: String,
+    pub author: String,
+    pub x: f32,
+    pub y: f32,
     pub text: String,
-}
-
-impl Default for Draft {
-    fn default() -> Draft {
-        Draft { text: String::new() }
-    }
+    pub resolved: bool,
+    pub created_at: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -127,170 +131,246 @@ impl Default for Draft {
 // `#[app::state]` injects the borsh derives itself (SDK 0.11+); a manual derive
 // here would collide.
 #[app::state(emits = for<'a> Event<'a>)]
-pub struct Registry {
-    /// The items, keyed by generated id. Plain `UnorderedMap`: any peer may add
-    /// or update an item's value (LWW), so no per-author gate on the data.
-    items: UnorderedMap<String, Item>,
-    /// Authorship index: `item_id → owner-claim`. `AuthoredMap` stamps the
-    /// adding executor as owner and rejects `update`/`remove` by anyone else,
-    /// so it structurally owner-gates deletion without a manual key check.
-    owners: AuthoredMap<String, LwwRegister<u64>>,
+pub struct DesignReview {
+    /// Mockup versions, keyed by generated id. The spec ties no writer-set /
+    /// admin-rotation API to this entity (`upload_mockup` is the only
+    /// mutation, and there's no "who may upload" acceptance criterion), so a
+    /// plain shared map is the simplest collection that satisfies every
+    /// requirement — reaching for `SharedStorage` here would add a writer set
+    /// and identity plumbing nothing in the spec exercises.
+    mockups: UnorderedMap<String, LwwRegister<Mockup>>,
+    /// Feedback pins, keyed by generated id. A plain shared map so `list_pins`
+    /// can filter with `.entries()` (`AuthoredMap` has no `entries()` — only
+    /// keyed access). Authorship is enforced separately via `pin_owners`.
+    pins: UnorderedMap<String, Pin>,
+    /// Authorship stamp per pin id. `AuthoredMap` records the adding executor
+    /// as owner; `edit_pin`/`remove_pin` gate through `pin_owners.update`/
+    /// `.remove` (both owner-only) before touching `pins`.
+    pin_owners: AuthoredMap<String, LwwRegister<u64>>,
+    /// Resolved flag per pin id, deliberately OUTSIDE `pin_owners`: ANY
+    /// teammate (not just the author) may resolve a pin, which the
+    /// author-gated map cannot allow — so resolving lives in its own open map.
+    pin_resolved: UnorderedMap<String, LwwRegister<bool>>,
 }
 
 #[app::logic]
-impl Registry {
+impl DesignReview {
     #[app::init]
-    pub fn init() -> Registry {
-        Registry {
-            items: UnorderedMap::new_with_field_name("registry:items"),
-            owners: AuthoredMap::new_with_field_name("registry:owners"),
+    pub fn init() -> DesignReview {
+        DesignReview {
+            mockups: UnorderedMap::new_with_field_name("design_review:mockups"),
+            pins: UnorderedMap::new_with_field_name("design_review:pins"),
+            pin_owners: AuthoredMap::new_with_field_name("design_review:pin_owners"),
+            pin_resolved: UnorderedMap::new_with_field_name("design_review:pin_resolved"),
         }
     }
 
-    /// Add an item. Returns its generated id. The caller becomes the owner; only
-    /// the owner may later delete it.
-    pub fn add(&mut self, label: String, value: String) -> app::Result<String> {
-        validate_label(&label).map_err(AppError::from)?;
+    // ---- Mockups ----
+
+    /// Upload a new mockup version. `image` is the blob id returned by the
+    /// frontend's raw-bytes upload (already replicated by the frontend's
+    /// upload/announce flow) — the backend just records the metadata.
+    pub fn upload_mockup(&mut self, title: String, image: String, version: u32) -> app::Result<String> {
+        if title.trim().is_empty() {
+            app::bail!(Error::Invalid("title must not be empty".into()));
+        }
 
         let now = storage_env::time_now();
         let mut nonce = [0u8; 4];
         env::random_bytes(&mut nonce);
-        let id = generate_id("item", now, &nonce);
+        let id = generate_id("mockup", now, &nonce);
 
-        let item = Item {
-            label,
-            value: LwwRegister::new(value),
-            // time_now() is nanoseconds; created_ms wants milliseconds.
-            created_ms: now / 1_000_000,
+        let mockup = Mockup {
+            id: id.clone(),
+            title: title.clone(),
+            image,
+            version,
+            created_at: now / 1_000_000,
         };
-        self.items
-            .insert(id.clone(), item)
-            .map_err(|e| AppError::msg(format!("items.insert: {e}")))?;
-        // Stamp the adding executor as the owner. The value is unused; the
-        // authorship stamp on the AuthoredMap entry is what gates delete.
-        self.owners
-            .insert(id.clone(), LwwRegister::new(now))
-            .map_err(|e| AppError::msg(format!("owners.insert: {e}")))?;
+        self.mockups
+            .insert(id.clone(), LwwRegister::new(mockup))
+            .map_err(|e| AppError::msg(format!("mockups.insert: {e}")))?;
 
-        let owner = self.owner_b58();
-        app::emit!(Event::ItemAdded {
-            id: &id,
-            owner: &owner,
-        });
+        app::emit!(Event::MockupUploaded { id: &id, title: &title });
         Ok(id)
     }
 
-    /// Update an item's value (LWW). Anyone may update — concurrent edits
-    /// converge to the last writer. Errors if the id is unknown.
-    pub fn update(&mut self, id: String, value: String) -> app::Result<()> {
-        let mut guard = self
-            .items
-            .get_mut(&id)
-            .map_err(|e| AppError::msg(format!("items.get_mut: {e}")))?
-            .ok_or_else(|| AppError::from(Error::NotFound(id.clone())))?;
-        guard.value.set(value);
-        drop(guard);
-
-        app::emit!(Event::ItemUpdated { id: &id });
-        Ok(())
-    }
-
-    /// Delete an item. Owner-gated: `AuthoredMap::remove` returns
-    /// `ActionNotAllowed` for non-owners, surfaced here as `Forbidden`.
-    pub fn delete(&mut self, id: String) -> app::Result<()> {
-        let removed = self
-            .owners
-            .remove(&id)
-            .map_err(map_owner_error())?;
-        if removed.is_none() {
-            app::bail!(Error::NotFound(id));
-        }
-        self.items
-            .remove(&id)
-            .map_err(|e| AppError::msg(format!("items.remove: {e}")))?;
-
-        app::emit!(Event::ItemDeleted { id: &id });
-        Ok(())
-    }
-
-    /// Get one item by id.
-    pub fn get(&self, id: String) -> app::Result<Option<ItemView>> {
-        let Some(item) = self
-            .items
-            .get(&id)
-            .map_err(|e| AppError::msg(format!("items.get: {e}")))?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(self.to_view(id, &item)?))
-    }
-
-    /// List all items, sorted by creation time then id for a stable order
-    /// (`UnorderedMap` iteration order is unspecified).
-    pub fn list(&self) -> app::Result<Vec<ItemView>> {
-        let mut out: Vec<ItemView> = self
-            .items
+    /// List all mockups, oldest to newest (`UnorderedMap` iteration order is
+    /// unspecified).
+    pub fn list_mockups(&self) -> app::Result<Vec<Mockup>> {
+        let mut out: Vec<Mockup> = self
+            .mockups
             .entries()
-            .map_err(|e| AppError::msg(format!("items.entries: {e}")))?
-            .map(|(id, item)| self.to_view(id, &item))
-            .collect::<app::Result<_>>()?;
-        out.sort_by(|a, b| (a.created_ms, &a.id).cmp(&(b.created_ms, &b.id)));
+            .map_err(|e| AppError::msg(format!("mockups.entries: {e}")))?
+            .map(|(_, reg)| reg.get().clone())
+            .collect();
+        out.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
         Ok(out)
     }
 
-    /// Number of items in the registry.
-    pub fn count(&self) -> app::Result<usize> {
-        self.items
-            .len()
-            .map_err(|e| AppError::msg(format!("items.len: {e}")))
+    // ---- Pins ----
+
+    /// Drop a pin at an exact spot on a mockup, with a comment. The caller
+    /// becomes the pin's author; only they may later edit or remove it.
+    pub fn add_pin(&mut self, mockup_id: String, x: f32, y: f32, text: String) -> app::Result<String> {
+        let exists = self
+            .mockups
+            .contains(&mockup_id)
+            .map_err(|e| AppError::msg(format!("mockups.contains: {e}")))?;
+        if !exists {
+            app::bail!(Error::NotFound(mockup_id));
+        }
+
+        let now = storage_env::time_now();
+        let mut nonce = [0u8; 4];
+        env::random_bytes(&mut nonce);
+        let id = generate_id("pin", now, &nonce);
+
+        let pin = Pin {
+            mockup_id: mockup_id.clone(),
+            x,
+            y,
+            text: LwwRegister::new(text),
+            created_at: now / 1_000_000,
+        };
+        self.pins
+            .insert(id.clone(), pin)
+            .map_err(|e| AppError::msg(format!("pins.insert: {e}")))?;
+        // Stamp the adding executor as author; gates edit_pin/remove_pin.
+        self.pin_owners
+            .insert(id.clone(), LwwRegister::new(now))
+            .map_err(|e| AppError::msg(format!("pin_owners.insert: {e}")))?;
+
+        app::emit!(Event::PinAdded { id: &id, mockup_id: &mockup_id, x, y });
+        Ok(id)
     }
 
-    // ---- Per-node draft (never replicated) ----
+    /// Edit a pin's comment text. Author-gated by comparing the caller against
+    /// `pin_owners.owner_of` (the CRDT-verified authorship stamp `add_pin`
+    /// wrote) — a read-only check, so unlike `remove_pin` this never writes
+    /// `pin_owners` itself; only the pin's `text` register changes.
+    pub fn edit_pin(&mut self, pin_id: String, text: String) -> app::Result<()> {
+        let owner = self
+            .pin_owners
+            .owner_of(&pin_id)
+            .map_err(|e| AppError::msg(format!("pin_owners.owner_of: {e}")))?
+            .ok_or_else(|| AppError::from(Error::NotFound(pin_id.clone())))?;
+        let caller: calimero_sdk::PublicKey = env::executor_id().into();
+        if owner != caller {
+            app::bail!(Error::Forbidden("can only edit your own pins".into()));
+        }
 
-    pub fn save_draft(&self, text: String) -> app::Result<()> {
-        let mut draft = Draft::private_load_or_default()?;
-        draft.as_mut().text = text;
+        let mut guard = self
+            .pins
+            .get_mut(&pin_id)
+            .map_err(|e| AppError::msg(format!("pins.get_mut: {e}")))?
+            .ok_or_else(|| AppError::from(Error::NotFound(pin_id.clone())))?;
+        guard.text.set(text.clone());
+        drop(guard);
+
+        app::emit!(Event::PinEdited { id: &pin_id, text: &text });
         Ok(())
     }
 
-    pub fn get_draft(&self) -> app::Result<String> {
-        Ok(Draft::private_load_or_default()?.text.clone())
+    /// Remove a pin. Author-gated: `pin_owners.remove` returns
+    /// `ActionNotAllowed` for non-authors, surfaced here as `Forbidden`.
+    pub fn remove_pin(&mut self, pin_id: String) -> app::Result<()> {
+        let removed = self
+            .pin_owners
+            .remove(&pin_id)
+            .map_err(map_owner_error("delete"))?;
+        if removed.is_none() {
+            app::bail!(Error::NotFound(pin_id));
+        }
+        self.pins
+            .remove(&pin_id)
+            .map_err(|e| AppError::msg(format!("pins.remove: {e}")))?;
+        // Best-effort cleanup of the resolved-status side table; a failure
+        // here would just leave an orphaned flag for a now-deleted pin id.
+        let _ = self.pin_resolved.remove(&pin_id);
+
+        app::emit!(Event::PinRemoved { id: &pin_id });
+        Ok(())
+    }
+
+    /// Mark a pin resolved. Open to ANY teammate (not just the author) — the
+    /// resolved flag lives in `pin_resolved`, a plain shared map, precisely so
+    /// this is not author-gated. Resolving one pin never touches any other
+    /// pin's entry.
+    pub fn resolve_pin(&mut self, pin_id: String) -> app::Result<()> {
+        let exists = self
+            .pins
+            .contains(&pin_id)
+            .map_err(|e| AppError::msg(format!("pins.contains: {e}")))?;
+        if !exists {
+            app::bail!(Error::NotFound(pin_id));
+        }
+
+        let mut guard = self
+            .pin_resolved
+            .entry(pin_id.clone())
+            .map_err(|e| AppError::msg(format!("pin_resolved.entry: {e}")))?
+            .or_insert(LwwRegister::new(false))
+            .map_err(|e| AppError::msg(format!("pin_resolved.or_insert: {e}")))?;
+        guard.set(true);
+        drop(guard);
+
+        app::emit!(Event::PinResolved { id: &pin_id });
+        Ok(())
+    }
+
+    /// List all pins on a mockup, oldest to newest — every pin always carries
+    /// its creation timestamp so the order is stable and meaningful.
+    pub fn list_pins(&self, mockup_id: String) -> app::Result<Vec<PinView>> {
+        let mut out: Vec<PinView> = self
+            .pins
+            .entries()
+            .map_err(|e| AppError::msg(format!("pins.entries: {e}")))?
+            .filter(|(_, pin)| pin.mockup_id == mockup_id)
+            .map(|(id, pin)| self.to_pin_view(id, &pin))
+            .collect::<app::Result<_>>()?;
+        out.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
+        Ok(out)
     }
 }
 
-impl Registry {
-    /// Base58 of the current executor — the public, shareable owner identity.
-    fn owner_b58(&self) -> String {
-        bs58::encode(env::executor_id()).into_string()
-    }
-
-    fn to_view(&self, id: String, item: &Item) -> app::Result<ItemView> {
+impl DesignReview {
+    fn to_pin_view(&self, id: String, pin: &Pin) -> app::Result<PinView> {
         // `owner_of` yields a `PublicKey`; `String::from(PublicKey)` is its
-        // canonical base58 encoding (see calimero_primitives::identity).
-        let owner = self
-            .owners
+        // canonical base58 encoding.
+        let author = self
+            .pin_owners
             .owner_of(&id)
-            .map_err(|e| AppError::msg(format!("owners.owner_of: {e}")))?
+            .map_err(|e| AppError::msg(format!("pin_owners.owner_of: {e}")))?
             .map(String::from)
             .unwrap_or_default();
-        Ok(ItemView {
+        let resolved = self
+            .pin_resolved
+            .get(&id)
+            .map_err(|e| AppError::msg(format!("pin_resolved.get: {e}")))?
+            .map(|reg| *reg.get())
+            .unwrap_or(false);
+        Ok(PinView {
             id,
-            label: item.label.clone(),
-            value: item.value.get().clone(),
-            created_ms: item.created_ms,
-            owner,
+            mockup_id: pin.mockup_id.clone(),
+            author,
+            x: pin.x,
+            y: pin.y,
+            text: pin.text.get().clone(),
+            resolved,
+            created_at: pin.created_at,
         })
     }
 }
 
 /// Translate an `AuthoredMap` access-control error into a friendly `Forbidden`.
-fn map_owner_error() -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
+fn map_owner_error(action: &'static str) -> impl FnOnce(calimero_storage::collections::StoreError) -> AppError {
     move |e| {
         let s = e.to_string();
         if s.contains("ActionNotAllowed") {
-            AppError::from(Error::Forbidden("only the owner may delete this item".into()))
+            AppError::from(Error::Forbidden(format!("can only {action} your own pins")))
         } else {
-            AppError::msg(format!("owners.remove: {s}"))
+            AppError::msg(format!("pin_owners.{action}: {s}"))
         }
     }
 }
@@ -305,65 +385,157 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn add_get_and_list() {
-        let mut app = TestHost::new(Registry::init);
+    const OTHER: [u8; 32] = [0x22; 32];
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        let view = app.view(|s| s.get(id.clone())).unwrap().unwrap();
-        assert_eq!(view.label, "widget");
-        assert_eq!(view.value, "v1");
-        assert_eq!(app.view(|s| s.count()).unwrap(), 1);
-        assert_eq!(app.view(|s| s.list()).unwrap().len(), 1);
-        // `add` emits exactly one event.
+    #[test]
+    fn upload_mockup_then_list() {
+        let mut app = TestHost::new(DesignReview::init);
+
+        let id = app
+            .call(|s| s.upload_mockup("Homepage v3".into(), "blob-9f2a".into(), 3))
+            .unwrap();
+        let mockups = app.view(|s| s.list_mockups()).unwrap();
+        assert_eq!(mockups.len(), 1);
+        assert_eq!(mockups[0].id, id);
+        assert_eq!(mockups[0].title, "Homepage v3");
+        assert_eq!(mockups[0].image, "blob-9f2a");
+        assert_eq!(mockups[0].version, 3);
+        // `upload_mockup` emits exactly one event.
         assert_eq!(app.events().len(), 1);
     }
 
     #[test]
-    fn update_changes_value() {
-        let mut app = TestHost::new(Registry::init);
-
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        app.call(|s| s.update(id.clone(), "v2".into())).unwrap();
-        assert_eq!(app.view(|s| s.get(id)).unwrap().unwrap().value, "v2");
+    fn upload_mockup_rejects_empty_title() {
+        let mut app = TestHost::new(DesignReview::init);
+        assert!(app.call(|s| s.upload_mockup("   ".into(), "blob-1".into(), 1)).is_err());
     }
 
     #[test]
-    fn update_unknown_id_errors() {
-        let mut app = TestHost::new(Registry::init);
-        assert!(app.call(|s| s.update("nope".into(), "x".into())).is_err());
+    fn add_pin_requires_known_mockup() {
+        let mut app = TestHost::new(DesignReview::init);
+        assert!(app.call(|s| s.add_pin("nope".into(), 0.1, 0.2, "hi".into())).is_err());
     }
 
     #[test]
-    fn owner_can_delete() {
-        let mut app = TestHost::new(Registry::init);
+    fn add_pin_then_list_at_position() {
+        let mut app = TestHost::new(DesignReview::init);
 
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
-        app.call(|s| s.delete(id.clone())).unwrap();
-        assert_eq!(app.view(|s| s.count()).unwrap(), 0);
-        assert!(app.view(|s| s.get(id)).unwrap().is_none());
+        let mockup_id = app
+            .call(|s| s.upload_mockup("Homepage v3".into(), "blob-9f2a".into(), 3))
+            .unwrap();
+        let pin_id = app
+            .call(|s| s.add_pin(mockup_id.clone(), 0.42, 0.71, "Button feels too small here".into()))
+            .unwrap();
+
+        let pins = app.view(|s| s.list_pins(mockup_id)).unwrap();
+        assert_eq!(pins.len(), 1);
+        assert_eq!(pins[0].id, pin_id);
+        assert_eq!(pins[0].x, 0.42);
+        assert_eq!(pins[0].y, 0.71);
+        assert_eq!(pins[0].text, "Button feels too small here");
+        assert!(!pins[0].resolved);
+        assert!(!pins[0].author.is_empty());
     }
 
     #[test]
-    fn non_owner_cannot_delete() {
-        let mut app = TestHost::new(Registry::init);
+    fn pins_are_scoped_to_their_mockup() {
+        let mut app = TestHost::new(DesignReview::init);
 
-        // Default identity adds the item, so it owns it.
-        let id = app.call(|s| s.add("widget".into(), "v1".into())).unwrap();
+        let mockup_a = app.call(|s| s.upload_mockup("A".into(), "blob-a".into(), 1)).unwrap();
+        let mockup_b = app.call(|s| s.upload_mockup("B".into(), "blob-b".into(), 1)).unwrap();
+        app.call(|s| s.add_pin(mockup_a.clone(), 0.1, 0.1, "on A".into())).unwrap();
+        app.call(|s| s.add_pin(mockup_b.clone(), 0.2, 0.2, "on B".into())).unwrap();
 
-        // A different executor is not the owner — AuthoredMap rejects the
-        // delete, surfaced as Forbidden.
-        let other = [9u8; 32];
-        assert!(app.call_as(other, |s| s.delete(id.clone())).is_err());
-        // The item survives the rejected delete.
-        assert_eq!(app.view(|s| s.count()).unwrap(), 1);
+        assert_eq!(app.view(|s| s.list_pins(mockup_a)).unwrap().len(), 1);
+        assert_eq!(app.view(|s| s.list_pins(mockup_b)).unwrap().len(), 1);
     }
 
     #[test]
-    fn private_draft_roundtrips() {
-        let mut app = TestHost::new(Registry::init);
+    fn author_can_edit_own_pin() {
+        let mut app = TestHost::new(DesignReview::init);
 
-        app.call(|s| s.save_draft("hello".into())).unwrap();
-        assert_eq!(app.view(|s| s.get_draft()).unwrap(), "hello");
+        let mockup_id = app.call(|s| s.upload_mockup("A".into(), "blob-a".into(), 1)).unwrap();
+        let pin_id = app.call(|s| s.add_pin(mockup_id.clone(), 0.1, 0.1, "v1".into())).unwrap();
+        app.call(|s| s.edit_pin(pin_id.clone(), "v2".into())).unwrap();
+
+        let pins = app.view(|s| s.list_pins(mockup_id)).unwrap();
+        assert_eq!(pins[0].text, "v2");
+    }
+
+    #[test]
+    fn non_author_cannot_edit_pin() {
+        let mut app = TestHost::new(DesignReview::init);
+
+        let mockup_id = app.call(|s| s.upload_mockup("A".into(), "blob-a".into(), 1)).unwrap();
+        let pin_id = app.call(|s| s.add_pin(mockup_id.clone(), 0.1, 0.1, "v1".into())).unwrap();
+
+        let denied = app.call_as(OTHER, |s| s.edit_pin(pin_id.clone(), "hijacked".into()));
+        assert!(denied.is_err());
+        assert_eq!(app.view(|s| s.list_pins(mockup_id)).unwrap()[0].text, "v1");
+    }
+
+    #[test]
+    fn author_can_remove_own_pin() {
+        let mut app = TestHost::new(DesignReview::init);
+
+        let mockup_id = app.call(|s| s.upload_mockup("A".into(), "blob-a".into(), 1)).unwrap();
+        let pin_id = app.call(|s| s.add_pin(mockup_id.clone(), 0.1, 0.1, "v1".into())).unwrap();
+        app.call(|s| s.remove_pin(pin_id)).unwrap();
+
+        assert!(app.view(|s| s.list_pins(mockup_id)).unwrap().is_empty());
+    }
+
+    #[test]
+    fn non_author_cannot_remove_pin() {
+        let mut app = TestHost::new(DesignReview::init);
+
+        let mockup_id = app.call(|s| s.upload_mockup("A".into(), "blob-a".into(), 1)).unwrap();
+        let pin_id = app.call(|s| s.add_pin(mockup_id.clone(), 0.1, 0.1, "v1".into())).unwrap();
+
+        let denied = app.call_as(OTHER, |s| s.remove_pin(pin_id));
+        assert!(denied.is_err());
+        assert_eq!(app.view(|s| s.list_pins(mockup_id)).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn any_teammate_can_resolve_a_pin() {
+        let mut app = TestHost::new(DesignReview::init);
+
+        let mockup_id = app.call(|s| s.upload_mockup("A".into(), "blob-a".into(), 1)).unwrap();
+        let pin_id = app.call(|s| s.add_pin(mockup_id.clone(), 0.1, 0.1, "v1".into())).unwrap();
+
+        // A different identity than the author resolves it — must be allowed.
+        app.call_as(OTHER, |s| s.resolve_pin(pin_id)).unwrap();
+
+        assert!(app.view(|s| s.list_pins(mockup_id)).unwrap()[0].resolved);
+    }
+
+    #[test]
+    fn resolving_one_pin_leaves_others_untouched() {
+        let mut app = TestHost::new(DesignReview::init);
+
+        let mockup_id = app.call(|s| s.upload_mockup("A".into(), "blob-a".into(), 1)).unwrap();
+        let pin_a = app.call(|s| s.add_pin(mockup_id.clone(), 0.1, 0.1, "a".into())).unwrap();
+        let _pin_b = app.call(|s| s.add_pin(mockup_id.clone(), 0.2, 0.2, "b".into())).unwrap();
+
+        app.call(|s| s.resolve_pin(pin_a.clone())).unwrap();
+
+        let pins = app.view(|s| s.list_pins(mockup_id)).unwrap();
+        let a = pins.iter().find(|p| p.id == pin_a).unwrap();
+        let b = pins.iter().find(|p| p.id != pin_a).unwrap();
+        assert!(a.resolved);
+        assert!(!b.resolved);
+    }
+
+    #[test]
+    fn resolve_pin_unknown_id_errors() {
+        let mut app = TestHost::new(DesignReview::init);
+        assert!(app.call(|s| s.resolve_pin("nope".into())).is_err());
+    }
+
+    #[test]
+    fn edit_pin_unknown_id_errors() {
+        let mut app = TestHost::new(DesignReview::init);
+        assert!(app.call(|s| s.edit_pin("nope".into(), "x".into())).is_err());
     }
 }
