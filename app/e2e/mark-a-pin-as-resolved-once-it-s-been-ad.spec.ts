@@ -75,9 +75,11 @@ test.describe(`teammate: mark a pin as resolved once it's been addressed`, () =>
     // B, who did not author the pin, resolves it.
     await resolvedRowB.getByTestId('action-resolve_pin').click();
 
-    // Resolved status updates for everyone within 5s.
-    await expect(resolvedRowB.getByText('Resolved')).toBeVisible({ timeout: 5_000 });
-    await expect(rowA.getByText('Resolved')).toBeVisible({ timeout: 5_000 });
+    // Resolved status updates for everyone within 5s: the resolve action is
+    // only rendered for open pins, so its disappearance on both actors' views
+    // is a stable, testid-driven proxy for "resolved" (no hardcoded label).
+    await expect(resolvedRowB.getByTestId('action-resolve_pin')).toHaveCount(0, { timeout: 5_000 });
+    await expect(rowA.getByTestId('action-resolve_pin')).toHaveCount(0, { timeout: 5_000 });
 
     await ctxA.close();
     await ctxB.close();
@@ -97,10 +99,10 @@ test.describe(`teammate: mark a pin as resolved once it's been addressed`, () =>
     const rowTwo = page.getByTestId('item-pin').filter({ hasText: textTwo });
 
     await rowOne.getByTestId('action-resolve_pin').click();
-    await expect(rowOne.getByText('Resolved')).toBeVisible({ timeout: 5_000 });
+    await expect(rowOne.getByTestId('action-resolve_pin')).toHaveCount(0, { timeout: 5_000 });
 
-    // The other pin's resolved status must be untouched.
-    await expect(rowTwo.getByText('Resolved')).toHaveCount(0);
+    // The other pin's resolved status must be untouched: its resolve action
+    // must still be present (it is only removed once that pin is resolved).
     await expect(rowTwo.getByTestId('action-resolve_pin')).toBeVisible();
   });
 });

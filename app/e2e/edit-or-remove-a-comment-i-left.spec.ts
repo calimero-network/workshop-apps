@@ -64,12 +64,16 @@ test.describe(`teammate: edit or remove a comment I left`, () => {
     await expect(rowB.getByTestId('action-remove_pin')).toHaveCount(0);
     await expect(rowB.getByRole('button', { name: 'Edit' })).toHaveCount(0);
 
-    // A, the author, can edit the pin they created.
+    // A, the author, can edit the pin they created. Clicking Edit swaps that
+    // row's rendered comment text for a <textarea> (same testid, new content),
+    // so the stale `rowA` locator (filtered on the pre-edit text) no longer
+    // matches anything once editing starts — address the composer at the page
+    // level instead, since only one edit form can be open at a time.
     const rowA = teammateA.getByTestId('item-pin').filter({ hasText: text });
     await rowA.getByRole('button', { name: 'Edit' }).click();
     const editedText = uniqueName('pin-comment-edited');
-    await rowA.getByTestId('field-text').fill(editedText);
-    await rowA.getByTestId('action-edit_pin').click();
+    await teammateA.getByTestId('field-text').fill(editedText);
+    await teammateA.getByTestId('action-edit_pin').click();
     await expect(teammateA.getByTestId('item-pin').filter({ hasText: editedText })).toBeVisible({ timeout: 5_000 });
 
     // A, the author, can delete the pin they created.
