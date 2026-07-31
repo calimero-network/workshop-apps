@@ -64,8 +64,10 @@ test.describe(`member: add an expense and choose how to split it — equally amo
       const description = uniqueName('dinner');
       await pageA.getByTestId('field-description').fill(description);
       await pageA.getByTestId('field-amount').fill('20');
-      // Split type defaults to "equal"; explicitly select the payer too.
-      await pageA.getByTestId('field-split_type').getByText('Equally').click();
+      // Split type defaults to "equal"; explicitly select it via position
+      // (not label text, which is UI chrome, not a created entity) to
+      // avoid depending on hardcoded copy.
+      await pageA.getByTestId('field-split_type').locator('button').first().click();
       await pageA.getByTestId('field-paid_by').selectOption({ label: `${payerName} paid` });
       await pageA.getByTestId('action-add_expense').click();
 
@@ -81,7 +83,7 @@ test.describe(`member: add an expense and choose how to split it — equally amo
       const singleDescription = uniqueName('cab');
       await pageA.getByTestId('field-description').fill(singleDescription);
       await pageA.getByTestId('field-amount').fill('8');
-      await pageA.getByTestId('field-split_type').getByText('Owed by one person').click();
+      await pageA.getByTestId('field-split_type').locator('button').nth(1).click();
       await pageA.getByTestId('field-owed_by').selectOption({ label: `${otherName} owes all` });
       await pageA.getByTestId('action-add_expense').click();
 

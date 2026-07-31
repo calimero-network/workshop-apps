@@ -56,10 +56,13 @@ test.describe(`anyone in the group: see a spending dashboard — total spent and
 
     await page.getByTestId('tab-dashboard').click();
 
-    // Total group spend is always shown, formatted as currency.
-    await expect(page.locator('.lbl', { hasText: 'Total group spend' })).toBeVisible();
+    // Total group spend is always shown, formatted as currency, and reflects
+    // the expense this test just added (not a hardcoded UI label — the
+    // amount ties the assertion to data this test created).
     const totalText = await page.locator('.num').first().textContent();
     expect(totalText).toMatch(/₹[\d,]+/);
+    const totalValue = Number((totalText ?? '').replace(/[^\d]/g, ''));
+    expect(totalValue).toBeGreaterThanOrEqual(15);
 
     // Each member's total paid and total owed are shown on the Members tab.
     // As the sole participant on every expense they've authored so far,
