@@ -1,0 +1,57 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--c-font-body);
+  font-size: var(--c-text-base);
+  background: var(--c-paper);
+  color: var(--c-ink);
+  min-height: 100vh;
+}
+
+/* The display face is a per-preset character axis, so every heading carries it
+   with the tracking authored for that face. */
+h1, h2, h3 {
+  font-family: var(--c-font-display);
+  letter-spacing: var(--c-display-tracking);
+}
+
+/* mero-react's ConnectButton and its login popup are styled from --mero-*, a
+   namespace of its own. The popup is portaled to <body>, so it can only be
+   reached from :root, and mero-react injects its own :root at runtime, so this
+   needs the extra specificity of :root:root to land after it.
+
+   ONLY the accent trio is remapped. mero-react's surfaces are a self-consistent
+   dark theme and stay untouched, which is what keeps the popup's internal
+   contrast intact; overriding those is what broke it before. The accent comes
+   from --c-accent-on-dark rather than --c-accent because the popup is always
+   dark and a light-mode accent would be unreadable on it. */
+:root:root {
+  --mero-accent: var(--c-accent-on-dark);
+  --mero-accent-hover: color-mix(in srgb, var(--c-accent-on-dark) 85%, white);
+  --mero-on-primary: var(--c-accent-ink-on-dark);
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-bg {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tokens this app needs and the scale does not have. A definition has to carry
+   a concrete value, so the design lint's colour and size rules stop between
+   these markers. Carry the same --c- prefix, derive from the scale above, and
+   leave colour alone: the preset owns that. */
+/* app-tokens:start */
+:root {
+}
+/* app-tokens:end */

@@ -1,0 +1,48 @@
+{
+  "appName": "tagebuch-thailand",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.tagebuch-thailand",
+  "metadata": {
+    "name": "tagebuch-thailand",
+    "description": "A shared travel journal for two: daily curated suggestions, tap-to-stamp activities, and auto-generated end-of-day postcards, all synced live between both travelers",
+    "author": "Calimero",
+    "route": "/tagebuch-thailand"
+  },
+  "theme": {
+    "primaryColor": "#3B82F6",
+    "accentColor": "#10B981",
+    "style": "default",
+    "preset": "paper",
+    "defaultMode": "light",
+    "overrides": {}
+  },
+  "layoutPreset": "centered-tool",
+  "topology": {
+    "kind": "single",
+    "defaultCapabilities": [
+      "CAN_CREATE_CONTEXT",
+      "CAN_INVITE",
+      "MANAGE_MEMBERS"
+    ],
+    "example": {
+      "namespaces": [
+        "Mia & Jonas"
+      ],
+      "contexts": [
+        "Thailand August 2024"
+      ],
+      "flow": [
+        "Open the app each morning to see today's stop and suggestions",
+        "Stamp activities together throughout the day",
+        "Review the day and generate a postcard in the evening",
+        "Browse the shared gallery of every postcard from the trip"
+      ]
+    }
+  },
+  "services": [
+    {
+      "name": "reisetagebuch",
+      "crate": "tagebuch-thailand-reisetagebuch"
+    }
+  ]
+}
