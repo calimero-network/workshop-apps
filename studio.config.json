@@ -1,0 +1,49 @@
+{
+  "appName": "pinpoint-feedback",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.pinpoint-feedback",
+  "metadata": {
+    "name": "pinpoint-feedback",
+    "description": "Teammates pin timestamped feedback to exact spots on a designer's mockups, each resolved independently",
+    "author": "Calimero",
+    "route": "/pinpoint-feedback"
+  },
+  "theme": {
+    "primaryColor": "#6B46C1",
+    "accentColor": "#10B981",
+    "style": "modern-playful",
+    "preset": "editorial",
+    "defaultMode": "dark",
+    "overrides": {}
+  },
+  "layoutPreset": "centered-tool",
+  "topology": {
+    "kind": "single",
+    "defaultCapabilities": [
+      "CAN_CREATE_CONTEXT",
+      "CAN_INVITE",
+      "MANAGE_MEMBERS"
+    ],
+    "example": {
+      "namespaces": [
+        "Product Design Team",
+        "Client X Reviewers"
+      ],
+      "contexts": [
+        "Homepage Redesign Review"
+      ],
+      "flow": [
+        "Designer uploads a mockup version",
+        "Teammates pin feedback to exact spots",
+        "Each pin gets resolved independently as it's addressed",
+        "Designer checks remaining open pins before the next version"
+      ]
+    }
+  },
+  "services": [
+    {
+      "name": "design-review",
+      "crate": "pinpoint-feedback-design-review"
+    }
+  ]
+}
