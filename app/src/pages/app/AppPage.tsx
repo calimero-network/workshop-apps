@@ -1,8 +1,9 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { C } from '../../theme';
 import { APP_DISPLAY_NAME } from '../../config';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { useGroupData } from '../../hooks/useGroupData';
 import { useFeedback } from '../../components/Feedback';
 import { describeError } from '../../utils/errors';
 import InviteModal from '../../components/InviteModal';
@@ -13,100 +14,32 @@ import WorkspaceChrome from '../../components/WorkspaceChrome';
 import { Card, Empty, Primary, Secondary, ErrLine, Hint, NARROW, WIDE, focusRing, tapTarget, EmptyState } from '../../components/primitives';
 import SettingsPanel from '../../components/SettingsPanel';
 import UnitRail from '../../components/UnitRail';
+import type { MemberView } from '../../api/group/GroupClient';
 
 /**
- * DESIGN DIRECTION (shell pass): Split Circle reads like a shared ledger, not a
- * generic list. Every expense is a receipt-line with a paid-by tag and a split
- * pill; the signature element is the Dashboard's balance bar — one horizontal
- * bar per member that fills toward the brand green when they're owed money and
- * toward the danger tone when they owe it, so the whole group's financial state
- * reads in one glance without parsing a single number.
+ * DESIGN DIRECTION: Split Circle reads like a shared ledger, not a generic
+ * list. Every expense is a receipt-line with a paid-by tag and a split pill;
+ * the signature element is the Dashboard's balance bar — one horizontal bar
+ * per member that fills toward the brand green when they're owed money and
+ * toward the danger tone when they owe it, so the whole group's financial
+ * state reads in one glance without parsing a single number.
  *
- * ABI-FREE SHELL PASS: this view is presentational only. Expenses, settlements
- * and members below are local component state seeded with a few example rows —
- * NOT wired to SplitcircleClient. A later pass replaces this local state with
- * real hooks (useExpenses/useSettlements/useMembers) bound to list_expenses,
- * add_expense, edit_expense, delete_expense, record_settlement, list_settlements,
- * list_members, get_balances, get_summary and rename_group.
+ * Wired to GroupClient via useGroupData: members/expenses/settlements are
+ * this group's authored records, balances/summary are the backend's own
+ * computed views (get_balances / get_summary) — the split math is never
+ * recomputed client-side, only formatted.
  */
 
 type SplitType = 'equal' | 'single';
 
-interface Member {
-  id: string;
-  name: string;
-}
-
-interface ExpenseRowData {
-  id: string;
-  description: string;
-  amount: number; // minor units (paise/cents)
-  paidBy: string;
-  splitType: SplitType;
-  participants: string[];
-  owedBy: string;
-}
-
-interface SettlementRowData {
-  id: string;
-  from: string;
-  to: string;
-  amount: number; // minor units
-}
-
-const MEMBERS: Member[] = [
-  { id: 'm-priya', name: 'Priya' },
-  { id: 'm-rahul', name: 'Rahul' },
-  { id: 'm-sam', name: 'Sam' },
-  { id: 'm-meera', name: 'Meera' },
-];
-
-const INITIAL_EXPENSES: ExpenseRowData[] = [
-  { id: 'exp-1', description: 'Dinner at Beach Shack', amount: 120000, paidBy: 'm-priya', splitType: 'equal', participants: ['m-priya', 'm-rahul', 'm-sam'], owedBy: '' },
-  { id: 'exp-2', description: 'Scooter rental', amount: 80000, paidBy: 'm-rahul', splitType: 'single', participants: [], owedBy: 'm-sam' },
-  { id: 'exp-3', description: 'Groceries', amount: 45000, paidBy: 'm-meera', splitType: 'equal', participants: ['m-priya', 'm-rahul', 'm-sam', 'm-meera'], owedBy: '' },
-];
-
-const INITIAL_SETTLEMENTS: SettlementRowData[] = [
-  { id: 'settle-1', from: 'm-sam', to: 'm-rahul', amount: 80000 },
-  { id: 'settle-2', from: 'm-meera', to: 'm-priya', amount: 15000 },
-];
-
 const fmt = (minor: number): string => `₹${Math.round(Math.abs(minor) / 100).toLocaleString()}`;
-const nameOf = (id: string): string => MEMBERS.find((m) => m.id === id)?.name ?? 'Unknown';
+
+function nameOf(members: MemberView[], id: string): string {
+  return members.find((m) => m.id === id)?.display_name ?? 'Unknown';
+}
 
 function splitShare(amount: number, count: number): number {
   return count > 0 ? Math.round(amount / count) : 0;
-}
-
-/** Pure so the split math is easy to eyeball/test independent of the UI. */
-function summarize(expenses: ExpenseRowData[]): { total: number; paid: Record<string, number>; owed: Record<string, number> } {
-  const paid: Record<string, number> = {};
-  const owed: Record<string, number> = {};
-  for (const m of MEMBERS) { paid[m.id] = 0; owed[m.id] = 0; }
-  let total = 0;
-  for (const e of expenses) {
-    total += e.amount;
-    paid[e.paidBy] = (paid[e.paidBy] ?? 0) + e.amount;
-    if (e.splitType === 'equal') {
-      const share = splitShare(e.amount, e.participants.length);
-      for (const p of e.participants) owed[p] = (owed[p] ?? 0) + share;
-    } else if (e.owedBy) {
-      owed[e.owedBy] = (owed[e.owedBy] ?? 0) + e.amount;
-    }
-  }
-  return { total, paid, owed };
-}
-
-function computeBalances(expenses: ExpenseRowData[], settlements: SettlementRowData[]): Record<string, number> {
-  const { paid, owed } = summarize(expenses);
-  const net: Record<string, number> = {};
-  for (const m of MEMBERS) net[m.id] = (paid[m.id] ?? 0) - (owed[m.id] ?? 0);
-  for (const s of settlements) {
-    net[s.from] = (net[s.from] ?? 0) + s.amount;
-    net[s.to] = (net[s.to] ?? 0) - s.amount;
-  }
-  return net;
 }
 
 /* Drawn marks, not emoji — stroked with currentColor so they take the preset accent. */
@@ -148,6 +81,7 @@ const TABS: { key: Tab; label: string }[] = [
 export default function AppPage() {
   const { notify } = useFeedback();
   const ws = useWorkspace();
+  const data = useGroupData({ contextId: ws.contextId, executorPublicKey: ws.executorPublicKey });
 
   const [wsName, setWsName] = useState('My group');
   const [showInvite, setShowInvite] = useState(false);
@@ -155,11 +89,10 @@ export default function AppPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [tab, setTab] = useState<Tab>('expenses');
 
-  // Local mock domain state — swapped for the real ABI-backed hooks in the next pass.
-  const [expenses, setExpenses] = useState<ExpenseRowData[]>(INITIAL_EXPENSES);
-  const [settlements, setSettlements] = useState<SettlementRowData[]>(INITIAL_SETTLEMENTS);
-  const idCounter = useRef(0);
-  const nextId = (prefix: string) => { idCounter.current += 1; return `${prefix}-${idCounter.current}`; };
+  // Group-scoped join: the caller's own MemberProfile in THIS group is created
+  // by set_display_name, distinct from the namespace's generic display name.
+  const [joinName, setJoinName] = useState('');
+  const [joining, setJoining] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDescription, setEditDescription] = useState('');
@@ -167,92 +100,190 @@ export default function AppPage() {
 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState(MEMBERS[0].id);
+  const [paidBy, setPaidBy] = useState('');
   const [splitType, setSplitType] = useState<SplitType>('equal');
-  const [participants, setParticipants] = useState<string[]>(MEMBERS.map((m) => m.id));
-  const [owedBy, setOwedBy] = useState(MEMBERS[1]?.id ?? MEMBERS[0].id);
+  const [participants, setParticipants] = useState<string[]>([]);
+  const [owedBy, setOwedBy] = useState('');
+  const participantsSeeded = useRef(false);
 
   const [showSettle, setShowSettle] = useState(false);
-  const [settleFrom, setSettleFrom] = useState(MEMBERS[0].id);
-  const [settleTo, setSettleTo] = useState(MEMBERS[1]?.id ?? MEMBERS[0].id);
+  const [settleFrom, setSettleFrom] = useState('');
+  const [settleTo, setSettleTo] = useState('');
   const [settleAmount, setSettleAmount] = useState('');
 
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState('');
+  // GroupInfo.name isn't exposed by any view method — rename_group only
+  // mutates backend state — so the header shows this local override (seeded
+  // from the context label) immediately after a successful rename.
+  const [nameOverride, setNameOverride] = useState<string | null>(null);
 
-  const { total, paid, owed } = useMemo(() => summarize(expenses), [expenses]);
-  const balances = useMemo(() => computeBalances(expenses, settlements), [expenses, settlements]);
-  const maxAbsBalance = Math.max(1, ...MEMBERS.map((m) => Math.abs(balances[m.id] ?? 0)));
-  const topPayer = useMemo(
-    () => MEMBERS.reduce((best, m) => ((paid[m.id] ?? 0) > (paid[best.id] ?? 0) ? m : best), MEMBERS[0]),
-    [paid],
+  const { members, expenses, settlements, summary, balances, selfMember } = data;
+
+  // Reset per-group UI state whenever the active group changes, so a stale
+  // draft/edit from the previous group never bleeds into the new one.
+  useEffect(() => {
+    setTab('expenses');
+    setEditingId(null);
+    setShowSettle(false);
+    setRenaming(false);
+    setNameOverride(null);
+    participantsSeeded.current = false;
+  }, [ws.activeUnitId]);
+
+  // Seed the form's member-scoped defaults once real members are known. Never
+  // gate a controlled select's value on a `|| fallback` expression — set real
+  // state here so every change still fires onChange.
+  useEffect(() => {
+    if (members.length === 0) return;
+    const ids = members.map((m) => m.id);
+    const self = selfMember?.id ?? ids[0];
+    const other = ids.find((id) => id !== self) ?? self;
+    if (!paidBy || !ids.includes(paidBy)) setPaidBy(self);
+    if (!owedBy || !ids.includes(owedBy)) setOwedBy(other);
+    if (!settleFrom || !ids.includes(settleFrom)) setSettleFrom(self);
+    if (!settleTo || !ids.includes(settleTo)) setSettleTo(other);
+    if (!participantsSeeded.current) {
+      participantsSeeded.current = true;
+      setParticipants(ids);
+    } else {
+      setParticipants((prev) => prev.filter((id) => ids.includes(id)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members, selfMember]);
+
+  const groupName = nameOverride ?? ws.units.find((u) => u.contextId === ws.activeUnitId)?.name ?? 'Group';
+  // Heuristic: the earliest joiner is very likely the group's creator (there's
+  // no get_group_info view method to read GroupInfo's governance directly).
+  const creator = useMemo(
+    () => (members.length > 0 ? members.reduce((a, b) => (a.joined_at <= b.joined_at ? a : b)) : null),
+    [members],
   );
 
-  const groupName = ws.units.find((u) => u.contextId === ws.activeUnitId)?.name || 'Group';
+  const paidMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const row of summary?.members ?? []) m[row.member_id] = row.total_paid;
+    return m;
+  }, [summary]);
+  const owedMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const row of summary?.members ?? []) m[row.member_id] = row.total_owed;
+    return m;
+  }, [summary]);
+  const balanceMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const b of balances) m[b.member_id] = b.net;
+    return m;
+  }, [balances]);
+  const total = summary?.total_spent ?? 0;
+  const maxAbsBalance = Math.max(1, ...balances.map((b) => Math.abs(b.net)));
+  const topPayer = useMemo(
+    () => (summary?.members ?? []).reduce<{ member_id: string; total_paid: number } | null>(
+      (best, m) => (!best || m.total_paid > best.total_paid ? m : best),
+      null,
+    ),
+    [summary],
+  );
 
   const toggleParticipant = (id: string) => {
     setParticipants((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
   };
 
-  const submitExpense = (e: React.FormEvent) => {
+  const submitJoin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const minor = Math.round(Number(amount) * 100);
-    if (!description.trim() || !minor || minor <= 0) return;
-    if (splitType === 'equal' && participants.length === 0) return;
-    if (splitType === 'single' && !owedBy) return;
-    const row: ExpenseRowData = {
-      id: nextId('exp'),
-      description: description.trim(),
-      amount: minor,
-      paidBy,
-      splitType,
-      participants: splitType === 'equal' ? participants : [],
-      owedBy: splitType === 'single' ? owedBy : '',
-    };
-    setExpenses((prev) => [...prev, row]);
-    setDescription('');
-    setAmount('');
-    notify('Expense added');
+    const trimmed = joinName.trim();
+    if (!trimmed || joining) return;
+    setJoining(true);
+    try {
+      await data.setDisplayName(trimmed);
+      setJoinName('');
+      notify('Welcome to the group');
+    } catch (err) {
+      notify(describeError(err), 'error');
+    } finally {
+      setJoining(false);
+    }
   };
 
-  const startEdit = (row: ExpenseRowData) => {
+  const submitExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const minor = Math.round(Number(amount) * 100);
+    if (!description.trim() || !minor || minor <= 0 || !paidBy) return;
+    if (splitType === 'equal' && participants.length === 0) return;
+    if (splitType === 'single' && !owedBy) return;
+    try {
+      await data.addExpense({
+        description: description.trim(),
+        amount: minor,
+        paid_by: paidBy,
+        split_type: splitType,
+        participants: splitType === 'equal' ? participants : [],
+        owed_by: splitType === 'single' ? owedBy : '',
+      });
+      setDescription('');
+      setAmount('');
+      notify('Expense added');
+    } catch (err) {
+      notify(describeError(err), 'error');
+    }
+  };
+
+  const startEdit = (row: { id: string; description: string; amount: number }) => {
     setEditingId(row.id);
     setEditDescription(row.description);
     setEditAmount(String(row.amount / 100));
   };
 
-  const saveEdit = (e: React.FormEvent) => {
+  const saveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     const minor = Math.round(Number(editAmount) * 100);
     if (!editDescription.trim() || !minor || minor <= 0 || !editingId) return;
-    const id = editingId;
-    setExpenses((prev) => prev.map((row) => (row.id === id ? { ...row, description: editDescription.trim(), amount: minor } : row)));
-    setEditingId(null);
-    notify('Expense updated');
+    try {
+      await data.editExpense(editingId, editDescription.trim(), minor);
+      setEditingId(null);
+      notify('Expense updated');
+    } catch (err) {
+      notify(describeError(err), 'error');
+    }
   };
 
-  const removeExpense = (id: string) => {
-    setExpenses((prev) => prev.filter((row) => row.id !== id));
-    if (editingId === id) setEditingId(null);
-    notify('Expense removed');
+  const removeExpense = async (id: string) => {
+    try {
+      await data.deleteExpense(id);
+      if (editingId === id) setEditingId(null);
+      notify('Expense removed');
+    } catch (err) {
+      notify(describeError(err), 'error');
+    }
   };
 
-  const submitSettlement = (e: React.FormEvent) => {
+  const submitSettlement = async (e: React.FormEvent) => {
     e.preventDefault();
     const minor = Math.round(Number(settleAmount) * 100);
     if (!minor || minor <= 0 || settleFrom === settleTo) return;
-    setSettlements((prev) => [...prev, { id: nextId('settle'), from: settleFrom, to: settleTo, amount: minor }]);
-    setSettleAmount('');
-    setShowSettle(false);
-    notify('Settlement recorded');
+    try {
+      await data.recordSettlement(settleFrom, settleTo, minor);
+      setSettleAmount('');
+      setShowSettle(false);
+      notify('Settlement recorded');
+    } catch (err) {
+      notify(describeError(err), 'error');
+    }
   };
 
-  const submitRename = (e: React.FormEvent) => {
+  const submitRename = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim()) return;
-    setRenaming(false);
-    setNewName('');
-    notify('Group renamed');
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    try {
+      await data.renameGroup(trimmed);
+      setNameOverride(trimmed);
+      setRenaming(false);
+      setNewName('');
+      notify('Group renamed');
+    } catch (err) {
+      notify(describeError(err), 'error');
+    }
   };
 
   // No namespace yet (fresh web session): offer create-or-join. workspace-ready
@@ -304,12 +335,33 @@ export default function AppPage() {
           <Content>
             {!ws.activeUnitId ? (
               <Hint>Create or pick a group in the rail to get started.</Hint>
+            ) : !data.ready || (data.loading && members.length === 0) ? (
+              <Hint>Loading group…</Hint>
+            ) : !selfMember ? (
+              <Card data-testid="group-join-gate">
+                <h2>Join {groupName}</h2>
+                <p>Pick the name the rest of this group will see you as.</p>
+                <JoinForm onSubmit={(e) => { void submitJoin(e); }}>
+                  <input
+                    data-testid="field-display_name"
+                    value={joinName}
+                    onChange={(e) => setJoinName(e.target.value)}
+                    placeholder="Your name"
+                    maxLength={64}
+                    autoFocus
+                    aria-label="Your name"
+                  />
+                  <Primary data-testid="action-set_display_name" type="submit" disabled={!joinName.trim() || joining}>
+                    {joining ? 'Joining…' : 'Join group'}
+                  </Primary>
+                </JoinForm>
+              </Card>
             ) : (
               <>
                 <GroupHeader>
                   <div className="titleBlock">
                     {renaming ? (
-                      <RenameForm onSubmit={submitRename}>
+                      <RenameForm onSubmit={(e) => { void submitRename(e); }}>
                         <input
                           data-testid="field-new_name"
                           value={newName}
@@ -328,10 +380,13 @@ export default function AppPage() {
                         <RenameBtn type="button" aria-label="Rename group" onClick={() => setRenaming(true)}>{IconPencil}</RenameBtn>
                       </h1>
                     )}
-                    <p className="sub">{MEMBERS.length} members · shared expenses</p>
+                    <p className="sub">
+                      {members.length} member{members.length === 1 ? '' : 's'} · shared expenses
+                      {creator ? ` · started by ${creator.display_name}` : ''}
+                    </p>
                   </div>
                   <Avatars>
-                    {MEMBERS.map((m) => <span key={m.id} title={m.name}>{m.name[0]}</span>)}
+                    {members.map((m) => <span key={m.id} title={m.display_name}>{m.display_name[0]?.toUpperCase() ?? '?'}</span>)}
                   </Avatars>
                 </GroupHeader>
 
@@ -355,9 +410,9 @@ export default function AppPage() {
                       ) : (
                         <ExpenseList>
                           {expenses.map((exp) => (
-                            <ExpenseRow data-testid="item-expense" key={exp.id}>
+                            <ExpenseRow data-testid={`item-expense-${exp.id}`} key={exp.id}>
                               {editingId === exp.id ? (
-                                <EditForm onSubmit={saveEdit}>
+                                <EditForm onSubmit={(e) => { void saveEdit(e); }}>
                                   <input
                                     data-testid="field-description"
                                     value={editDescription}
@@ -381,14 +436,14 @@ export default function AppPage() {
                               ) : (
                                 <>
                                   <div className="expLeft">
-                                    <span className="icon">{exp.splitType === 'equal' ? IconEqualSplit : IconSingleOwed}</span>
+                                    <span className="icon">{exp.split_type === 'equal' ? IconEqualSplit : IconSingleOwed}</span>
                                     <div>
                                       <div className="desc">{exp.description}</div>
                                       <div className="meta">
-                                        Paid by {nameOf(exp.paidBy)} ·{' '}
-                                        {exp.splitType === 'equal'
-                                          ? `split equally with ${exp.participants.map(nameOf).join(', ')}`
-                                          : <Pill>owed fully by {nameOf(exp.owedBy)}</Pill>}
+                                        Paid by {nameOf(members, exp.paid_by)} ·{' '}
+                                        {exp.split_type === 'equal'
+                                          ? `split equally with ${exp.participants.map((p) => nameOf(members, p)).join(', ')}`
+                                          : <Pill>owed fully by {nameOf(members, exp.owed_by)}</Pill>}
                                       </div>
                                     </div>
                                   </div>
@@ -396,12 +451,12 @@ export default function AppPage() {
                                     <div className="amt">
                                       <div className="val">{fmt(exp.amount)}</div>
                                       <div className="split">
-                                        {exp.splitType === 'equal' ? `${fmt(splitShare(exp.amount, exp.participants.length))} each` : `${nameOf(exp.owedBy)} owes all`}
+                                        {exp.split_type === 'equal' ? `${fmt(splitShare(exp.amount, exp.participants.length))} each` : `${nameOf(members, exp.owed_by)} owes all`}
                                       </div>
                                     </div>
                                     <RowActions>
                                       <button type="button" data-testid="action-edit_expense" aria-label="Edit expense" onClick={() => startEdit(exp)}>{IconPencil}</button>
-                                      <button type="button" data-testid="action-delete_expense" aria-label="Delete expense" onClick={() => removeExpense(exp.id)}>{IconTrash}</button>
+                                      <button type="button" data-testid="action-delete_expense" aria-label="Delete expense" onClick={() => { void removeExpense(exp.id); }}>{IconTrash}</button>
                                     </RowActions>
                                   </div>
                                 </>
@@ -412,7 +467,7 @@ export default function AppPage() {
                       )}
 
                       {editingId === null && (
-                        <AddExpenseForm onSubmit={submitExpense}>
+                        <AddExpenseForm onSubmit={(e) => { void submitExpense(e); }}>
                           <div className="label">New expense — split type</div>
                           <SplitPicker data-testid="field-split_type">
                             <button type="button" className={splitType === 'equal' ? 'sel' : ''} aria-pressed={splitType === 'equal'} onClick={() => setSplitType('equal')}>Equally</button>
@@ -438,12 +493,12 @@ export default function AppPage() {
                               className="amountInput"
                             />
                             <select data-testid="field-paid_by" value={paidBy} onChange={(e) => setPaidBy(e.target.value)} aria-label="Paid by">
-                              {MEMBERS.map((m) => <option key={m.id} value={m.id}>{m.name} paid</option>)}
+                              {members.map((m) => <option key={m.id} value={m.id}>{m.display_name} paid</option>)}
                             </select>
                           </FieldRow>
                           {splitType === 'equal' ? (
                             <Chips data-testid="field-participants">
-                              {MEMBERS.map((m) => (
+                              {members.map((m) => (
                                 <button
                                   type="button"
                                   key={m.id}
@@ -451,19 +506,19 @@ export default function AppPage() {
                                   aria-pressed={participants.includes(m.id)}
                                   onClick={() => toggleParticipant(m.id)}
                                 >
-                                  {m.name}
+                                  {m.display_name}
                                 </button>
                               ))}
                             </Chips>
                           ) : (
                             <FieldRow>
                               <select data-testid="field-owed_by" value={owedBy} onChange={(e) => setOwedBy(e.target.value)} aria-label="Owed by">
-                                {MEMBERS.map((m) => <option key={m.id} value={m.id}>{m.name} owes all</option>)}
+                                {members.map((m) => <option key={m.id} value={m.id}>{m.display_name} owes all</option>)}
                               </select>
                             </FieldRow>
                           )}
                           <Actions>
-                            <Primary data-testid="action-add_expense" type="submit" disabled={!description.trim() || !amount}>Add expense</Primary>
+                            <Primary data-testid="action-add_expense" type="submit" disabled={!description.trim() || !amount || !paidBy}>Add expense</Primary>
                           </Actions>
                         </AddExpenseForm>
                       )}
@@ -479,21 +534,21 @@ export default function AppPage() {
                       ) : (
                         <SettleList>
                           {settlements.map((s) => (
-                            <SettleRow data-testid="item-settlement" key={s.id}>
+                            <SettleRow data-testid={`item-settlement-${s.id}`} key={s.id}>
                               <span className="tick">{IconCheck}</span>
-                              <span className="text">{nameOf(s.from)} paid {nameOf(s.to)} <strong>{fmt(s.amount)}</strong></span>
+                              <span className="text">{nameOf(members, s.from)} paid {nameOf(members, s.to)} <strong>{fmt(s.amount)}</strong></span>
                             </SettleRow>
                           ))}
                         </SettleList>
                       )}
                       {showSettle && (
-                        <SettleForm onSubmit={submitSettlement}>
+                        <SettleForm onSubmit={(e) => { void submitSettlement(e); }}>
                           <select data-testid="field-from" value={settleFrom} onChange={(e) => setSettleFrom(e.target.value)} aria-label="From">
-                            {MEMBERS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                            {members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
                           </select>
                           <span className="arrow">→</span>
                           <select data-testid="field-to" value={settleTo} onChange={(e) => setSettleTo(e.target.value)} aria-label="To">
-                            {MEMBERS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                            {members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
                           </select>
                           <input
                             data-testid="field-amount"
@@ -517,17 +572,20 @@ export default function AppPage() {
                     <PanelTitle><h2>Dashboard</h2></PanelTitle>
                     <Grid3>
                       <Stat><div className="num">{fmt(total)}</div><div className="lbl">Total group spend</div></Stat>
-                      <Stat><div className="num">{fmt(paid[topPayer.id] ?? 0)}</div><div className="lbl">{topPayer.name} has paid</div></Stat>
-                      <Stat><div className="num">{MEMBERS.length}</div><div className="lbl">Active members</div></Stat>
+                      <Stat>
+                        <div className="num">{fmt(topPayer ? paidMap[topPayer.member_id] ?? 0 : 0)}</div>
+                        <div className="lbl">{topPayer ? `${nameOf(members, topPayer.member_id)} has paid` : 'No spend yet'}</div>
+                      </Stat>
+                      <Stat><div className="num">{members.length}</div><div className="lbl">Active members</div></Stat>
                     </Grid3>
                     <BalancesSection>
                       <h3>Balances (net)</h3>
-                      {MEMBERS.map((m) => {
-                        const net = balances[m.id] ?? 0;
+                      {members.map((m) => {
+                        const net = balanceMap[m.id] ?? 0;
                         const pct = Math.min(100, Math.round((Math.abs(net) / maxAbsBalance) * 100));
                         return (
                           <BalRow key={m.id}>
-                            <span className="name">{m.name}</span>
+                            <span className="name">{m.display_name}</span>
                             <BarTrack><BarFill style={{ width: `${pct}%` }} $positive={net >= 0} /></BarTrack>
                             <span className={`val ${net >= 0 ? 'pos' : 'neg'}`}>{net >= 0 ? '+' : '-'}{fmt(net)}</span>
                           </BalRow>
@@ -541,11 +599,11 @@ export default function AppPage() {
                   <Card>
                     <PanelTitle><h2>Members</h2></PanelTitle>
                     <MemberList>
-                      {MEMBERS.map((m) => (
-                        <MemberItem data-testid="item-member" key={m.id}>
-                          <span className="av">{m.name[0]}</span>
-                          <span className="name">{m.name}</span>
-                          <span className="stat">paid {fmt(paid[m.id] ?? 0)} · owes {fmt(owed[m.id] ?? 0)}</span>
+                      {members.map((m) => (
+                        <MemberItem data-testid={`item-member-${m.id}`} key={m.id}>
+                          <span className="av">{m.display_name[0]?.toUpperCase() ?? '?'}</span>
+                          <span className="name">{m.display_name}</span>
+                          <span className="stat">paid {fmt(paidMap[m.id] ?? 0)} · owes {fmt(owedMap[m.id] ?? 0)}</span>
                         </MemberItem>
                       ))}
                     </MemberList>
@@ -585,6 +643,15 @@ const WorkspaceNameField = styled.input`
   color: ${C.ink}; background: ${C.paper};
   border: 1px solid ${C.line}; border-radius: var(--c-radius-sm); outline: none;
   ${focusRing}
+`;
+const JoinForm = styled.form`
+  display: flex; gap: var(--c-space-3); flex-wrap: wrap; margin-top: var(--c-space-4);
+  input {
+    flex: 1; min-width: 160px; padding: var(--c-space-2) var(--c-space-3);
+    font-family: inherit; font-size: var(--c-text-base); color: ${C.ink}; background: ${C.paper};
+    border: 1px solid ${C.line}; border-radius: var(--c-radius-sm); outline: none;
+    ${focusRing}
+  }
 `;
 
 const GroupHeader = styled.div`

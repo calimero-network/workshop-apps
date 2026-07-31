@@ -27,7 +27,10 @@ export default function UnitRail({ ws }: Props): React.ReactElement {
     const trimmed = name.trim();
     if (!trimmed) return;
     setAttempted(true);
-    const id = await ws.createUnit(trimmed);
+    // The group service's init(name) takes the group's display name as its
+    // sole param — pass it alongside the context label so the backend's
+    // GroupInfo.name is seeded from what the user actually typed.
+    const id = await ws.createUnit(trimmed, { name: trimmed });
     if (id) { setName(''); setCreating(false); setAttempted(false); }
   };
 

@@ -9,8 +9,10 @@ import { PRESET_DEFAULT_MODE } from './themeDefaults.generated';
 
 export interface ServiceEntry {
   /** Stable id from the spec. Keys the services map; used by the frontend to
-   *  look up a service's wire name. NOT positionally inferred. */
-  id: string;
+   *  look up a service's wire name. NOT positionally inferred. Optional: a
+   *  single-service app's studio.config.json may omit it since PRIMARY_SERVICE
+   *  covers that case positionally. */
+  id?: string;
   /** Wire name passed to `mero.admin.createContext({ serviceName })` and the
    *  bundle manifest service entry. Must match the Cargo crate's domain
    *  identity. The generated client lives at `src/api/<name>/`. */
