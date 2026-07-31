@@ -1,31 +1,27 @@
-# Two-node smoke test for the neutral item-registry foundation service.
+# Two-node smoke test for the split-circle "group" service.
 #
-# Exercises the parts the v2 generator most often breaks, end-to-end on real
-# nodes (what the in-process TestHost / converge harness can't cover):
-#   - the `service` crate installed + a context created for it from a bundle
-#   - registry state (UnorderedMap<String, Item> with a nested LwwRegister)
-#     replicating across two peers
-#   - the AuthoredMap owner-gate: a non-owner `delete` is rejected on a real
-#     signed-delta path (the gate the bare converge harness can't verify)
+# Exercises the app's real mutate/view methods end-to-end on real nodes (what
+# the in-process TestHost / converge harness can't cover):
+#   - the group context installed + created from the split-circle bundle
+#   - member join (set_display_name), expense authoring + editing + deletion
+#     (UnorderedMap<String, Expense> with an LwwRegister amount/description),
+#     and settlement recording, all replicating across two peers
 #
 # Usage (run from the chat project root, after a dev bundle has been built):
+#   bash logic/build-bundle.sh
 #   merobox bootstrap run test/smoke.workflow.yml
 #
 # Pre-flight: `bash logic/build-bundle.sh` must have produced
-# `logic/res/foundation-1.0.0.mpk` (appName/appVersion from studio.config.json).
+# `logic/res/split-circle-1.0.0.mpk` (appName/appVersion from studio.config.json).
 
-name: Foundation item-registry smoke
-description: Verify the item-registry service replicates state and owner-gates delete across two nodes.
+name: Split Circle group smoke
+description: Verify the group service replicates members/expenses/settlements and computes correct splits across two nodes.
 log_level: info
 nodes:
   count: 2
-  prefix: foundation-node
-  # Pinned off `:edge` to a tag matching the SDK the logic pins
-  # (0.11.0-rc.17). Bump in lockstep with logic/Cargo.toml's SDK tag, or
-  # bootstrap skews. ASSUMPTION: ghcr publishes an image tag matching the
-  # core git tag `0.11.0-rc.17`; if the registry uses a different naming
-  # scheme, correct this tag (and verifierWorkflow.js).
-  image: ghcr.io/calimero-network/merod:0.11.0-rc.17
+  prefix: split-circle-node
+  # Keep in lockstep with logic/Cargo.toml's calimero-sdk tag, or bootstrap skews.
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.19
   # High base ports to avoid colliding with a host-native merod on the
   # defaults (2428 P2P / 2528 RPC). Each node gets base + i.
   base_port: 12428      # P2P / swarm
@@ -35,135 +31,239 @@ nuke_on_end: true
 wait_timeout: 90
 
 steps:
-  # --- Bootstrap application + namespace ---
+  # --- Bootstrap application + namespace + group context ---
 
   - type: install_application
-    name: Install foundation bundle on node 1
-    node: foundation-node-1
+    name: Install split-circle bundle on node 1
+    node: split-circle-node-1
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/split-circle-1.0.0.mpk
     outputs:
       app_id: applicationId
 
   - type: install_application
-    name: Install foundation bundle on node 2
-    node: foundation-node-2
+    name: Install split-circle bundle on node 2
+    node: split-circle-node-2
     dev: true
-    path: ./logic/res/foundation-1.0.0.mpk
+    path: ./logic/res/split-circle-1.0.0.mpk
 
   - type: create_namespace
     name: Create namespace on node 1
-    node: foundation-node-1
+    node: split-circle-node-1
     application_id: '{{app_id}}'
     outputs:
       namespace_id: namespaceId
 
   - type: create_context
-    name: Create service context on node 1
-    node: foundation-node-1
+    name: Create group context on node 1
+    node: split-circle-node-1
     application_id: '{{app_id}}'
     group_id: '{{namespace_id}}'
-    service_name: service
+    service_name: group
+    params:
+      name: "Goa Trip"
     outputs:
-      ctx: contextId
+      group_ctx: contextId
 
   - type: create_namespace_invitation
     name: Issue namespace invitation
-    node: foundation-node-1
+    node: split-circle-node-1
     namespace_id: '{{namespace_id}}'
     outputs:
       invitation: invitation
 
   - type: join_namespace
     name: Node 2 joins namespace
-    node: foundation-node-2
+    node: split-circle-node-2
     namespace_id: '{{namespace_id}}'
     invitation: '{{invitation}}'
 
-  # --- Registry state replicates across peers ---
+  # --- Members join (set_display_name) ---
 
   - type: call
-    name: Node 1 adds an item
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: add
+    name: Node 1 sets display name (Priya) — joins the group
+    node: split-circle-node-1
+    context_id: '{{group_ctx}}'
+    method: set_display_name
     args:
-      label: widget
-      value: v1
+      display_name: "Priya"
     outputs:
-      item_id: result.output
+      member1_id: result.output
 
   - type: wait_for_sync
-    name: Wait for the add to sync across both nodes
-    context_id: '{{ctx}}'
-    nodes: [foundation-node-1, foundation-node-2]
+    name: Wait for Priya's membership to sync
+    context_id: '{{group_ctx}}'
+    nodes: [split-circle-node-1, split-circle-node-2]
     timeout: 30
-    trigger_sync: true
-
-  # Both nodes must see the same single-item list — replication of the
-  # UnorderedMap<String, Item> (incl. the nested LwwRegister value).
-  - type: call
-    name: List items from node 1
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: list
-    args: {}
-    outputs:
-      list_n1: result.output
 
   - type: call
-    name: List items from node 2
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: list
-    args: {}
-    outputs:
-      list_n2: result.output
-
-  - type: json_assert
-    name: Both nodes see the same item list
-    statements:
-      - 'equal({{list_n1}}, {{list_n2}})'
-
-  # --- Owner-gated delete (AuthoredMap) ---
-  # Node 2 is not the owner of the item node 1 added, so its delete must be
-  # rejected. This is the per-entry authorization the bare converge harness
-  # cannot test (it needs the signed-delta apply path).
-  - type: call
-    name: Non-owner delete from node 2 must be rejected
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: delete
+    name: Node 2 sets display name (Rahul) — joins the group
+    node: split-circle-node-2
+    context_id: '{{group_ctx}}'
+    method: set_display_name
     args:
-      id: '{{item_id}}'
-    expected_failure: true
-
-  # The owner (node 1) can delete it.
-  - type: call
-    name: Owner delete from node 1 succeeds
-    node: foundation-node-1
-    context_id: '{{ctx}}'
-    method: delete
-    args:
-      id: '{{item_id}}'
+      display_name: "Rahul"
+    outputs:
+      member2_id: result.output
 
   - type: wait_for_sync
-    name: Wait for the delete to sync across both nodes
-    context_id: '{{ctx}}'
-    nodes: [foundation-node-1, foundation-node-2]
+    name: Wait for Rahul's membership to sync
+    context_id: '{{group_ctx}}'
+    nodes: [split-circle-node-1, split-circle-node-2]
     timeout: 30
-    trigger_sync: true
+
+  # --- add_expense: an equal split between both members ---
 
   - type: call
-    name: Node 2 sees the empty registry
-    node: foundation-node-2
-    context_id: '{{ctx}}'
-    method: count
+    name: Exercise add_expense on node 1
+    node: split-circle-node-1
+    context_id: '{{group_ctx}}'
+    method: add_expense
+    args:
+      description: "Dinner"
+      amount: 1200
+      paid_by: '{{member1_id}}'
+      split_type: "equal"
+      participants: ['{{member1_id}}', '{{member2_id}}']
+      owed_by: ""
+    outputs:
+      expense_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for the expense to sync after add_expense
+    context_id: '{{group_ctx}}'
+    nodes: [split-circle-node-1, split-circle-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm the expense is visible on node 2 with the correct split
+    node: split-circle-node-2
+    context_id: '{{group_ctx}}'
+    method: list_expenses
     args: {}
     outputs:
-      count_n2: result.output
+      expense_0: result.output.0
+      expense_0_paid_by: result.output.0.paid_by
 
   - type: json_assert
-    name: Registry is empty on node 2 after the owner delete
+    name: add_expense produced a visible Expense on node 2 with the equal split
     statements:
-      - 'equal({{count_n2}}, 0)'
+      - 'json_subset({{expense_0}}, {"description": "Dinner", "amount": 1200, "split_type": "equal"})'
+      - 'json_equal({{expense_0_paid_by}}, {{member1_id}})'
+
+  # --- edit_expense: description + amount are editable ---
+
+  - type: call
+    name: Exercise edit_expense on node 1
+    node: split-circle-node-1
+    context_id: '{{group_ctx}}'
+    method: edit_expense
+    args:
+      id: '{{expense_id}}'
+      description: "Dinner + drinks"
+      amount: 1500
+
+  - type: wait_for_sync
+    name: Wait for the edit to sync after edit_expense
+    context_id: '{{group_ctx}}'
+    nodes: [split-circle-node-1, split-circle-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm the edited expense is visible on node 2
+    node: split-circle-node-2
+    context_id: '{{group_ctx}}'
+    method: list_expenses
+    args: {}
+    outputs:
+      expense_0_edited: result.output.0
+
+  - type: json_assert
+    name: edit_expense updated the visible description and amount on node 2
+    statements:
+      - 'json_subset({{expense_0_edited}}, {"description": "Dinner + drinks", "amount": 1500})'
+
+  # --- record_settlement: Rahul repays Priya ---
+
+  - type: call
+    name: Exercise record_settlement on node 2
+    node: split-circle-node-2
+    context_id: '{{group_ctx}}'
+    method: record_settlement
+    args:
+      from: '{{member2_id}}'
+      to: '{{member1_id}}'
+      amount: 600
+    outputs:
+      settlement_id: result.output
+
+  - type: wait_for_sync
+    name: Wait for the settlement to sync after record_settlement
+    context_id: '{{group_ctx}}'
+    nodes: [split-circle-node-1, split-circle-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm the settlement is visible on node 1
+    node: split-circle-node-1
+    context_id: '{{group_ctx}}'
+    method: list_settlements
+    args: {}
+    outputs:
+      settlement_0_from: result.output.0.from
+      settlement_0_to: result.output.0.to
+      settlement_0_amount: result.output.0.amount
+
+  - type: json_assert
+    name: record_settlement produced a visible Settlement on node 1
+    statements:
+      - 'json_equal({{settlement_0_from}}, {{member2_id}})'
+      - 'json_equal({{settlement_0_to}}, {{member1_id}})'
+      - 'json_equal({{settlement_0_amount}}, 600)'
+
+  # --- rename_group: creator-only, no matching view (GroupInfo isn't exposed
+  # by any view method) — exercised as a pure mutation that must not throw. ---
+
+  - type: call
+    name: Exercise rename_group on node 1 (the creator)
+    node: split-circle-node-1
+    context_id: '{{group_ctx}}'
+    method: rename_group
+    args:
+      new_name: "Goa Trip 2024"
+
+  - type: wait_for_sync
+    name: Wait for the rename to sync
+    context_id: '{{group_ctx}}'
+    nodes: [split-circle-node-1, split-circle-node-2]
+    timeout: 30
+
+  # --- delete_expense: removes the entry from the map ---
+
+  - type: call
+    name: Exercise delete_expense on node 1
+    node: split-circle-node-1
+    context_id: '{{group_ctx}}'
+    method: delete_expense
+    args:
+      id: '{{expense_id}}'
+
+  - type: wait_for_sync
+    name: Wait for the delete to sync after delete_expense
+    context_id: '{{group_ctx}}'
+    nodes: [split-circle-node-1, split-circle-node-2]
+    timeout: 30
+
+  - type: call
+    name: Confirm the expense list is empty on node 2 after delete_expense
+    node: split-circle-node-2
+    context_id: '{{group_ctx}}'
+    method: list_expenses
+    args: {}
+    outputs:
+      expenses_after_delete: result.output
+
+  - type: json_assert
+    name: delete_expense removed the only expense
+    statements:
+      - 'json_equal({{expenses_after_delete}}, [])'
