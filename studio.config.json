@@ -1,0 +1,48 @@
+{
+  "appName": "split-circle",
+  "appVersion": "1.0.0",
+  "package": "com.calimero.split-circle",
+  "metadata": {
+    "name": "split-circle",
+    "description": "Shared group expense tracker with flexible splitting, settle-up, and a live spending dashboard",
+    "author": "Calimero",
+    "route": "/split-circle"
+  },
+  "theme": {
+    "primaryColor": "#0F766E",
+    "accentColor": "#FBBF24",
+    "style": "modern-playful",
+    "preset": "tide",
+    "defaultMode": "dark",
+    "overrides": {}
+  },
+  "layoutPreset": "sidebar-workspace",
+  "topology": {
+    "kind": "multi",
+    "unitName": "group",
+    "unitNamePlural": "groups",
+    "defaultCapabilities": [
+      "CAN_CREATE_CONTEXT",
+      "CAN_INVITE",
+      "MANAGE_MEMBERS"
+    ],
+    "example": {
+      "circles": [
+        "Goa Trip",
+        "Flatmates"
+      ],
+      "flow": [
+        "Create a group and invite friends",
+        "Add expenses and pick how to split them",
+        "Balances update live for everyone",
+        "Mark debts settled and check the dashboard"
+      ]
+    }
+  },
+  "services": [
+    {
+      "name": "group",
+      "crate": "split-circle-group"
+    }
+  ]
+}

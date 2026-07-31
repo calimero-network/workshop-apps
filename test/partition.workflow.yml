@@ -1,0 +1,289 @@
+# Three-node partition/heal convergence canary for the neutral item-registry
+# foundation service.
+#
+# Proves the whole point of a CRDT backend: state written on BOTH sides of a
+# network split reconciles to an identical registry on every node once the
+# split heals. This is what the two-node smoke and the in-process converge
+# harness cannot cover — a real, concurrent divide-and-merge.
+#
+# Fault primitive: `partition_peers` / `heal_peers` (merobox#278) cut only
+# container-to-container libp2p traffic via symmetric DROP rules in the host's
+# DOCKER-USER iptables chain, leaving each node's published RPC port reachable.
+# So node-3 can be driven with a `call` WHILE partitioned. These are DOCKER-mode
+# Linux primitives (iptables + passwordless sudo, e.g. GitHub-hosted runners):
+# they NO-OP under `--no-docker` native merod, so this workflow must run in the
+# default Docker mode.
+#
+# Usage (Docker mode, from the chat project root, after a dev bundle is built):
+#   bash logic/build-bundle.sh
+#   merobox bootstrap run test/partition.workflow.yml
+#
+# Pre-flight: `bash logic/build-bundle.sh` must have produced
+# `logic/res/foundation-1.0.0.mpk` (appName/appVersion from studio.config.json).
+
+name: Foundation partition/heal convergence canary
+description: Concurrent writes on both sides of a 3-node partition converge to an identical registry after heal.
+log_level: info
+nodes:
+  count: 3
+  prefix: foundation-node
+  # Pinned off `:edge` to a tag matching the SDK the logic pins
+  # (0.11.0-rc.17). Bump in lockstep with logic/Cargo.toml's SDK tag, or
+  # bootstrap skews. Keep aligned with smoke.workflow.yml.
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.17
+  # High base ports to avoid colliding with a host-native merod on the
+  # defaults (2428 P2P / 2528 RPC). Each node gets base + i (3 nodes).
+  base_port: 12428      # P2P / swarm
+  base_rpc_port: 12528  # JSON-RPC / admin API
+nuke_on_start: true
+nuke_on_end: true
+wait_timeout: 90
+
+steps:
+  # --- Bootstrap application on all three nodes ---
+
+  - type: install_application
+    name: Install foundation bundle on node 1
+    node: foundation-node-1
+    dev: true
+    path: ./logic/res/foundation-1.0.0.mpk
+    outputs:
+      app_id: applicationId
+
+  - type: install_application
+    name: Install foundation bundle on node 2
+    node: foundation-node-2
+    dev: true
+    path: ./logic/res/foundation-1.0.0.mpk
+
+  - type: install_application
+    name: Install foundation bundle on node 3
+    node: foundation-node-3
+    dev: true
+    path: ./logic/res/foundation-1.0.0.mpk
+
+  - type: create_namespace
+    name: Create namespace on node 1
+    node: foundation-node-1
+    application_id: '{{app_id}}'
+    outputs:
+      namespace_id: namespaceId
+
+  - type: create_context
+    name: Create service context on node 1
+    node: foundation-node-1
+    application_id: '{{app_id}}'
+    group_id: '{{namespace_id}}'
+    service_name: service
+    outputs:
+      ctx: contextId
+
+  # --- Nodes 2 and 3 join the namespace (each needs its own invitation) ---
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation for node 2
+    node: foundation-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invite_node2: invitation
+
+  - type: join_namespace
+    name: Node 2 joins namespace
+    node: foundation-node-2
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invite_node2}}'
+
+  - type: create_namespace_invitation
+    name: Issue namespace invitation for node 3
+    node: foundation-node-1
+    namespace_id: '{{namespace_id}}'
+    outputs:
+      invite_node3: invitation
+
+  - type: join_namespace
+    name: Node 3 joins namespace
+    node: foundation-node-3
+    namespace_id: '{{namespace_id}}'
+    invitation: '{{invite_node3}}'
+
+  # --- Seed a baseline item from node 1 and converge all three ---
+
+  - type: call
+    name: Node 1 seeds a baseline item
+    node: foundation-node-1
+    context_id: '{{ctx}}'
+    method: add
+    args:
+      label: baseline
+      value: seed
+    outputs:
+      seed_id: result
+
+  - type: wait_for_sync
+    name: Baseline converges across all three nodes
+    context_id: '{{ctx}}'
+    nodes: [foundation-node-1, foundation-node-2, foundation-node-3]
+    timeout: 60
+    check_interval: 2
+    trigger_sync: true
+
+  - type: call
+    name: Baseline count on node 3
+    node: foundation-node-3
+    context_id: '{{ctx}}'
+    method: count
+    args: {}
+    outputs:
+      seed_count_n3: result
+
+  - type: json_assert
+    name: All three see the single seeded item before the split
+    statements:
+      - 'equal({{seed_count_n3}}, 1)'
+
+  # --- Partition node 3 away (libp2p cut, RPC stays up) ---
+  # node-3 is isolated from BOTH node-1 and node-2, so the two sides
+  # ({node-1, node-2} vs {node-3}) cannot exchange deltas.
+
+  - type: partition_peers
+    name: Partition node 3 from node 1 and node 2 (libp2p only; RPC stays up)
+    node: foundation-node-3
+    peers:
+      - foundation-node-1
+      - foundation-node-2
+
+  # Settle margin: the DOCKER-USER DROP rule bites the instant partition_peers
+  # returns; this just lets any pre-partition in-flight gossip quiesce.
+  - type: wait
+    name: Settle after the partition takes effect
+    seconds: 12
+
+  # --- Concurrent writes on BOTH sides of the split ---
+
+  - type: call
+    name: Side A (node 1) adds an item during the split
+    node: foundation-node-1
+    context_id: '{{ctx}}'
+    method: add
+    args:
+      label: side-a
+      value: from-node-1
+    outputs:
+      side_a_id: result
+
+  - type: call
+    name: Side B (node 3, isolated) adds a DIFFERENT item during the split
+    node: foundation-node-3
+    context_id: '{{ctx}}'
+    method: add
+    args:
+      label: side-b
+      value: from-node-3
+    outputs:
+      side_b_id: result
+
+  # Node 3 must NOT see side A's write while partitioned (proves the split bit).
+  - type: call
+    name: Node 3 count during the split (only seed + its own write)
+    node: foundation-node-3
+    context_id: '{{ctx}}'
+    method: count
+    args: {}
+    outputs:
+      split_count_n3: result
+
+  - type: json_assert
+    name: Node 3 is genuinely isolated (sees 2 items, not node 1's add)
+    statements:
+      - 'equal({{split_count_n3}}, 2)'
+
+  # --- Heal: lift the partition; both sides now merge ---
+
+  - type: heal_peers
+    name: Heal the partition
+    node: foundation-node-3
+    peers:
+      - foundation-node-1
+      - foundation-node-2
+
+  - type: wait
+    name: Wait for the libp2p mesh to reform (direct connections)
+    seconds: 12
+
+  # Root-hash convergence: passes only once all three nodes share the same
+  # contextStateHash — i.e. both concurrent adds have reconciled.
+  - type: wait_for_sync
+    name: Converge after the partition heals
+    context_id: '{{ctx}}'
+    nodes: [foundation-node-1, foundation-node-2, foundation-node-3]
+    timeout: 180
+    check_interval: 2
+    trigger_sync: true
+
+  # --- App-level convergence assertions across all three nodes ---
+
+  - type: call
+    name: List items from node 1
+    node: foundation-node-1
+    context_id: '{{ctx}}'
+    method: list
+    args: {}
+    outputs:
+      list_n1: result
+
+  - type: call
+    name: List items from node 2
+    node: foundation-node-2
+    context_id: '{{ctx}}'
+    method: list
+    args: {}
+    outputs:
+      list_n2: result
+
+  - type: call
+    name: List items from node 3
+    node: foundation-node-3
+    context_id: '{{ctx}}'
+    method: list
+    args: {}
+    outputs:
+      list_n3: result
+
+  - type: call
+    name: Count items from node 1
+    node: foundation-node-1
+    context_id: '{{ctx}}'
+    method: count
+    args: {}
+    outputs:
+      count_n1: result
+
+  - type: call
+    name: Count items from node 2
+    node: foundation-node-2
+    context_id: '{{ctx}}'
+    method: count
+    args: {}
+    outputs:
+      count_n2: result
+
+  - type: call
+    name: Count items from node 3
+    node: foundation-node-3
+    context_id: '{{ctx}}'
+    method: count
+    args: {}
+    outputs:
+      count_n3: result
+
+  # `list` sorts by (created_ms, id), so a converged registry yields a
+  # byte-identical list on every node — pairwise equality is deterministic.
+  # count == 3: the seed + both concurrent-split adds survived on all nodes.
+  - type: json_assert
+    name: All three nodes converge to the same registry after the partition
+    statements:
+      - 'equal({{list_n1}}, {{list_n2}})'
+      - 'equal({{list_n2}}, {{list_n3}})'
+      - 'equal({{count_n1}}, {{count_n2}})'
+      - 'equal({{count_n2}}, {{count_n3}})'
+      - 'equal({{count_n1}}, 3)'
