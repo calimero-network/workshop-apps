@@ -1,0 +1,184 @@
+# Populates the caches every generated app's `verify` gate looks for, on the
+# default branch, because a branch can only restore caches from itself or from
+# here. Every app is a fresh branch, so without this each one's FIRST verify run
+# misses all of them, and each then stores its own 300MB copy of identical
+# content against the repo's 10GB quota.
+#
+# The keys below MUST stay byte-identical to the ones in the generated
+# verify.yml (packages/worker/ghaVerifyWorkflow.js in calimero-studio). A key
+# that drifts here does not fail anything - it silently warms nothing.
+name: warm caches
+
+on:
+  schedule:
+    # Daily, before a workshop would start.
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      # A generated app is the only tree that produces the right keys: the
+      # playwright and pnpm keys hash its own files. Newest branch, so the keys
+      # track whatever the scaffold currently emits.
+      - name: Pick the newest generated app
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ref="$(gh api "repos/${GITHUB_REPOSITORY}/branches" --paginate \
+            --jq '.[] | select(.name | startswith("workshop/")) | .name' \
+            | while read -r b; do
+                d="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${b}" --jq '.commit.committer.date')"
+                echo "$d $b"
+              done | sort -r | head -1 | cut -d' ' -f2-)"
+          if [ -z "$ref" ]; then
+            echo "no workshop/** branch yet - nothing to warm"
+            echo "ref=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "warming from $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.pick.outputs.ref != ''
+        with:
+          ref: ${{ steps.pick.outputs.ref }}
+
+      # ── merod ──
+      - name: Resolve merod version
+        if: steps.pick.outputs.ref != ''
+        id: merodver
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PINNED: ${{ vars.MEROD_VERSION }}
+        run: |
+          set -euo pipefail
+          ver="${PINNED:-}"
+          if [ -z "$ver" ] && [ -f logic/Cargo.toml ]; then
+            ver="$(sed -nE 's/.*calimero-sdk.*tag *= *"([^"]+)".*/\1/p' logic/Cargo.toml | head -1)"
+          fi
+          [ -n "$ver" ] || { echo "could not resolve a merod version"; exit 1; }
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Cache merod
+        if: steps.pick.outputs.ref != ''
+        id: merod-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/merod
+          key: merod-${{ steps.merodver.outputs.version }}-x86_64-linux
+
+      - name: Download merod
+        if: steps.pick.outputs.ref != '' && steps.merod-cache.outputs.cache-hit != 'true'
+        env:
+          MEROD_VERSION: ${{ steps.merodver.outputs.version }}
+        # Byte-for-byte the app's own download, because the cache it restores
+        # must contain an extracted, executable ~/.local/merod/merod - not a
+        # tarball the app would never unpack, having skipped its own step.
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/merod"
+          url="https://github.com/calimero-network/core/releases/download/${MEROD_VERSION}/merod_x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSL "$url" -o /tmp/merod.tgz
+          tar -xzf /tmp/merod.tgz -C "$HOME/.local/merod"
+          target="$HOME/.local/merod/merod"
+          if [ ! -f "$target" ]; then
+            nested="$(find "$HOME/.local/merod" -type f -name merod | head -n1)"
+            test -n "$nested"
+            ln -sf "$nested" "$target"
+          fi
+          chmod +x "$target"
+          test -x "$target"
+
+      # ── merobox ──
+      - name: Resolve merobox version
+        if: steps.pick.outputs.ref != ''
+        id: meroboxver
+        run: |
+          set -euo pipefail
+          # Apps generated before the installer script existed simply have no
+          # merobox cache to warm; that is not a failure of this workflow.
+          ver=""
+          if [ -f scripts/install-merobox.sh ]; then
+            ver="$(sed -nE 's/^MEROBOX_VERSION="([^"]+)".*/\1/p' scripts/install-merobox.sh | head -1)"
+          else
+            echo "no scripts/install-merobox.sh on this app - skipping merobox"
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Cache merobox
+        if: steps.meroboxver.outputs.version != ''
+        id: merobox-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/merobox/merobox
+          key: merobox-${{ steps.meroboxver.outputs.version }}-x86_64-linux
+
+      - name: Install merobox
+        if: steps.meroboxver.outputs.version != '' && steps.merobox-cache.outputs.cache-hit != 'true'
+        run: bash scripts/install-merobox.sh
+
+      # ── pnpm store + Playwright browsers ──
+      - uses: pnpm/action-setup@v4
+        if: steps.pick.outputs.ref != ''
+      - uses: actions/setup-node@v4
+        if: steps.pick.outputs.ref != ''
+        with:
+          node-version-file: .nvmrc
+
+      - name: pnpm store path
+        if: steps.pick.outputs.ref != ''
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        if: steps.pick.outputs.ref != ''
+        id: pnpm-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ hashFiles('app/package.json') }}
+
+      - name: Populate the pnpm store
+        if: steps.pick.outputs.ref != '' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        working-directory: app
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Resolve Playwright version
+        if: steps.pick.outputs.ref != ''
+        id: pwver
+        run: |
+          cd app
+          ver="$(sed -nE 's/.*"@playwright\/test": *"\^?([0-9.]+)".*/\1/p' package.json | head -1)"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        if: steps.pick.outputs.ref != ''
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ steps.pwver.outputs.version }}-chromium
+
+      - name: Install Chromium
+        if: steps.pick.outputs.ref != '' && steps.pw-cache.outputs.cache-hit != 'true'
+        working-directory: app
+        run: pnpm exec playwright install --with-deps chromium
+
+      # A miss on every cache is the expected first run. A miss on every cache
+      # on the SECOND run means the keys drifted from the generated verify.yml
+      # and this workflow is warming nothing.
+      - name: What this run warmed
+        if: steps.pick.outputs.ref != '' && always()
+        run: |
+          echo "app branch      ${{ steps.pick.outputs.ref }}"
+          echo "merod           ${{ steps.merodver.outputs.version }}  hit=${{ steps.merod-cache.outputs.cache-hit }}"
+          echo "merobox         ${{ steps.meroboxver.outputs.version }}  hit=${{ steps.merobox-cache.outputs.cache-hit }}"
+          echo "pnpm store      hit=${{ steps.pnpm-cache.outputs.cache-hit }}"
+          echo "playwright      ${{ steps.pwver.outputs.version }}  hit=${{ steps.pw-cache.outputs.cache-hit }}"
